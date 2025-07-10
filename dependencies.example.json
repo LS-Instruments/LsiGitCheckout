@@ -1,0 +1,49 @@
+[
+  {
+    "Repository URL": "https://github.com/microsoft/terminal.git",
+    "Base Path": "repos/windows-terminal",
+    "Tag": "v1.19.10573.0",
+    "_comment": "Windows Terminal - Modern terminal application for Windows"
+  },
+  {
+    "Repository URL": "https://github.com/PowerShell/PowerShell.git",
+    "Base Path": "repos/powershell",
+    "Tag": "v7.4.1",
+    "Skip LFS": true,
+    "_comment": "PowerShell Core - Cross-platform automation and configuration tool"
+  },
+  {
+    "Repository URL": "https://github.com/git-for-windows/git.git",
+    "Base Path": "repos/git-for-windows",
+    "Tag": "v2.43.0.windows.1",
+    "_comment": "Git for Windows - Git version control system for Windows"
+  },
+  {
+    "_comment": "Example with SSH authentication (requires SSH key setup)",
+    "_example_ssh": {
+      "Repository URL": "git@github.com:mycompany/private-repo.git",
+      "Base Path": "repos/private-repo",
+      "Tag": "v1.0.0",
+      "SSH Key Path": "C:\\Users\\username\\.ssh\\github_key.ppk"
+    }
+  },
+  {
+    "_comment": "Example with submodules and individual SSH keys",
+    "_example_submodules": {
+      "Repository URL": "https://github.com/myorg/main-project.git",
+      "Base Path": "repos/main-project",
+      "Tag": "v2.0.0",
+      "Skip LFS": false,
+      "Submodule Config": [
+        {
+          "Submodule Name": "auth-module",
+          "SSH Key Path": "C:\\keys\\auth_deploy.ppk"
+        },
+        {
+          "Submodule Path": "libs/common",
+          "SSH Key Path": "C:\\keys\\common_deploy.ppk"
+        }
+      ]
+    }
+  }
+]

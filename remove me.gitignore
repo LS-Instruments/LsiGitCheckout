@@ -1,0 +1,42 @@
+# Debug and log files
+debug_log_*.txt
+LsiGitCheckout_Errors.txt
+
+# Repository directories
+repos/
+
+# User configuration files
+dependencies.json
+
+# SSH keys
+*.ppk
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+
+# Windows specific
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# PowerShell specific
+*.pssproj
+*.psm1
+*.psd1
+*.ps1xml
+
+# Visual Studio Code
+.vscode/
+
+# JetBrains IDEs
+.idea/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Temporary files
+*.tmp
+*.temp
