@@ -19,31 +19,21 @@
     "_comment": "Git for Windows - Git version control system for Windows"
   },
   {
-    "_comment": "Example with SSH authentication (requires SSH key setup)",
+    "_comment": "Example with SSH authentication (requires SSH key in git_credentials.json)",
     "_example_ssh": {
       "Repository URL": "git@github.com:mycompany/private-repo.git",
       "Base Path": "repos/private-repo",
-      "Tag": "v1.0.0",
-      "SSH Key Path": "C:\\Users\\username\\.ssh\\github_key.ppk"
+      "Tag": "v1.0.0"
     }
   },
   {
-    "_comment": "Example with submodules and individual SSH keys",
+    "_comment": "Example with submodules - SSH keys defined in git_credentials.json",
     "_example_submodules": {
       "Repository URL": "https://github.com/myorg/main-project.git",
       "Base Path": "repos/main-project",
       "Tag": "v2.0.0",
       "Skip LFS": false,
-      "Submodule Config": [
-        {
-          "Submodule Name": "auth-module",
-          "SSH Key Path": "C:\\keys\\auth_deploy.ppk"
-        },
-        {
-          "Submodule Path": "libs/common",
-          "SSH Key Path": "C:\\keys\\common_deploy.ppk"
-        }
-      ]
+      "_comment": "Submodules will be auto-discovered and SSH keys looked up by hostname"
     }
   }
 ]

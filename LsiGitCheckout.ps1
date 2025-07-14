@@ -6,69 +6,55 @@
     This script reads a JSON configuration file and checks out multiple Git repositories
     to their specified tags. It supports both HTTPS and SSH URLs, handles Git LFS,
     initializes submodules, and provides comprehensive error handling and logging.
+    
+    SSH credentials are managed through a separate git_credentials.json file.
 .PARAMETER InputFile
     Path to the JSON configuration file. Defaults to 'dependencies.json' in the script directory.
+.PARAMETER CredentialsFile
+    Path to the SSH credentials JSON file. Defaults to 'git_credentials.json' in the script directory.
 .PARAMETER DryRun
     If specified, shows what would be done without actually executing Git commands.
-.PARAMETER EnableDebugLog
+.PARAMETER EnableDebug
     Enables debug logging to a timestamped log file.
 .PARAMETER Verbose
     Increases verbosity of output messages.
 .EXAMPLE
     .\LsiGitCheckout.ps1
-    .\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -EnableDebugLog -Verbose
-    .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebugLog
+    .\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
+    .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug
 .NOTES
-    Version: 2.1.1
-    Last Modified: 2025-01-10
+    Version: 3.0.0
+    Last Modified: 2025-01-14
     
     This script uses PuTTY/plink for SSH authentication. SSH keys must be in PuTTY format (.ppk).
     Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.
     
-    Changes in 2.1.1:
-    - Fixed script structure syntax error
+    Changes in 3.0.0:
+    - BREAKING CHANGE: Moved SSH key configuration from dependencies.json to separate credentials file
+    - Added -CredentialsFile parameter for specifying SSH credentials file
+    - SSH keys are now mapped by hostname instead of per-repository
+    - Improved security by separating credentials from repository configuration
+    - Removed "Submodule Config" as it's no longer needed (submodules are auto-discovered)
     
-    Changes in 2.1.0:
-    - Removed OpenSSH support - now PuTTY/plink only
-    - Removed -SshClient parameter
-    - Simplified SSH key handling to only support PuTTY format (.ppk)
-    - Cleaner code with single SSH implementation
-    
-    Changes in 2.0.1:
-    - Removed orphaned LFS code for submodules
-    - Fixed incorrect debug messages about pulling LFS in submodules
-    - Cleaned up code to match the simplified Skip LFS behavior
-    
-    Changes in 2.0.0:
-    - BREAKING CHANGE: Removed per-submodule Skip LFS configuration
-    - Skip LFS now applies to the entire repository including all submodules
-    - Significantly simplified code by removing complex LFS override logic
-    - Accepts Git/LFS limitation that submodules inherit parent's LFS settings
-    - Cleaner and more maintainable code
-    
-    JSON Configuration Format:
+    Dependencies JSON Format:
     [
       {
         "Repository URL": "https://github.com/user/repo.git",
         "Base Path": "C:\\Projects\\repo",
         "Tag": "v1.0.0",
-        "SSH Key Path": "C:\\Users\\user\\.ssh\\id_rsa",
-        "Skip LFS": false,
-        "Submodule Config": [
-          {
-            "Submodule Name": "submodule1",
-            "SSH Key Path": "C:\\Users\\user\\.ssh\\submodule1_key"
-          },
-          {
-            "Submodule Path": "libs/submodule2",
-            "SSH Key Path": "C:\\Users\\user\\.ssh\\submodule2_key"
-          }
-        ]
+        "Skip LFS": false
       }
     ]
     
-    Submodules can be identified by Name, Path, or URL in the configuration.
-    Skip LFS: Set to true to skip Git LFS pull for the repository AND all its submodules.
+    Credentials JSON Format:
+    {
+      "github.com": "C:\\Users\\user\\.ssh\\github_key.ppk",
+      "gitlab.com": "C:\\Users\\user\\.ssh\\gitlab_key.ppk",
+      "ssh://git.company.com": "C:\\Users\\user\\.ssh\\company_key.ppk"
+    }
+    
+    Note: The "SSH Key Path" field in Repository and Submodule Config has been removed.
+    SSH keys are now determined by the hostname in the repository URL.
 #>
 
 [CmdletBinding()]
@@ -77,20 +63,24 @@ param(
     [string]$InputFile,
     
     [Parameter()]
+    [string]$CredentialsFile,
+    
+    [Parameter()]
     [switch]$DryRun,
     
     [Parameter()]
-    [switch]$EnableDebugLog
+    [switch]$EnableDebug
 )
 
 # Script configuration
-$script:Version = "2.1.2"
+$script:Version = "3.0.0"
 $script:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:ErrorFile = Join-Path $ScriptPath "LsiGitCheckout_Errors.txt"
 $script:DebugLogFile = Join-Path $ScriptPath ("debug_log_{0}.txt" -f (Get-Date -Format "yyyyMMddHHmm"))
 $script:SuccessCount = 0
 $script:FailureCount = 0
 $script:Repositories = @()
+$script:SshCredentials = @{}
 
 # Initialize error file
 if (Test-Path $script:ErrorFile) {
@@ -116,7 +106,7 @@ function Write-Log {
             Write-Host $logMessage -ForegroundColor Yellow
         }
         'Debug' {
-            if ($EnableDebugLog) {
+            if ($EnableDebug) {
                 Write-Host $logMessage -ForegroundColor Cyan
                 Add-Content -Path $script:DebugLogFile -Value $logMessage
             }
@@ -131,7 +121,7 @@ function Write-Log {
         }
     }
     
-    if ($EnableDebugLog -and $Level -ne 'Debug') {
+    if ($EnableDebug -and $Level -ne 'Debug') {
         Add-Content -Path $script:DebugLogFile -Value $logMessage
     }
 }
@@ -208,6 +198,67 @@ function Get-RepositoryUrl {
     }
 }
 
+function Get-HostnameFromUrl {
+    param(
+        [string]$Url
+    )
+    
+    Write-Log "Extracting hostname from URL: $Url" -Level Debug
+    
+    # Handle different URL formats
+    if ($Url -match '^git@([^:]+):') {
+        # git@hostname:path format
+        $hostname = $matches[1]
+        Write-Log "Matched git@ format, extracted hostname: $hostname" -Level Debug
+        return $hostname
+    }
+    elseif ($Url -match '^ssh://(?:[^@]+@)?([^:/]+)(?::\d+)?') {
+        # ssh://[user@]hostname[:port]/path format
+        $hostname = $matches[1]
+        Write-Log "Matched ssh:// format, extracted hostname: $hostname" -Level Debug
+        return $hostname
+    }
+    elseif ($Url -match '^https?://(?:[^@]+@)?([^:/]+)') {
+        # http(s)://[user@]hostname[:port]/path format
+        $hostname = $matches[1]
+        Write-Log "Matched http(s):// format, extracted hostname: $hostname" -Level Debug
+        return $hostname
+    }
+    
+    Write-Log "No matching URL format found for: $Url" -Level Debug
+    return $null
+}
+
+function Get-SshKeyForUrl {
+    param(
+        [string]$Url
+    )
+    
+    $hostname = Get-HostnameFromUrl -Url $Url
+    if (-not $hostname) {
+        Write-Log "Could not extract hostname from URL: $Url" -Level Debug
+        return $null
+    }
+    
+    Write-Log "Looking for SSH key for hostname: $hostname (from URL: $Url)" -Level Debug
+    
+    # Check exact hostname match first
+    if ($script:SshCredentials.ContainsKey($hostname)) {
+        Write-Log "Found SSH key for hostname: $hostname" -Level Debug
+        return $script:SshCredentials[$hostname]
+    }
+    
+    # Check with ssh:// prefix
+    $sshHostname = "ssh://$hostname"
+    if ($script:SshCredentials.ContainsKey($sshHostname)) {
+        Write-Log "Found SSH key for ssh://$hostname" -Level Debug
+        return $script:SshCredentials[$sshHostname]
+    }
+    
+    Write-Log "No SSH key found for hostname: $hostname" -Level Debug
+    return $null
+}
+
 function Set-GitSshKey {
     param(
         [string]$SshKeyPath,
@@ -269,8 +320,7 @@ function Set-GitSshKey {
 function Reset-GitRepository {
     param(
         [string]$RepoPath,
-        [bool]$SkipLfs = $false,
-        [PSCustomObject]$SubmoduleConfig = $null
+        [bool]$SkipLfs = $false
     )
     
     Write-Log "Resetting repository at: $RepoPath" -Level Verbose
@@ -355,9 +405,7 @@ function Invoke-GitCheckout {
     $repoUrl = $Repository.'Repository URL'
     $basePath = $Repository.'Base Path'
     $tag = $Repository.Tag
-    $sshKeyPath = $Repository.'SSH Key Path'
     $skipLfs = if ($null -eq $Repository.'Skip LFS') { $false } else { $Repository.'Skip LFS' }
-    $submoduleConfig = $Repository.'Submodule Config'
     
     Write-Log "Processing repository: $repoUrl" -Level Info
     Write-Log "Base Path: $basePath" -Level Verbose
@@ -366,10 +414,16 @@ function Invoke-GitCheckout {
         Write-Log "Skip LFS: Yes" -Level Verbose
     }
     
-    # Handle SSH key if provided
-    if ($sshKeyPath -and $repoUrl -match '^git@|^ssh://') {
-        if (-not (Set-GitSshKey -SshKeyPath $sshKeyPath -RepoUrl $repoUrl)) {
-            return $false
+    # Handle SSH key if URL is SSH
+    if ($repoUrl -match '^git@|^ssh://') {
+        $sshKeyPath = Get-SshKeyForUrl -Url $repoUrl
+        if ($sshKeyPath) {
+            Write-Log "Found SSH key for repository: $sshKeyPath" -Level Debug
+            if (-not (Set-GitSshKey -SshKeyPath $sshKeyPath -RepoUrl $repoUrl)) {
+                return $false
+            }
+        } else {
+            Write-Log "No SSH key configured for repository URL: $repoUrl" -Level Warning
         }
     }
     
@@ -390,7 +444,7 @@ function Invoke-GitCheckout {
             if ($existingUrl -eq $repoUrl) {
                 Write-Log "Repository already exists with correct URL, resetting..." -Level Info
                 $skipLfsValue = if ($null -eq $skipLfs) { $false } else { [bool]$skipLfs }
-                if (-not (Reset-GitRepository -RepoPath $basePath -SkipLfs $skipLfsValue -SubmoduleConfig $submoduleConfig)) {
+                if (-not (Reset-GitRepository -RepoPath $basePath -SkipLfs $skipLfsValue)) {
                     Show-ErrorDialog -Message "Failed to reset repository at: $basePath"
                     return $false
                 }
@@ -547,16 +601,11 @@ function Invoke-GitCheckout {
                 $submoduleUrl = $submodule.Url
                 $needsSsh = $submoduleUrl -match '^git@|^ssh://'
                 
-                if ($needsSsh -and $submoduleConfig) {
-                    # Find configuration for this submodule
-                    $config = $submoduleConfig | Where-Object { 
-                        $_.'Submodule Name' -eq $submoduleName -or 
-                        $_.'Submodule Path' -eq $submodulePath -or
-                        $_.'Submodule URL' -eq $submoduleUrl
-                    }
+                if ($needsSsh) {
+                    # Look up SSH key based on hostname
+                    $submoduleSshKey = Get-SshKeyForUrl -Url $submoduleUrl
                     
-                    if ($config -and $config.'SSH Key Path') {
-                        $submoduleSshKey = $config.'SSH Key Path'
+                    if ($submoduleSshKey) {
                         Write-Log "Updating submodule '$submoduleName' with SSH key: $submoduleSshKey" -Level Debug
                         
                         # Temporarily set SSH key for this submodule update
@@ -585,13 +634,13 @@ function Invoke-GitCheckout {
                             $output = "Failed to configure SSH authentication"
                         }
                     } else {
-                        Write-Log "No SSH key configured for SSH submodule '$submoduleName'" -Level Warning
+                        Write-Log "No SSH key configured for SSH submodule '$submoduleName' (URL: $submoduleUrl)" -Level Warning
                         $updateCmd = "git submodule update --force `"$submodulePath`""
                         Write-Log "Executing: $updateCmd" -Level Debug
                         $output = Invoke-Expression $updateCmd 2>&1
                     }
                 } else {
-                    # No SSH needed or no submodule config
+                    # No SSH needed
                     $updateCmd = "git submodule update --force `"$submodulePath`""
                     Write-Log "Executing: $updateCmd" -Level Debug
                     $output = Invoke-Expression $updateCmd 2>&1
@@ -651,6 +700,47 @@ function Invoke-GitCheckout {
     }
 }
 
+function Read-CredentialsFile {
+    param(
+        [string]$FilePath
+    )
+    
+    if (-not (Test-Path $FilePath)) {
+        Write-Log "Credentials file not found: $FilePath" -Level Debug
+        return @{}
+    }
+    
+    try {
+        Write-Log "Reading credentials file: $FilePath" -Level Info
+        $jsonContent = Get-Content -Path $FilePath -Raw
+        $credentials = $jsonContent | ConvertFrom-Json
+        
+        # Convert to hashtable for easier lookup
+        $credentialsHash = @{}
+        $credentials.PSObject.Properties | ForEach-Object {
+            $credentialsHash[$_.Name] = $_.Value
+        }
+        
+        Write-Log "Loaded SSH credentials for $($credentialsHash.Count) host(s)" -Level Info
+        
+        # Validate all SSH key files exist
+        foreach ($hostname in $credentialsHash.Keys) {
+            $keyPath = $credentialsHash[$hostname]
+            if (-not (Test-Path $keyPath)) {
+                Write-Log "Warning: SSH key file not found for $hostname : $keyPath" -Level Warning
+            } else {
+                Write-Log "Found SSH key for $hostname : $keyPath" -Level Debug
+            }
+        }
+        
+        return $credentialsHash
+    }
+    catch {
+        Write-Log "Failed to parse credentials file: $_" -Level Error
+        return @{}
+    }
+}
+
 function Show-Summary {
     $summary = @"
 ========================================
@@ -669,7 +759,7 @@ Failed: $($script:FailureCount)
         Write-Log "Errors were logged to: $script:ErrorFile" -Level Warning
     }
     
-    if ($EnableDebugLog) {
+    if ($EnableDebug) {
         Write-Log "Debug log saved to: $script:DebugLogFile" -Level Info
     }
 }
@@ -685,6 +775,10 @@ try {
         Write-Log "DRY RUN MODE - No actual changes will be made" -Level Warning
     }
     
+    if ($EnableDebug) {
+        Write-Log "Debug logging enabled" -Level Info
+    }
+    
     # Check Git installation
     if (-not (Test-GitInstalled)) {
         exit 1
@@ -695,6 +789,15 @@ try {
         $InputFile = Join-Path $script:ScriptPath "dependencies.json"
         Write-Log "Using default input file: $InputFile" -Level Verbose
     }
+    
+    # Determine credentials file path
+    if ([string]::IsNullOrEmpty($CredentialsFile)) {
+        $CredentialsFile = Join-Path $script:ScriptPath "git_credentials.json"
+        Write-Log "Using default credentials file: $CredentialsFile" -Level Verbose
+    }
+    
+    # Read SSH credentials
+    $script:SshCredentials = Read-CredentialsFile -FilePath $CredentialsFile
     
     # Check if input file exists
     if (-not (Test-Path $InputFile)) {

@@ -7,7 +7,8 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - **Batch Operations**: Clone or update multiple Git repositories from a single JSON configuration file
 - **Tag Support**: Automatically checkout specific tags for each repository
 - **PuTTY/Pageant Integration**: SSH authentication using PuTTY format keys (.ppk)
-- **Submodule Support**: Handles Git submodules with individual SSH key configuration
+- **Secure Credentials Management**: SSH keys stored separately from repository configuration
+- **Submodule Support**: Handles Git submodules with automatic SSH key lookup
 - **Git LFS Support**: Optional Git LFS content management with skip functionality
 - **Smart Reset**: Automatically resets repositories to clean state before checkout
 - **Error Handling**: Comprehensive logging and user-friendly error dialogs
@@ -26,7 +27,9 @@ A PowerShell script for managing multiple Git repositories with support for tags
 ## Installation
 
 1. Download `LsiGitCheckout.ps1` to your desired location
-2. Ensure execution policy allows running scripts:
+2. Create `dependencies.json` with your repository configuration
+3. Create `git_credentials.json` with your SSH key mappings (if using SSH)
+4. Ensure execution policy allows running scripts:
    ```powershell
    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
    ```
@@ -36,11 +39,11 @@ A PowerShell script for managing multiple Git repositories with support for tags
 ### Basic Usage
 
 ```powershell
-# Use default dependencies.json in script directory
+# Use default dependencies.json and git_credentials.json in script directory
 .\LsiGitCheckout.ps1
 
-# Specify custom JSON file
-.\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json"
+# Specify custom JSON files
+.\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
 
 # Enable debug logging
 .\LsiGitCheckout.ps1 -EnableDebugLog
@@ -54,14 +57,17 @@ A PowerShell script for managing multiple Git repositories with support for tags
 
 ### Parameters
 
-- `-InputFile`: Path to JSON configuration file (default: dependencies.json)
+- `-InputFile`: Path to repository configuration file (default: dependencies.json)
+- `-CredentialsFile`: Path to SSH credentials file (default: git_credentials.json)
 - `-DryRun`: Preview operations without making changes
 - `-EnableDebugLog`: Create detailed debug log file
 - `-Verbose`: Show verbose output messages
 
-## Configuration Format
+## Configuration Files
 
-Create a JSON file with an array of repository configurations:
+### dependencies.json
+
+Contains repository configurations without any credential information:
 
 ```json
 [
@@ -70,25 +76,40 @@ Create a JSON file with an array of repository configurations:
     "Base Path": "repos/my-repo",
     "Tag": "v1.0.0",
     "Skip LFS": false,
-    "SSH Key Path": "C:\\Users\\user\\.ssh\\key.ppk",
     "Submodule Config": [
       {
-        "Submodule Name": "submodule1",
-        "SSH Key Path": "C:\\Users\\user\\.ssh\\submodule1.ppk"
+        "Submodule Name": "submodule1"
       }
     ]
   }
 ]
 ```
 
-### Configuration Options
-
+**Configuration Options:**
 - **Repository URL** (required): Git repository URL (HTTPS or SSH)
 - **Base Path** (required): Local directory path (relative or absolute)
 - **Tag** (required): Git tag to checkout
 - **Skip LFS** (optional): Skip Git LFS downloads for this repository and all submodules
-- **SSH Key Path** (optional): Path to PuTTY format (.ppk) SSH key
-- **Submodule Config** (optional): Array of submodule-specific configurations
+- **Submodule Config** (optional): Array of submodule configurations (SSH keys looked up automatically)
+
+### git_credentials.json
+
+Maps hostnames to SSH key files:
+
+```json
+{
+  "github.com": "C:\\Users\\username\\.ssh\\github_key.ppk",
+  "gitlab.com": "C:\\Users\\username\\.ssh\\gitlab_key.ppk",
+  "bitbucket.org": "C:\\Users\\username\\.ssh\\bitbucket_key.ppk",
+  "ssh://git.internal.corp": "C:\\keys\\internal_key.ppk"
+}
+```
+
+**Notes:**
+- Keys are hostname-based (extracted from repository URLs)
+- Supports hostnames with or without `ssh://` prefix
+- All SSH keys must be in PuTTY format (.ppk)
+- This file should NOT be committed to version control
 
 ## Examples
 
@@ -108,35 +129,38 @@ Create `dependencies.json`:
     "Base Path": "repos/powershell",
     "Tag": "v7.4.1",
     "Skip LFS": true
-  },
-  {
-    "Repository URL": "https://github.com/git-for-windows/git.git",
-    "Base Path": "repos/git-for-windows",
-    "Tag": "v2.43.0.windows.1"
   }
 ]
 ```
 
-Then run:
+No credentials file needed for public repositories. Run:
 ```powershell
 .\LsiGitCheckout.ps1
 ```
 
 ### Example 2: Private Repository with SSH
 
+Create `dependencies.json`:
 ```json
 [
   {
     "Repository URL": "git@github.com:mycompany/private-repo.git",
     "Base Path": "C:\\Projects\\private-repo",
-    "Tag": "release-2024.1",
-    "SSH Key Path": "C:\\Users\\john\\.ssh\\github_key.ppk"
+    "Tag": "release-2024.1"
   }
 ]
 ```
 
-### Example 3: Repository with Submodules
+Create `git_credentials.json`:
+```json
+{
+  "github.com": "C:\\Users\\john\\.ssh\\github_company.ppk"
+}
+```
 
+### Example 3: Repository with SSH Submodules
+
+Create `dependencies.json`:
 ```json
 [
   {
@@ -145,17 +169,41 @@ Then run:
     "Tag": "v2.0.0",
     "Submodule Config": [
       {
-        "Submodule Name": "auth-module",
-        "SSH Key Path": "C:\\keys\\auth_deploy.ppk"
+        "Submodule Name": "auth-module"
       },
       {
-        "Submodule Path": "libs/common",
-        "SSH Key Path": "C:\\keys\\common_deploy.ppk"
+        "Submodule Path": "libs/common"
       }
     ]
   }
 ]
 ```
+
+Create `git_credentials.json`:
+```json
+{
+  "github.com": "C:\\keys\\github_deploy.ppk",
+  "gitlab.com": "C:\\keys\\gitlab_deploy.ppk",
+  "internal.company.com": "C:\\keys\\internal_deploy.ppk"
+}
+```
+
+The script will automatically use the appropriate SSH key based on each submodule's URL hostname.
+
+## Security Best Practices
+
+1. **Never commit `git_credentials.json` to version control**
+   - Add it to your `.gitignore` file
+   - Use `git_credentials.example.json` as a template
+
+2. **Protect your SSH key files**
+   - Store keys in a secure location
+   - Use appropriate file permissions
+   - Use passphrases on your keys
+
+3. **Use separate keys for different services**
+   - Don't reuse the same SSH key across multiple services
+   - Use deployment-specific keys with limited permissions
 
 ## SSH Setup with PuTTY
 
@@ -177,17 +225,15 @@ Then run:
 
 ## Workflow
 
-1. **Parse Configuration**: Reads JSON file and validates entries
-2. **Check Existing**: For each repository:
-   - If exists with correct URL → Reset to clean state
-   - If exists with different URL → Prompt user
-   - If doesn't exist → Create directory
-3. **Clone/Update**: 
-   - Clone new repositories or fetch updates
-   - Skip LFS if configured
-4. **Checkout Tag**: Switch to specified tag
-5. **Handle Submodules**: Initialize and update with individual SSH keys
-6. **Git LFS**: Pull LFS content unless skipped
+1. **Load Credentials**: Reads SSH key mappings from git_credentials.json
+2. **Parse Configuration**: Reads repository list from dependencies.json
+3. **For Each Repository**:
+   - Extract hostname from URL
+   - Look up SSH key if needed
+   - Clone or update repository
+   - Checkout specified tag
+   - Handle submodules with automatic SSH key lookup
+   - Process Git LFS if not skipped
 
 ## Output
 
@@ -206,9 +252,9 @@ Then run:
 2. **"SSH key is not in PuTTY format"**
    - Use PuTTYgen to convert OpenSSH keys to .ppk format
 
-3. **"Pageant not running"**
-   - Start Pageant before running script
-   - Add your SSH keys to Pageant
+3. **"No SSH key configured for repository"**
+   - Check that hostname is correctly specified in git_credentials.json
+   - Verify the hostname matches the repository URL
 
 4. **Git LFS errors**
    - Install Git LFS: `git lfs install`
@@ -222,7 +268,44 @@ Enable detailed logging to troubleshoot issues:
 .\LsiGitCheckout.ps1 -EnableDebugLog -Verbose
 ```
 
-Check the generated debug log file for detailed execution information.
+Check the generated debug log file for:
+- Hostname extraction from URLs
+- SSH key lookup attempts
+- Detailed Git command execution
+
+## Migration from Version 2.x
+
+If upgrading from version 2.x:
+
+1. Create `git_credentials.json` with your SSH key mappings
+2. Remove all "SSH Key Path" fields from dependencies.json
+3. The script will now look up SSH keys based on repository hostnames
+
+Example migration:
+
+**Old (v2.x) dependencies.json:**
+```json
+{
+  "Repository URL": "git@github.com:mycompany/repo.git",
+  "SSH Key Path": "C:\\keys\\github.ppk",
+  ...
+}
+```
+
+**New (v3.x) dependencies.json:**
+```json
+{
+  "Repository URL": "git@github.com:mycompany/repo.git",
+  ...
+}
+```
+
+**New git_credentials.json:**
+```json
+{
+  "github.com": "C:\\keys\\github.ppk"
+}
+```
 
 ## License
 

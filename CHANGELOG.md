@@ -5,6 +5,27 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2025-01-14
+
+### Changed
+- **BREAKING**: Moved SSH key configuration from dependencies.json to separate git_credentials.json file
+- SSH keys are now mapped by hostname instead of per-repository
+- Improved security by separating credentials from repository configuration
+
+### Added
+- New `-CredentialsFile` parameter to specify custom SSH credentials file
+- Automatic hostname extraction from repository URLs
+- Support for hostnames with and without `ssh://` prefix in credentials file
+
+### Removed
+- "SSH Key Path" field from Repository configuration in dependencies.json
+- "SSH Key Path" field from Submodule Config in dependencies.json
+
+### Migration Guide
+1. Create a new `git_credentials.json` file with hostname-to-key mappings
+2. Remove all "SSH Key Path" fields from your dependencies.json
+3. The script will automatically look up SSH keys based on repository hostnames
+
 ## [2.1.2] - 2025-01-10
 
 ### Removed
