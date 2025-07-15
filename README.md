@@ -1,6 +1,21 @@
 # LsiGitCheckout
 
-A PowerShell script for managing multiple Git repositories with support for tags, SSH authentication via PuTTY, Git LFS, and submodules.
+A PowerShell script for managing multiple Git repositories with support for tags, SSH authentication via PuTTY, Git LFS, and submodules. Features advanced recursive dependency resolution with API compatibility checking.
+
+## Table of Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Basic Usage (Non-Recursive)](#basic-usage-non-recursive)
+- [Advanced Usage (Recursive Mode)](#advanced-usage-recursive-mode)
+- [Security Best Practices](#security-best-practices)
+- [SSH Setup with PuTTY](#ssh-setup-with-putty)
+- [Troubleshooting](#troubleshooting)
+- [Migration Guide](#migration-guide)
+- [LsiGitCheckout vs Traditional Package Managers](#lsigitcheckout-vs-traditional-package-managers)
+- [License](#license)
+- [Contributing](#contributing)
 
 ## Features
 
@@ -13,6 +28,7 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - **Smart Reset**: Automatically resets repositories to clean state before checkout
 - **Error Handling**: Comprehensive logging and user-friendly error dialogs
 - **Dry Run Mode**: Preview operations without making changes
+- **Recursive Dependencies**: Discover and process nested repository dependencies with API compatibility checking
 
 ## Requirements
 
@@ -34,9 +50,13 @@ A PowerShell script for managing multiple Git repositories with support for tags
    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
    ```
 
-## Usage
+## Basic Usage (Non-Recursive)
 
-### Basic Usage
+### Overview
+
+In non-recursive mode, the script processes only the repositories listed in your main dependencies file. It does not look for or process any nested dependencies.
+
+### Command Line Usage
 
 ```powershell
 # Use default dependencies.json and git_credentials.json in script directory
@@ -46,7 +66,7 @@ A PowerShell script for managing multiple Git repositories with support for tags
 .\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
 
 # Enable debug logging
-.\LsiGitCheckout.ps1 -EnableDebugLog
+.\LsiGitCheckout.ps1 -EnableDebug
 
 # Dry run mode (preview without changes)
 .\LsiGitCheckout.ps1 -DryRun
@@ -60,12 +80,12 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - `-InputFile`: Path to repository configuration file (default: dependencies.json)
 - `-CredentialsFile`: Path to SSH credentials file (default: git_credentials.json)
 - `-DryRun`: Preview operations without making changes
-- `-EnableDebugLog`: Create detailed debug log file
+- `-EnableDebug`: Create detailed debug log file
 - `-Verbose`: Show verbose output messages
 
-## Configuration Files
+### Configuration Files
 
-### dependencies.json
+#### dependencies.json
 
 Contains repository configurations without any credential information:
 
@@ -75,12 +95,7 @@ Contains repository configurations without any credential information:
     "Repository URL": "https://github.com/user/repo.git",
     "Base Path": "repos/my-repo",
     "Tag": "v1.0.0",
-    "Skip LFS": false,
-    "Submodule Config": [
-      {
-        "Submodule Name": "submodule1"
-      }
-    ]
+    "Skip LFS": false
   }
 ]
 ```
@@ -90,9 +105,8 @@ Contains repository configurations without any credential information:
 - **Base Path** (required): Local directory path (relative or absolute)
 - **Tag** (required): Git tag to checkout
 - **Skip LFS** (optional): Skip Git LFS downloads for this repository and all submodules
-- **Submodule Config** (optional): Array of submodule configurations (SSH keys looked up automatically)
 
-### git_credentials.json
+#### git_credentials.json
 
 Maps hostnames to SSH key files:
 
@@ -105,17 +119,9 @@ Maps hostnames to SSH key files:
 }
 ```
 
-**Notes:**
-- Keys are hostname-based (extracted from repository URLs)
-- Supports hostnames with or without `ssh://` prefix
-- All SSH keys must be in PuTTY format (.ppk)
-- This file should NOT be committed to version control
+### Examples
 
-## Examples
-
-### Example 1: Public Repositories
-
-Create `dependencies.json`:
+#### Example 1: Public Repositories
 
 ```json
 [
@@ -133,14 +139,9 @@ Create `dependencies.json`:
 ]
 ```
 
-No credentials file needed for public repositories. Run:
-```powershell
-.\LsiGitCheckout.ps1
-```
+#### Example 2: Private Repository with SSH
 
-### Example 2: Private Repository with SSH
-
-Create `dependencies.json`:
+dependencies.json:
 ```json
 [
   {
@@ -151,44 +152,200 @@ Create `dependencies.json`:
 ]
 ```
 
-Create `git_credentials.json`:
+git_credentials.json:
 ```json
 {
   "github.com": "C:\\Users\\john\\.ssh\\github_company.ppk"
 }
 ```
 
-### Example 3: Repository with SSH Submodules
+## Advanced Usage (Recursive Mode)
 
-Create `dependencies.json`:
+### Overview
+
+Recursive mode enables the script to discover and process nested dependencies. After checking out each repository, it looks for a dependencies.json file within that repository and processes it recursively, with intelligent handling of shared dependencies.
+
+### Enabling Recursive Mode
+
+```powershell
+# Basic recursive processing
+.\LsiGitCheckout.ps1 -Recursive
+
+# With custom max depth (default is 5)
+.\LsiGitCheckout.ps1 -Recursive -MaxDepth 10
+
+# With debug logging to see the detailed process
+.\LsiGitCheckout.ps1 -Recursive -EnableDebug
+```
+
+### API Compatible Tags - Critical Concept
+
+The **"API Compatible Tags"** field is fundamental to recursive dependency resolution. It implements a temporal ordering convention that ensures the most recent compatible version is always selected when multiple projects depend on the same repository.
+
+#### Tag Ordering Convention
+
+1. **"API Compatible Tags"**: Listed from **oldest to newest** (left to right)
+2. **"Tag"**: The **most recent** tag for the current API version
+3. **Combined**: Together they form a temporally ordered list of all compatible versions
+
+#### Version Management Rules
+
+When updating dependencies:
+
+1. **Adding a new compatible version** (e.g., v1.0.3 → v1.0.4):
+   - Move the old "Tag" (v1.0.3) to the END of "API Compatible Tags"
+   - Set "Tag" to the new version (v1.0.4)
+   
+   Before:
+   ```json
+   {
+     "Tag": "v1.0.3",
+     "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
+   }
+   ```
+   
+   After:
+   ```json
+   {
+     "Tag": "v1.0.4",
+     "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2", "v1.0.3"]
+   }
+   ```
+
+2. **Bumping to an incompatible version** (e.g., v1.0.3 → v2.0.0):
+   - Empty "API Compatible Tags" (if no v2.x versions are compatible with v1.x)
+   - Set "Tag" to the new version
+   
+   Before:
+   ```json
+   {
+     "Tag": "v1.0.3",
+     "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
+   }
+   ```
+   
+   After:
+   ```json
+   {
+     "Tag": "v2.0.0",
+     "API Compatible Tags": []
+   }
+   ```
+
+#### Why This Convention Matters
+
+When multiple projects depend on the same repository with different version requirements, the script:
+1. Calculates the intersection of all compatible versions
+2. Selects the **most recent** version from that intersection
+3. Automatically checks out that version if different from the current one
+
+This ensures all dependent projects get the newest version that satisfies everyone's requirements.
+
+### Real-World Example with Test Repositories
+
+Using the LS-Instruments test repositories to demonstrate recursive dependencies:
+
+#### Initial Setup
+
+Main dependencies.json:
 ```json
 [
   {
-    "Repository URL": "https://github.com/myorg/main-project.git",
-    "Base Path": "repos/main-project",
-    "Tag": "v2.0.0",
-    "Submodule Config": [
-      {
-        "Submodule Name": "auth-module"
-      },
-      {
-        "Submodule Path": "libs/common"
-      }
-    ]
+    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestRootA.git",
+    "Base Path": "test-root-a",
+    "Tag": "v1.0.0"
+  },
+  {
+    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestRootB.git",
+    "Base Path": "test-root-b",
+    "Tag": "v1.0.0"
   }
 ]
 ```
 
-Create `git_credentials.json`:
+#### Nested Dependencies
+
+LsiCheckOutTestRootA/dependencies.json:
 ```json
-{
-  "github.com": "C:\\keys\\github_deploy.ppk",
-  "gitlab.com": "C:\\keys\\gitlab_deploy.ppk",
-  "internal.company.com": "C:\\keys\\internal_deploy.ppk"
-}
+[
+  {
+    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestA.git",
+    "Base Path": "../libs/test-a",
+    "Tag": "v1.0.3",
+    "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
+  },
+  {
+    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestB.git",
+    "Base Path": "../libs/test-b",
+    "Tag": "v1.0.3",
+    "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
+  }
+]
 ```
 
-The script will automatically use the appropriate SSH key based on each submodule's URL hostname.
+LsiCheckOutTestA/dependencies.json:
+```json
+[
+  {
+    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestB.git",
+    "Base Path": "../test-b",
+    "Tag": "v1.0.3",
+    "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
+  },
+  {
+    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestC.git",
+    "Base Path": "../test-c",
+    "Tag": "v1.0.3",
+    "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
+  }
+]
+```
+
+#### Processing Flow
+
+1. **Round 1**: Clones RootA and RootB
+2. **Round 2**: 
+   - Processes RootA's dependencies → clones TestA and TestB
+   - Processes RootB's dependencies → clones TestC
+3. **Round 3**: 
+   - Processes TestA's dependencies
+   - Finds TestB already exists at same path with compatible API ✓
+   - Finds TestC and clones it
+4. **Round 4**: 
+   - Processes TestB's dependencies
+   - Finds TestC already exists at same path with compatible API ✓
+
+### API Compatibility Checking
+
+When the same repository is referenced multiple times:
+
+1. **Path Check**: Ensures all references resolve to the same absolute path
+2. **API Compatibility**: Calculates intersection of all compatible versions
+3. **Version Selection**: Uses the most recent version from the intersection
+
+#### Example: Version Conflict Resolution
+
+If TestA requires TestC compatible with [v1.0.0, v1.0.1, v1.0.2, v1.0.3] but TestB requires TestC compatible with [v1.0.2, v1.0.3, v1.0.4]:
+
+- Intersection: [v1.0.2, v1.0.3]
+- Selected: v1.0.3 (most recent in intersection)
+
+### Error Scenarios
+
+#### Path Conflict
+```
+Repository path conflict for 'https://github.com/LS-Instruments/LsiCheckOutTestC.git':
+Existing path: C:\project\libs\test-c
+New path: C:\project\modules\test-c
+```
+
+#### API Incompatibility
+```
+API incompatibility for repository 'https://github.com/LS-Instruments/LsiCheckOutTestC.git':
+Existing tags: v2.0.0
+New tags: v1.0.0, v1.0.1, v1.0.2, v1.0.3
+No common API-compatible tags found.
+```
 
 ## Security Best Practices
 
@@ -223,24 +380,6 @@ The script will automatically use the appropriate SSH key based on each submodul
    plink -i "C:\path\to\key.ppk" git@github.com
    ```
 
-## Workflow
-
-1. **Load Credentials**: Reads SSH key mappings from git_credentials.json
-2. **Parse Configuration**: Reads repository list from dependencies.json
-3. **For Each Repository**:
-   - Extract hostname from URL
-   - Look up SSH key if needed
-   - Clone or update repository
-   - Checkout specified tag
-   - Handle submodules with automatic SSH key lookup
-   - Process Git LFS if not skipped
-
-## Output
-
-- **Console Output**: Color-coded status messages
-- **Error Log**: `LsiGitCheckout_Errors.txt` in script directory
-- **Debug Log**: Timestamped log file when using `-EnableDebugLog`
-
 ## Troubleshooting
 
 ### Common Issues
@@ -260,52 +399,142 @@ The script will automatically use the appropriate SSH key based on each submodul
    - Install Git LFS: `git lfs install`
    - Or set `"Skip LFS": true` in configuration
 
+5. **API Incompatibility errors in recursive mode**
+   - Review the "API Compatible Tags" for conflicting repositories
+   - Ensure temporal ordering is correct (oldest to newest)
+   - Consider if versions truly are API compatible
+
 ### Debug Mode
 
 Enable detailed logging to troubleshoot issues:
 
 ```powershell
-.\LsiGitCheckout.ps1 -EnableDebugLog -Verbose
+.\LsiGitCheckout.ps1 -EnableDebug -Verbose
 ```
 
 Check the generated debug log file for:
+- JSON content of all processed dependency files
 - Hostname extraction from URLs
 - SSH key lookup attempts
+- API compatibility calculations
 - Detailed Git command execution
 
-## Migration from Version 2.x
+## Migration Guide
 
-If upgrading from version 2.x:
+### From Version 3.x to 4.x
+
+Version 4.0 adds recursive dependency support. Existing configurations continue to work:
+
+1. **Non-breaking changes**: All v3.x configurations work in v4.x
+2. **New optional field**: "API Compatible Tags" for recursive mode
+3. **New parameters**: `-Recursive` and `-MaxDepth`
+
+To use recursive features:
+1. Add "API Compatible Tags" to your repository configurations
+2. Ensure proper temporal ordering (oldest to newest)
+3. Place dependencies.json files in your repositories
+4. Run with `-Recursive` flag
+
+### From Version 2.x to 3.x/4.x
 
 1. Create `git_credentials.json` with your SSH key mappings
 2. Remove all "SSH Key Path" fields from dependencies.json
-3. The script will now look up SSH keys based on repository hostnames
+3. Remove all "Submodule Config" sections
+4. Update any scripts to use `-EnableDebug` instead of `-Debug`
 
-Example migration:
+## LsiGitCheckout vs Traditional Package Managers
 
-**Old (v2.x) dependencies.json:**
-```json
-{
-  "Repository URL": "git@github.com:mycompany/repo.git",
-  "SSH Key Path": "C:\\keys\\github.ppk",
-  ...
-}
-```
+### Understanding the Fundamental Difference
 
-**New (v3.x) dependencies.json:**
-```json
-{
-  "Repository URL": "git@github.com:mycompany/repo.git",
-  ...
-}
-```
+Traditional package managers (npm, NuGet, Maven, pip) work with **packaged artifacts** - pre-built, versioned bundles of code that are published to registries. LsiGitCheckout takes a radically different approach by working directly with **source repositories** at specific git tags.
 
-**New git_credentials.json:**
-```json
-{
-  "github.com": "C:\\keys\\github.ppk"
-}
-```
+This fundamental difference leads to distinct advantages and trade-offs that make each approach suitable for different scenarios.
+
+### When to Use Each Approach
+
+#### Use Traditional Package Managers When:
+- Managing standard third-party library dependencies
+- Working with well-maintained public packages
+- Needing automatic transitive dependency resolution
+- Prioritizing minimal configuration overhead
+- Following established ecosystem conventions
+- Building simple applications with straightforward dependencies
+
+#### Use LsiGitCheckout When:
+- Managing source-level dependencies across teams
+- Working with private repositories or mixed public/private code
+- Requiring precise control over versions and compatibility
+- Frequently debugging or modifying dependencies
+- Building reproducible research or compliance-critical systems
+- Orchestrating complex multi-repository projects
+- Needing immediate patches without waiting for upstream releases
+
+### Key Advantages of LsiGitCheckout
+
+1. **Source-Level Transparency**: Complete visibility into all dependency code
+2. **Debugging Power**: Step through dependency code, set breakpoints anywhere
+3. **Immediate Patches**: Modify dependencies locally for quick fixes
+4. **No Publication Required**: Use code directly from git repositories
+5. **Mixed Repository Support**: Seamlessly handle public and private code
+6. **Virtual Monorepo**: Work as if in a monorepo while maintaining separate repos
+7. **Temporal Versioning**: Explicit control over version selection with API compatibility
+8. **Complete Audit Trail**: Full git history for security reviews
+
+### Key Advantages of Traditional Package Managers
+
+1. **Ease of Use**: Simple commands like `npm install` handle everything
+2. **Automatic Dependency Resolution**: Transitive dependencies resolved automatically
+3. **Optimized Storage**: Shared packages stored once and reused
+4. **Fast Installation**: Downloading pre-built packages is quick
+5. **Mature Ecosystem**: Extensive tooling, security scanning, license checking
+6. **Registry Features**: Search, statistics, vulnerability databases
+
+### Target Users and Organizations
+
+#### Primary Target Users for LsiGitCheckout:
+
+1. **Enterprise Development Teams**
+   - Managing proprietary code alongside open-source
+   - Requiring strict security and compliance controls
+   - Complex interdependencies between internal projects
+
+2. **Research Organizations**
+   - Ensuring long-term reproducibility
+   - Archiving exact states of all dependencies
+   - Frequently modifying dependency code
+
+3. **Regulated Industries (Financial, Healthcare)**
+   - Regulatory requirements for source code access
+   - Complete audit trails needed
+   - Cannot rely solely on external registries
+
+4. **DevOps and Platform Teams**
+   - Building deployment pipelines for multi-repository projects
+   - Applying organization-specific patches
+   - Managing architectural transitions
+
+### Hybrid Approach: Best of Both Worlds
+
+Many successful projects combine both approaches:
+- Use npm/NuGet for stable, third-party libraries
+- Use LsiGitCheckout for internal dependencies and actively developed components
+- Maintain clear boundaries between packaged and source dependencies
+
+This leverages the convenience of package managers for commodity dependencies while maintaining control over critical internal code.
+
+### Example Scenarios
+
+**Perfect for Package Managers:**
+- Building a React web app with standard npm packages
+- Creating a .NET application using common NuGet libraries
+- Developing a Python project with well-known pip packages
+
+**Perfect for LsiGitCheckout:**
+- Financial trading system with proprietary components
+- Medical device software requiring FDA compliance
+- Large enterprise with shared internal libraries
+- Research requiring reproducible computational environments
+- Gradual open-sourcing of internal components
 
 ## License
 

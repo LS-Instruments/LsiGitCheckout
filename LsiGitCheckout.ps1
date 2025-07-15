@@ -8,6 +8,8 @@
     initializes submodules, and provides comprehensive error handling and logging.
     
     SSH credentials are managed through a separate git_credentials.json file.
+    
+    With the -Recursive option, it can discover and process nested dependencies.
 .PARAMETER InputFile
     Path to the JSON configuration file. Defaults to 'dependencies.json' in the script directory.
 .PARAMETER CredentialsFile
@@ -18,23 +20,37 @@
     Enables debug logging to a timestamped log file.
 .PARAMETER Verbose
     Increases verbosity of output messages.
+.PARAMETER Recursive
+    Enables recursive dependency discovery and processing.
+.PARAMETER MaxDepth
+    Maximum recursion depth for dependency discovery. Defaults to 5.
 .EXAMPLE
     .\LsiGitCheckout.ps1
     .\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
-    .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug
+    .\LsiGitCheckout.ps1 -Recursive -MaxDepth 10
+    .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug -Recursive
 .NOTES
-    Version: 3.0.0
-    Last Modified: 2025-01-14
+    Version: 4.0.2
+    Last Modified: 2025-01-15
     
     This script uses PuTTY/plink for SSH authentication. SSH keys must be in PuTTY format (.ppk).
     Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.
     
-    Changes in 3.0.0:
-    - BREAKING CHANGE: Moved SSH key configuration from dependencies.json to separate credentials file
-    - Added -CredentialsFile parameter for specifying SSH credentials file
-    - SSH keys are now mapped by hostname instead of per-repository
-    - Improved security by separating credentials from repository configuration
-    - Removed "Submodule Config" as it's no longer needed (submodules are auto-discovered)
+    Changes in 4.0.2:
+    - Fixed git checkout error capture to properly display stderr messages
+    - Improved error reporting for missing tags
+    
+    Changes in 4.0.1:
+    - Fixed error handling for missing tags with detailed error messages
+    - Added cleanup of failed clones to prevent undefined repository states
+    - Added CheckoutFailed tracking to skip dependency processing for failed repos
+    - Improved error message capture and display
+    
+    Changes in 4.0.0:
+    - Added -Recursive option for nested dependency discovery
+    - Added "API Compatible Tags" field support
+    - Implemented API compatibility checking for duplicate repositories
+    - Added -MaxDepth parameter to control recursion depth
     
     Dependencies JSON Format:
     [
@@ -42,6 +58,7 @@
         "Repository URL": "https://github.com/user/repo.git",
         "Base Path": "C:\\Projects\\repo",
         "Tag": "v1.0.0",
+        "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.1.0"],
         "Skip LFS": false
       }
     ]
@@ -52,9 +69,6 @@
       "gitlab.com": "C:\\Users\\user\\.ssh\\gitlab_key.ppk",
       "ssh://git.company.com": "C:\\Users\\user\\.ssh\\company_key.ppk"
     }
-    
-    Note: The "SSH Key Path" field in Repository and Submodule Config has been removed.
-    SSH keys are now determined by the hostname in the repository URL.
 #>
 
 [CmdletBinding()]
@@ -69,11 +83,17 @@ param(
     [switch]$DryRun,
     
     [Parameter()]
-    [switch]$EnableDebug
+    [switch]$EnableDebug,
+    
+    [Parameter()]
+    [switch]$Recursive,
+    
+    [Parameter()]
+    [int]$MaxDepth = 5
 )
 
 # Script configuration
-$script:Version = "3.0.0"
+$script:Version = "4.0.2"
 $script:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:ErrorFile = Join-Path $ScriptPath "LsiGitCheckout_Errors.txt"
 $script:DebugLogFile = Join-Path $ScriptPath ("debug_log_{0}.txt" -f (Get-Date -Format "yyyyMMddHHmm"))
@@ -81,6 +101,9 @@ $script:SuccessCount = 0
 $script:FailureCount = 0
 $script:Repositories = @()
 $script:SshCredentials = @{}
+$script:RepositoryDictionary = @{}
+$script:CurrentDepth = 0
+$script:ProcessedDependencyFiles = @()
 
 # Initialize error file
 if (Test-Path $script:ErrorFile) {
@@ -397,15 +420,269 @@ function Reset-GitRepository {
     }
 }
 
+function Get-AbsoluteBasePath {
+    param(
+        [string]$BasePath,
+        [string]$DependencyFilePath
+    )
+    
+    if ([System.IO.Path]::IsPathRooted($BasePath)) {
+        # Normalize the path to remove any ".." or "." segments
+        return [System.IO.Path]::GetFullPath($BasePath)
+    }
+    
+    $dependencyDir = Split-Path -Parent (Resolve-Path $DependencyFilePath)
+    $combinedPath = Join-Path $dependencyDir $BasePath
+    # Normalize the combined path to resolve ".." segments
+    return [System.IO.Path]::GetFullPath($combinedPath)
+}
+
+function Get-TagIntersection {
+    param(
+        [array]$Tags1,
+        [array]$Tags2
+    )
+    
+    # Use hashtable for intersection since HashSet constructor has issues in some PowerShell versions
+    $set1 = @{}
+    foreach ($tag in $Tags1) {
+        $set1[$tag] = $true
+    }
+    
+    $intersection = @()
+    foreach ($tag in $Tags2) {
+        if ($set1.ContainsKey($tag)) {
+            $intersection += $tag
+        }
+    }
+    
+    return $intersection
+}
+
+function Update-RepositoryDictionary {
+    param(
+        [PSCustomObject]$Repository,
+        [string]$DependencyFilePath
+    )
+    
+    $repoUrl = $Repository.'Repository URL'
+    $basePath = $Repository.'Base Path'
+    $tag = $Repository.Tag
+    $apiCompatibleTags = $Repository.'API Compatible Tags'
+    
+    # Calculate absolute base path
+    $absoluteBasePath = Get-AbsoluteBasePath -BasePath $basePath -DependencyFilePath $DependencyFilePath
+    
+    if ($script:RepositoryDictionary.ContainsKey($repoUrl)) {
+        # Repository already exists, check compatibility
+        $existingRepo = $script:RepositoryDictionary[$repoUrl]
+        $existingAbsolutePath = $existingRepo.AbsolutePath
+        
+        # Check if paths match
+        if ($existingAbsolutePath -ne $absoluteBasePath) {
+            $errorMessage = "Repository path conflict for '$repoUrl':`nExisting path: $existingAbsolutePath`nNew path: $absoluteBasePath"
+            Write-Log $errorMessage -Level Error
+            Show-ErrorDialog -Message $errorMessage
+            throw $errorMessage
+        }
+        
+        # Create ordered tag lists (API Compatible Tags + Tag at the end)
+        # For existing repository
+        $existingOrderedTags = @()
+        if ($existingRepo.ApiCompatibleTags) {
+            $existingOrderedTags += $existingRepo.ApiCompatibleTags
+        }
+        $existingOrderedTags += $existingRepo.Tag
+        
+        # For new repository
+        $newOrderedTags = @()
+        if ($apiCompatibleTags) {
+            $newOrderedTags += $apiCompatibleTags
+        }
+        $newOrderedTags += $tag
+        
+        Write-Log "Existing tags (ordered): $($existingOrderedTags -join ', ')" -Level Debug
+        Write-Log "New tags (ordered): $($newOrderedTags -join ', ')" -Level Debug
+        
+        # Calculate intersection (unsorted)
+        $intersection = @()
+        foreach ($tag in $existingOrderedTags) {
+            if ($tag -in $newOrderedTags) {
+                $intersection += $tag
+            }
+        }
+        
+        if ($intersection.Count -eq 0) {
+            $errorMessage = "API incompatibility for repository '$repoUrl':`nExisting tags: $($existingOrderedTags -join ', ')`nNew tags: $($newOrderedTags -join ', ')`nNo common API-compatible tags found."
+            Write-Log $errorMessage -Level Error
+            Show-ErrorDialog -Message $errorMessage
+            throw $errorMessage
+        }
+        
+        Write-Log "API compatibility check passed for '$repoUrl'. Intersection: $($intersection -join ', ')" -Level Debug
+        
+        # Apply new tag selection rules
+        $oldTag = $existingRepo.Tag
+        $newTag = $oldTag
+        $newApiCompatibleTags = @()
+        $needCheckout = $false
+        
+        if ($existingRepo.Tag -in $intersection) {
+            # Existing tag is in intersection, remove it and use the rest as API compatible tags
+            $newApiCompatibleTags = @($intersection | Where-Object { $_ -ne $existingRepo.Tag })
+            Write-Log "Keeping existing tag '$oldTag' for repository '$repoUrl'" -Level Debug
+        } else {
+            # Existing tag not in intersection
+            # Find the rightmost (most recent) tag from the intersection
+            # by checking which appears last in the ordered lists
+            $mostRecentTag = $null
+            $mostRecentIndex = -1
+            
+            foreach ($intersectionTag in $intersection) {
+                # Check position in existing ordered tags
+                $existingIndex = [array]::IndexOf($existingOrderedTags, $intersectionTag)
+                # Check position in new ordered tags
+                $newIndex = [array]::IndexOf($newOrderedTags, $intersectionTag)
+                # Take the minimum to ensure it's valid in both
+                $effectiveIndex = [Math]::Min($existingIndex, $newIndex)
+                
+                if ($effectiveIndex -gt $mostRecentIndex) {
+                    $mostRecentIndex = $effectiveIndex
+                    $mostRecentTag = $intersectionTag
+                }
+            }
+            
+            if ($mostRecentTag) {
+                $newTag = $mostRecentTag
+                $newApiCompatibleTags = @($intersection | Where-Object { $_ -ne $mostRecentTag })
+                $needCheckout = $true
+                Write-Log "Updating tag from '$oldTag' to '$newTag' for repository '$repoUrl' (most recent common tag)" -Level Info
+            }
+        }
+        
+        # Update dictionary
+        $script:RepositoryDictionary[$repoUrl] = @{
+            AbsolutePath = $existingAbsolutePath
+            Tag = $newTag
+            ApiCompatibleTags = $newApiCompatibleTags
+            AlreadyCheckedOut = $true
+            NeedCheckout = $needCheckout
+            CheckoutFailed = $false
+        }
+        
+        Write-Log "Updated repository '$repoUrl' - Tag: $newTag, API Compatible Tags: $($newApiCompatibleTags -join ', ')" -Level Debug
+        
+        # Return special value to indicate need for checkout
+        if ($needCheckout) {
+            return "NeedCheckout"
+        } else {
+            return $true  # Repository already checked out with correct tag
+        }
+    } else {
+        # New repository, add to dictionary
+        $script:RepositoryDictionary[$repoUrl] = @{
+            AbsolutePath = $absoluteBasePath
+            Tag = $tag
+            ApiCompatibleTags = $apiCompatibleTags
+            AlreadyCheckedOut = $false
+            NeedCheckout = $false
+            CheckoutFailed = $false
+        }
+        
+        Write-Log "Added new repository to dictionary: '$repoUrl'" -Level Debug
+        
+        return $false  # Repository needs to be checked out
+    }
+}
+
 function Invoke-GitCheckout {
     param(
-        [PSCustomObject]$Repository
+        [PSCustomObject]$Repository,
+        [string]$DependencyFilePath
     )
     
     $repoUrl = $Repository.'Repository URL'
     $basePath = $Repository.'Base Path'
     $tag = $Repository.Tag
     $skipLfs = if ($null -eq $Repository.'Skip LFS') { $false } else { $Repository.'Skip LFS' }
+    $wasNewClone = $false
+    
+    # Check if we should skip this repository (already checked out with compatible API)
+    if ($Recursive) {
+        $checkoutResult = Update-RepositoryDictionary -Repository $Repository -DependencyFilePath $DependencyFilePath
+        if ($checkoutResult -eq $true) {
+            Write-Log "Skipping repository '$repoUrl' - already checked out with compatible API" -Level Info
+            return $true
+        }
+        elseif ($checkoutResult -eq "NeedCheckout") {
+            # Repository exists but needs to be checked out to a different tag
+            $repoInfo = $script:RepositoryDictionary[$repoUrl]
+            $newTag = $repoInfo.Tag
+            $absoluteBasePath = $repoInfo.AbsolutePath
+            
+            Write-Log "Repository '$repoUrl' already exists but needs checkout to tag: $newTag" -Level Info
+            
+            try {
+                Push-Location $absoluteBasePath
+                
+                # Fetch latest tags
+                $fetchCmd = "git fetch --all --tags"
+                Write-Log "Executing: $fetchCmd" -Level Debug
+                if (-not $DryRun) {
+                    $output = Invoke-Expression $fetchCmd 2>&1
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Fetch failed: $output"
+                    }
+                }
+                
+                # Checkout the new tag
+                Write-Log "Checking out updated tag: $newTag" -Level Info
+                $checkoutCmd = "git checkout $newTag"
+                Write-Log "Executing: $checkoutCmd" -Level Debug
+                if (-not $DryRun) {
+                    # Use & operator to properly capture stderr
+                    $gitOutput = & git checkout $newTag 2>&1
+                    
+                    if ($LASTEXITCODE -ne 0) {
+                        # Combine all output for error details
+                        $errorDetails = ($gitOutput | Out-String).Trim()
+                        
+                        # Check for common git error patterns
+                        if ($errorDetails -match "pathspec '(.+)' did not match" -or 
+                            $errorDetails -match "error: pathspec '(.+)' did not match any file\(s\) known to git") {
+                            throw "Tag '$newTag' does not exist in repository '$repoUrl'"
+                        } elseif ($errorDetails) {
+                            throw "Checkout failed: $errorDetails"
+                        } else {
+                            throw "Checkout failed with exit code $LASTEXITCODE (no error details available)"
+                        }
+                    }
+                }
+                
+                Pop-Location
+                
+                # Mark as no longer needing checkout
+                $script:RepositoryDictionary[$repoUrl].NeedCheckout = $false
+                
+                Write-Log "Successfully updated repository '$repoUrl' to tag: $newTag" -Level Info
+                return $true
+            }
+            catch {
+                Pop-Location -ErrorAction SilentlyContinue
+                $errorMessage = "Error updating repository '$repoUrl' to tag '$newTag': $_"
+                Write-Log $errorMessage -Level Error
+                Show-ErrorDialog -Message $errorMessage
+                
+                # Mark as failed
+                if ($script:RepositoryDictionary.ContainsKey($repoUrl)) {
+                    $script:RepositoryDictionary[$repoUrl].CheckoutFailed = $true
+                }
+                
+                return $false
+            }
+        }
+        # Otherwise, continue with normal checkout process
+    }
     
     Write-Log "Processing repository: $repoUrl" -Level Info
     Write-Log "Base Path: $basePath" -Level Verbose
@@ -428,34 +705,32 @@ function Invoke-GitCheckout {
     }
     
     # Convert relative path to absolute
-    if (-not [System.IO.Path]::IsPathRooted($basePath)) {
-        $basePath = Join-Path $script:ScriptPath $basePath
-    }
+    $absoluteBasePath = Get-AbsoluteBasePath -BasePath $basePath -DependencyFilePath $DependencyFilePath
     
     # Check if base path exists
-    if (Test-Path $basePath) {
-        Write-Log "Base path exists: $basePath" -Level Verbose
+    if (Test-Path $absoluteBasePath) {
+        Write-Log "Base path exists: $absoluteBasePath" -Level Verbose
         
         # Check if it's a git repository
-        $gitDir = Join-Path $basePath ".git"
+        $gitDir = Join-Path $absoluteBasePath ".git"
         if (Test-Path $gitDir) {
             # Check if it points to the same repository
-            $existingUrl = Get-RepositoryUrl -RepoPath $basePath
+            $existingUrl = Get-RepositoryUrl -RepoPath $absoluteBasePath
             if ($existingUrl -eq $repoUrl) {
                 Write-Log "Repository already exists with correct URL, resetting..." -Level Info
                 $skipLfsValue = if ($null -eq $skipLfs) { $false } else { [bool]$skipLfs }
-                if (-not (Reset-GitRepository -RepoPath $basePath -SkipLfs $skipLfsValue)) {
-                    Show-ErrorDialog -Message "Failed to reset repository at: $basePath"
+                if (-not (Reset-GitRepository -RepoPath $absoluteBasePath -SkipLfs $skipLfsValue)) {
+                    Show-ErrorDialog -Message "Failed to reset repository at: $absoluteBasePath"
                     return $false
                 }
             }
             else {
                 Write-Log "Different repository exists at path" -Level Warning
-                $message = "The folder '$basePath' contains a different repository.`n`nExisting: $existingUrl`nRequired: $repoUrl`n`nDo you want to delete the existing content?"
+                $message = "The folder '$absoluteBasePath' contains a different repository.`n`nExisting: $existingUrl`nRequired: $repoUrl`n`nDo you want to delete the existing content?"
                 if (Show-ConfirmDialog -Message $message) {
                     Write-Log "User agreed to delete existing content" -Level Info
                     if (-not $DryRun) {
-                        Remove-Item -Path $basePath -Recurse -Force
+                        Remove-Item -Path $absoluteBasePath -Recurse -Force
                     }
                 }
                 else {
@@ -466,11 +741,11 @@ function Invoke-GitCheckout {
         }
         else {
             # Not a git repository
-            $message = "The folder '$basePath' exists but is not a Git repository.`n`nDo you want to delete the existing content?"
+            $message = "The folder '$absoluteBasePath' exists but is not a Git repository.`n`nDo you want to delete the existing content?"
             if (Show-ConfirmDialog -Message $message) {
                 Write-Log "User agreed to delete existing content" -Level Info
                 if (-not $DryRun) {
-                    Remove-Item -Path $basePath -Recurse -Force
+                    Remove-Item -Path $absoluteBasePath -Recurse -Force
                 }
             }
             else {
@@ -480,26 +755,29 @@ function Invoke-GitCheckout {
         }
     }
     
+    # Track if this is a new clone
+    $wasNewClone = -not (Test-Path (Join-Path $absoluteBasePath ".git"))
+    
     # Create base path if it doesn't exist
-    if (-not (Test-Path $basePath)) {
-        Write-Log "Creating base path: $basePath" -Level Info
+    if (-not (Test-Path $absoluteBasePath)) {
+        Write-Log "Creating base path: $absoluteBasePath" -Level Info
         if (-not $DryRun) {
-            New-Item -ItemType Directory -Path $basePath -Force | Out-Null
+            New-Item -ItemType Directory -Path $absoluteBasePath -Force | Out-Null
         }
     }
     
     try {
         # Clone or fetch repository
-        if (-not (Test-Path (Join-Path $basePath ".git"))) {
+        if (-not (Test-Path (Join-Path $absoluteBasePath ".git"))) {
             Write-Log "Cloning repository..." -Level Info
             
             # Use direct git command with proper quoting
-            Write-Log "Executing: git clone `"$repoUrl`" `"$basePath`"" -Level Debug
+            Write-Log "Executing: git clone `"$repoUrl`" `"$absoluteBasePath`"" -Level Debug
             
             if (-not $DryRun) {
                 # Change to parent directory to avoid path issues
-                $parentPath = Split-Path $basePath -Parent
-                $repoName = Split-Path $basePath -Leaf
+                $parentPath = Split-Path $absoluteBasePath -Parent
+                $repoName = Split-Path $absoluteBasePath -Leaf
                 
                 Push-Location $parentPath
                 try {
@@ -531,7 +809,7 @@ function Invoke-GitCheckout {
         }
         else {
             Write-Log "Fetching latest changes..." -Level Info
-            Push-Location $basePath
+            Push-Location $absoluteBasePath
             
             $fetchCmd = "git fetch --all --tags"
             Write-Log "Executing: $fetchCmd" -Level Debug
@@ -548,19 +826,32 @@ function Invoke-GitCheckout {
         }
         
         # Checkout tag
-        Push-Location $basePath
+        Push-Location $absoluteBasePath
         
         # Skip checkout if we already did it during clone for LFS skip
-        if (-not ($skipLfs -and -not (Test-Path (Join-Path $basePath ".git")))) {
+        if (-not ($skipLfs -and $wasNewClone)) {
             Write-Log "Checking out tag: $tag" -Level Info
             $checkoutCmd = "git checkout $tag"
             Write-Log "Executing: $checkoutCmd" -Level Debug
             
             if (-not $DryRun) {
-                $output = Invoke-Expression $checkoutCmd 2>&1
+                # Use & operator to properly capture stderr
+                $gitOutput = & git checkout $tag 2>&1
+                
                 if ($LASTEXITCODE -ne 0) {
                     Pop-Location
-                    throw "Checkout failed: $output"
+                    # Combine all output for error details
+                    $errorDetails = ($gitOutput | Out-String).Trim()
+                    
+                    # Check for common git error patterns
+                    if ($errorDetails -match "pathspec '(.+)' did not match" -or 
+                        $errorDetails -match "error: pathspec '(.+)' did not match any file\(s\) known to git") {
+                        throw "Tag '$tag' does not exist in repository '$repoUrl'"
+                    } elseif ($errorDetails) {
+                        throw "Checkout failed: $errorDetails"
+                    } else {
+                        throw "Checkout failed with exit code $LASTEXITCODE (no error details available)"
+                    }
                 }
             }
         }
@@ -676,12 +967,34 @@ function Invoke-GitCheckout {
         }
         
         Pop-Location
+        
+        # Mark repository as checked out in dictionary
+        if ($Recursive -and $script:RepositoryDictionary.ContainsKey($repoUrl)) {
+            $script:RepositoryDictionary[$repoUrl].AlreadyCheckedOut = $true
+            $script:RepositoryDictionary[$repoUrl].CheckoutFailed = $false
+        }
+        
         Write-Log "Successfully processed repository: $repoUrl" -Level Info
         return $true
     }
     catch {
-        if (Get-Location | Where-Object { $_.Path -ne $basePath }) {
+        if (Get-Location | Where-Object { $_.Path -ne $absoluteBasePath }) {
             Pop-Location -ErrorAction SilentlyContinue
+        }
+        
+        # If this was a fresh clone that failed during checkout, remove it
+        if ($wasNewClone -and (Test-Path $absoluteBasePath)) {
+            Write-Log "Removing incomplete clone at: $absoluteBasePath" -Level Warning
+            try {
+                Remove-Item -Path $absoluteBasePath -Recurse -Force -ErrorAction Stop
+            } catch {
+                Write-Log "Failed to remove incomplete clone: $_" -Level Warning
+            }
+        }
+        
+        # Mark repository as failed in dictionary
+        if ($Recursive -and $script:RepositoryDictionary.ContainsKey($repoUrl)) {
+            $script:RepositoryDictionary[$repoUrl].CheckoutFailed = $true
         }
         
         $errorMessage = "Error processing repository '$repoUrl': $_"
@@ -697,6 +1010,141 @@ function Invoke-GitCheckout {
         if ($env:GIT_SSH) {
             Remove-Item Env:\GIT_SSH -ErrorAction SilentlyContinue
         }
+    }
+}
+
+function Process-DependencyFile {
+    param(
+        [string]$DependencyFilePath,
+        [int]$Depth
+    )
+    
+    # Check if we've already processed this file (circular dependency)
+    $resolvedPath = Resolve-Path $DependencyFilePath -ErrorAction SilentlyContinue
+    if ($resolvedPath -and $script:ProcessedDependencyFiles -contains $resolvedPath.Path) {
+        Write-Log "Skipping already processed dependency file: $DependencyFilePath" -Level Debug
+        return @()
+    }
+    
+    if ($resolvedPath) {
+        $script:ProcessedDependencyFiles += $resolvedPath.Path
+    }
+    
+    Write-Log "Processing dependency file: $DependencyFilePath (Depth: $Depth)" -Level Info
+    
+    if (-not (Test-Path $DependencyFilePath)) {
+        Write-Log "Dependency file not found: $DependencyFilePath" -Level Warning
+        return @()
+    }
+    
+    try {
+        $jsonContent = Get-Content -Path $DependencyFilePath -Raw
+        
+        # Log JSON content in debug mode
+        if ($EnableDebug) {
+            Write-Log "JSON content of $DependencyFilePath :" -Level Debug
+            $jsonContent -split "`n" | ForEach-Object { Write-Log "  $_" -Level Debug }
+        }
+        
+        $repositories = $jsonContent | ConvertFrom-Json
+        
+        if (-not $repositories) {
+            Write-Log "No repositories found in dependency file: $DependencyFilePath" -Level Warning
+            return @()
+        }
+        
+        Write-Log "Found $($repositories.Count) repositories in $DependencyFilePath" -Level Debug
+        
+        $checkedOutRepos = @()
+        
+        foreach ($repo in $repositories) {
+            $wasNewCheckout = $false
+            $checkoutSucceeded = $false
+            
+            # Track if this repository exists before processing
+            if ($Recursive) {
+                $repoUrl = $repo.'Repository URL'
+                $wasNewCheckout = -not $script:RepositoryDictionary.ContainsKey($repoUrl)
+            }
+            
+            if (Invoke-GitCheckout -Repository $repo -DependencyFilePath $DependencyFilePath) {
+                $script:SuccessCount++
+                $checkoutSucceeded = $true
+                
+                # Add to checked out repos list for recursive processing
+                if ($Recursive -and $Depth -lt $MaxDepth -and $checkoutSucceeded) {
+                    # Only process if this was a new checkout or required a tag update
+                    if ($wasNewCheckout) {
+                        $repoInfo = $script:RepositoryDictionary[$repo.'Repository URL']
+                        # Skip if checkout failed
+                        if (-not $repoInfo.CheckoutFailed) {
+                            $checkedOutRepos += @{
+                                Repository = $repo
+                                AbsolutePath = $repoInfo.AbsolutePath
+                            }
+                        }
+                    }
+                }
+            }
+            else {
+                $script:FailureCount++
+            }
+        }
+        
+        return $checkedOutRepos
+    }
+    catch {
+        Write-Log "Failed to parse dependency file '$DependencyFilePath': $_" -Level Error
+        return @()
+    }
+}
+
+function Process-RecursiveDependencies {
+    param(
+        [array]$CheckedOutRepos,
+        [string]$DependencyFileName,
+        [int]$CurrentDepth
+    )
+    
+    if ($CurrentDepth -ge $MaxDepth) {
+        Write-Log "Maximum recursion depth ($MaxDepth) reached" -Level Warning
+        return
+    }
+    
+    if ($CheckedOutRepos.Count -eq 0) {
+        Write-Log "No new repositories to process at depth $CurrentDepth" -Level Debug
+        return
+    }
+    
+    Write-Log "Processing $($CheckedOutRepos.Count) repositories at depth $CurrentDepth" -Level Info
+    
+    $newlyCheckedOutRepos = @()
+    
+    foreach ($repoInfo in $CheckedOutRepos) {
+        $repoPath = $repoInfo.AbsolutePath
+        $repoUrl = $repoInfo.Repository.'Repository URL'
+        
+        # Skip if repository checkout failed
+        if ($script:RepositoryDictionary.ContainsKey($repoUrl) -and 
+            $script:RepositoryDictionary[$repoUrl].CheckoutFailed) {
+            Write-Log "Skipping dependency processing for failed repository: $repoUrl" -Level Warning
+            continue
+        }
+        
+        $nestedDependencyFile = Join-Path $repoPath $DependencyFileName
+        
+        if (Test-Path $nestedDependencyFile) {
+            Write-Log "Found nested dependency file: $nestedDependencyFile" -Level Info
+            $newRepos = Process-DependencyFile -DependencyFilePath $nestedDependencyFile -Depth ($CurrentDepth + 1)
+            $newlyCheckedOutRepos += $newRepos
+        } else {
+            Write-Log "No dependency file found in: $repoPath" -Level Debug
+        }
+    }
+    
+    # Recursively process newly checked out repositories
+    if ($newlyCheckedOutRepos.Count -gt 0) {
+        Process-RecursiveDependencies -CheckedOutRepos $newlyCheckedOutRepos -DependencyFileName $DependencyFileName -CurrentDepth ($CurrentDepth + 1)
     }
 }
 
@@ -750,8 +1198,15 @@ Script Version: $($script:Version)
 Total Repositories: $($script:Repositories.Count)
 Successful: $($script:SuccessCount)
 Failed: $($script:FailureCount)
-========================================
 "@
+    
+    if ($Recursive) {
+        $summary += "`nRecursive Mode: Enabled"
+        $summary += "`nMax Depth: $MaxDepth"
+        $summary += "`nTotal Unique Repositories: $($script:RepositoryDictionary.Count)"
+    }
+    
+    $summary += "`n========================================"
     
     Write-Log $summary -Level Info
     
@@ -771,12 +1226,27 @@ try {
     Write-Log "PowerShell version: $($PSVersionTable.PSVersion)" -Level Debug
     Write-Log "Operating System: $([System.Environment]::OSVersion.VersionString)" -Level Debug
     
+    # Calculate and log script hash in debug mode
+    if ($EnableDebug) {
+        $scriptContent = Get-Content -Path $MyInvocation.MyCommand.Path -Raw
+        $scriptBytes = [System.Text.Encoding]::UTF8.GetBytes($scriptContent)
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        $hashBytes = $sha256.ComputeHash($scriptBytes)
+        $scriptHash = [System.BitConverter]::ToString($hashBytes).Replace('-', '')
+        Write-Log "Script SHA256 hash: $($scriptHash.Substring(0, 16))..." -Level Debug
+        Write-Log "Full script hash: $scriptHash" -Level Debug
+    }
+    
     if ($DryRun) {
         Write-Log "DRY RUN MODE - No actual changes will be made" -Level Warning
     }
     
     if ($EnableDebug) {
         Write-Log "Debug logging enabled" -Level Info
+    }
+    
+    if ($Recursive) {
+        Write-Log "Recursive mode enabled with max depth: $MaxDepth" -Level Info
     }
     
     # Check Git installation
@@ -789,6 +1259,9 @@ try {
         $InputFile = Join-Path $script:ScriptPath "dependencies.json"
         Write-Log "Using default input file: $InputFile" -Level Verbose
     }
+    
+    # Store the dependency file name for recursive processing
+    $dependencyFileName = Split-Path -Leaf $InputFile
     
     # Determine credentials file path
     if ([string]::IsNullOrEmpty($CredentialsFile)) {
@@ -807,33 +1280,12 @@ try {
         exit 1
     }
     
-    # Read and parse JSON file
-    Write-Log "Reading input file: $InputFile" -Level Info
-    try {
-        $jsonContent = Get-Content -Path $InputFile -Raw
-        $script:Repositories = $jsonContent | ConvertFrom-Json
-        
-        if (-not $script:Repositories) {
-            throw "No repositories found in input file"
-        }
-        
-        Write-Log "Found $($script:Repositories.Count) repositories to process" -Level Info
-    }
-    catch {
-        $errorMessage = "Failed to parse input file: $_"
-        Write-Log $errorMessage -Level Error
-        Show-ErrorDialog -Message $errorMessage
-        exit 1
-    }
+    # Process the initial dependency file
+    $checkedOutRepos = Process-DependencyFile -DependencyFilePath $InputFile -Depth 0
     
-    # Process each repository
-    foreach ($repo in $script:Repositories) {
-        if (Invoke-GitCheckout -Repository $repo) {
-            $script:SuccessCount++
-        }
-        else {
-            $script:FailureCount++
-        }
+    # If recursive mode is enabled, process nested dependencies
+    if ($Recursive -and $checkedOutRepos.Count -gt 0) {
+        Process-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DependencyFileName $dependencyFileName -CurrentDepth 1
     }
     
     # Show summary

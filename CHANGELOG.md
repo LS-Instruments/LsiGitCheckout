@@ -5,6 +5,49 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.2] - 2025-01-15
+
+### Fixed
+- Git checkout error capture now properly displays stderr messages for missing tags
+- Improved error reporting clarity when tags don't exist in repositories
+
+### Changed
+- Switched from `Invoke-Expression` to `&` operator for more reliable error capture
+
+## [4.0.1] - 2025-01-15
+
+### Added
+- Cleanup of failed clones to prevent repositories in undefined states
+- CheckoutFailed tracking to skip dependency processing for failed repositories
+
+### Fixed
+- Error handling for missing tags now provides detailed error messages
+- Repositories that fail to checkout no longer have their dependencies processed
+
+### Changed
+- Enhanced error message capture and display for all git operations
+
+## [4.0.0] - 2025-01-15
+
+### Added
+- Recursive dependency discovery and processing with `-Recursive` flag
+- API compatibility checking for shared dependencies
+- "API Compatible Tags" field for version compatibility management
+- Automatic version selection (most recent compatible version)
+- Path conflict detection for duplicate repositories
+- `-MaxDepth` parameter to control recursion depth (default: 5)
+- JSON dependency file content logging in debug mode
+- Dynamic tag checkout when newer compatible version is found
+
+### Changed
+- Improved path normalization to resolve relative paths correctly
+- Enhanced debug logging for better troubleshooting
+- Repository dictionary tracks all discovered repositories
+
+### Fixed
+- PowerShell HashSet compatibility issues across different versions
+- Path resolution for nested relative paths with ".." segments
+
 ## [3.0.0] - 2025-01-14
 
 ### Changed
