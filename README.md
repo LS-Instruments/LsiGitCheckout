@@ -1,6 +1,6 @@
 # LsiGitCheckout
 
-A PowerShell script for managing multiple Git repositories with support for tags, SSH authentication via PuTTY, Git LFS, and submodules. Features advanced recursive dependency resolution with API compatibility checking.
+A PowerShell script for managing multiple Git repositories with support for tags, SSH authentication via PuTTY, Git LFS, and submodules. Features advanced recursive dependency resolution with API compatibility checking and flexible compatibility modes.
 
 ## Table of Contents
 
@@ -9,6 +9,7 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - [Installation](#installation)
 - [Basic Usage (Non-Recursive)](#basic-usage-non-recursive)
 - [Advanced Usage (Recursive Mode)](#advanced-usage-recursive-mode)
+- [API Compatibility Modes](#api-compatibility-modes)
 - [Security Best Practices](#security-best-practices)
 - [SSH Setup with PuTTY](#ssh-setup-with-putty)
 - [Troubleshooting](#troubleshooting)
@@ -29,6 +30,7 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - **Error Handling**: Comprehensive logging and user-friendly error dialogs
 - **Dry Run Mode**: Preview operations without making changes
 - **Recursive Dependencies**: Discover and process nested repository dependencies with API compatibility checking
+- **Flexible Compatibility Modes**: Choose between Strict and Permissive API compatibility modes
 
 ## Requirements
 
@@ -73,6 +75,9 @@ In non-recursive mode, the script processes only the repositories listed in your
 
 # Verbose output
 .\LsiGitCheckout.ps1 -Verbose
+
+# Set default API compatibility mode
+.\LsiGitCheckout.ps1 -ApiCompatibility Strict
 ```
 
 ### Parameters
@@ -82,6 +87,7 @@ In non-recursive mode, the script processes only the repositories listed in your
 - `-DryRun`: Preview operations without making changes
 - `-EnableDebug`: Create detailed debug log file
 - `-Verbose`: Show verbose output messages
+- `-ApiCompatibility`: Default API compatibility mode ('Strict' or 'Permissive', default: 'Permissive')
 
 ### Configuration Files
 
@@ -95,6 +101,8 @@ Contains repository configurations without any credential information:
     "Repository URL": "https://github.com/user/repo.git",
     "Base Path": "repos/my-repo",
     "Tag": "v1.0.0",
+    "API Compatible Tags": ["v0.9.0", "v0.9.1", "v0.9.2"],
+    "API Compatibility": "Strict",
     "Skip LFS": false
   }
 ]
@@ -104,6 +112,8 @@ Contains repository configurations without any credential information:
 - **Repository URL** (required): Git repository URL (HTTPS or SSH)
 - **Base Path** (required): Local directory path (relative or absolute)
 - **Tag** (required): Git tag to checkout
+- **API Compatible Tags** (optional): List of API-compatible tags (oldest to newest)
+- **API Compatibility** (optional): "Strict" or "Permissive" (defaults to script parameter)
 - **Skip LFS** (optional): Skip Git LFS downloads for this repository and all submodules
 
 #### git_credentials.json
@@ -147,7 +157,8 @@ dependencies.json:
   {
     "Repository URL": "git@github.com:mycompany/private-repo.git",
     "Base Path": "C:\\Projects\\private-repo",
-    "Tag": "release-2024.1"
+    "Tag": "release-2024.1",
+    "API Compatibility": "Strict"
   }
 ]
 ```
@@ -176,6 +187,9 @@ Recursive mode enables the script to discover and process nested dependencies. A
 
 # With debug logging to see the detailed process
 .\LsiGitCheckout.ps1 -Recursive -EnableDebug
+
+# With strict default compatibility
+.\LsiGitCheckout.ps1 -Recursive -ApiCompatibility Strict
 ```
 
 ### API Compatible Tags - Critical Concept
@@ -235,11 +249,77 @@ When updating dependencies:
 #### Why This Convention Matters
 
 When multiple projects depend on the same repository with different version requirements, the script:
-1. Calculates the intersection of all compatible versions
-2. Selects the **most recent** version from that intersection
+1. Calculates the intersection of all compatible versions (in Strict mode) or union (in Permissive mode)
+2. Selects the **most recent** version from that set
 3. Automatically checks out that version if different from the current one
 
 This ensures all dependent projects get the newest version that satisfies everyone's requirements.
+
+## API Compatibility Modes
+
+Version 4.1.0 introduces flexible API compatibility modes that control how version conflicts are resolved when multiple projects depend on the same repository.
+
+### Strict Mode
+
+In Strict mode, the script uses the **intersection** of compatible tags when resolving version conflicts. This ensures maximum compatibility but may result in older versions being selected.
+
+**Use Strict mode when:**
+- Working with production systems
+- API stability is critical
+- Breaking changes must be avoided
+- Conservative version management is preferred
+
+### Permissive Mode
+
+In Permissive mode, the script uses the **union** of compatible tags, allowing more flexibility in version selection. This typically results in newer versions being selected.
+
+**Use Permissive mode when:**
+- Working in development environments
+- Rapid iteration is important
+- Teams can quickly adapt to API changes
+- Latest features are prioritized
+
+### Mode Interaction Rules
+
+When the same repository is encountered multiple times with different compatibility modes:
+
+1. **Strict + Strict**: Uses intersection algorithm (conservative)
+2. **Strict + Permissive**: Keeps the Strict repository unchanged
+3. **Permissive + Permissive**: Uses union algorithm (flexible)
+4. **Permissive + Strict**: Adopts Strict mode and its version requirements
+
+### Configuration Examples
+
+#### Repository-Level Configuration
+
+```json
+[
+  {
+    "Repository URL": "https://github.com/myorg/stable-lib.git",
+    "Base Path": "libs/stable",
+    "Tag": "v2.0.0",
+    "API Compatible Tags": ["v1.8.0", "v1.9.0"],
+    "API Compatibility": "Strict"
+  },
+  {
+    "Repository URL": "https://github.com/myorg/dev-lib.git",
+    "Base Path": "libs/dev",
+    "Tag": "v3.0.0-beta",
+    "API Compatible Tags": ["v2.0.0", "v2.1.0", "v2.2.0"],
+    "API Compatibility": "Permissive"
+  }
+]
+```
+
+#### Script-Level Default
+
+```powershell
+# Set default to Strict for production environments
+.\LsiGitCheckout.ps1 -Recursive -ApiCompatibility Strict
+
+# Use Permissive for development (default)
+.\LsiGitCheckout.ps1 -Recursive
+```
 
 ### Real-World Example with Test Repositories
 
@@ -272,31 +352,15 @@ LsiCheckOutTestRootA/dependencies.json:
     "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestA.git",
     "Base Path": "../libs/test-a",
     "Tag": "v1.0.3",
-    "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
+    "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"],
+    "API Compatibility": "Strict"
   },
   {
     "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestB.git",
     "Base Path": "../libs/test-b",
     "Tag": "v1.0.3",
-    "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
-  }
-]
-```
-
-LsiCheckOutTestA/dependencies.json:
-```json
-[
-  {
-    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestB.git",
-    "Base Path": "../test-b",
-    "Tag": "v1.0.3",
-    "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
-  },
-  {
-    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestC.git",
-    "Base Path": "../test-c",
-    "Tag": "v1.0.3",
-    "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
+    "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"],
+    "API Compatibility": "Permissive"
   }
 ]
 ```
@@ -309,26 +373,37 @@ LsiCheckOutTestA/dependencies.json:
    - Processes RootB's dependencies → clones TestC
 3. **Round 3**: 
    - Processes TestA's dependencies
-   - Finds TestB already exists at same path with compatible API ✓
-   - Finds TestC and clones it
+   - Finds TestB already exists at same path
+   - Applies compatibility rules based on mode settings
 4. **Round 4**: 
    - Processes TestB's dependencies
-   - Finds TestC already exists at same path with compatible API ✓
+   - Continues applying compatibility rules
 
 ### API Compatibility Checking
 
 When the same repository is referenced multiple times:
 
 1. **Path Check**: Ensures all references resolve to the same absolute path
-2. **API Compatibility**: Calculates intersection of all compatible versions
-3. **Version Selection**: Uses the most recent version from the intersection
+2. **API Compatibility**: 
+   - **Strict mode**: Calculates intersection of all compatible versions
+   - **Permissive mode**: Calculates union of all compatible versions
+3. **Version Selection**: Uses the most recent version from the calculated set
 
 #### Example: Version Conflict Resolution
 
 If TestA requires TestC compatible with [v1.0.0, v1.0.1, v1.0.2, v1.0.3] but TestB requires TestC compatible with [v1.0.2, v1.0.3, v1.0.4]:
 
+**Strict Mode (both repositories):**
 - Intersection: [v1.0.2, v1.0.3]
 - Selected: v1.0.3 (most recent in intersection)
+
+**Permissive Mode (both repositories):**
+- Union: [v1.0.0, v1.0.1, v1.0.2, v1.0.3, v1.0.4]
+- Selected: v1.0.4 (most recent in union)
+
+**Mixed Mode (TestA Strict, TestB Permissive):**
+- TestA is Strict, so its requirements are preserved
+- Result uses TestA's compatible versions
 
 ### Error Scenarios
 
@@ -403,6 +478,7 @@ No common API-compatible tags found.
    - Review the "API Compatible Tags" for conflicting repositories
    - Ensure temporal ordering is correct (oldest to newest)
    - Consider if versions truly are API compatible
+   - Check if compatibility modes need adjustment
 
 ### Debug Mode
 
@@ -417,9 +493,24 @@ Check the generated debug log file for:
 - Hostname extraction from URLs
 - SSH key lookup attempts
 - API compatibility calculations
+- Compatibility mode interactions
 - Detailed Git command execution
 
 ## Migration Guide
+
+### From Version 4.0.x to 4.1.x
+
+Version 4.1 adds API compatibility modes. Existing configurations continue to work:
+
+1. **Non-breaking changes**: All v4.0.x configurations work in v4.1.x
+2. **New optional field**: "API Compatibility" for mode control
+3. **New parameter**: `-ApiCompatibility` for default mode
+4. **Default behavior**: Permissive mode (more flexible than v4.0.x)
+
+To maintain v4.0.x behavior exactly:
+```powershell
+.\LsiGitCheckout.ps1 -Recursive -ApiCompatibility Strict
+```
 
 ### From Version 3.x to 4.x
 
@@ -468,6 +559,7 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
 - Building reproducible research or compliance-critical systems
 - Orchestrating complex multi-repository projects
 - Needing immediate patches without waiting for upstream releases
+- Requiring flexible compatibility modes for different environments
 
 ### Key Advantages of LsiGitCheckout
 
@@ -478,7 +570,8 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
 5. **Mixed Repository Support**: Seamlessly handle public and private code
 6. **Virtual Monorepo**: Work as if in a monorepo while maintaining separate repos
 7. **Temporal Versioning**: Explicit control over version selection with API compatibility
-8. **Complete Audit Trail**: Full git history for security reviews
+8. **Flexible Compatibility**: Choose between Strict and Permissive modes per repository
+9. **Complete Audit Trail**: Full git history for security reviews
 
 ### Key Advantages of Traditional Package Managers
 
@@ -497,6 +590,7 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
    - Managing proprietary code alongside open-source
    - Requiring strict security and compliance controls
    - Complex interdependencies between internal projects
+   - Need for flexible compatibility policies
 
 2. **Research Organizations**
    - Ensuring long-term reproducibility
@@ -512,6 +606,7 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
    - Building deployment pipelines for multi-repository projects
    - Applying organization-specific patches
    - Managing architectural transitions
+   - Supporting both stable and experimental environments
 
 ### Hybrid Approach: Best of Both Worlds
 
@@ -519,6 +614,7 @@ Many successful projects combine both approaches:
 - Use npm/NuGet for stable, third-party libraries
 - Use LsiGitCheckout for internal dependencies and actively developed components
 - Maintain clear boundaries between packaged and source dependencies
+- Apply different compatibility modes based on environment (Strict for production, Permissive for development)
 
 This leverages the convenience of package managers for commodity dependencies while maintaining control over critical internal code.
 
@@ -535,6 +631,7 @@ This leverages the convenience of package managers for commodity dependencies wh
 - Large enterprise with shared internal libraries
 - Research requiring reproducible computational environments
 - Gradual open-sourcing of internal components
+- Mixed development/production environments with different stability requirements
 
 ## License
 

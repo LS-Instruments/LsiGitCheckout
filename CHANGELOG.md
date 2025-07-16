@@ -5,6 +5,39 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.1] - 2025-01-16
+
+### Fixed
+- Temporal ordering preserved in union operations for Permissive mode
+- Union algorithm now maintains the chronological order of tags when constraints are met
+
+### Added
+- Warning when tag lists don't start with the same tag (falls back to unordered union)
+- Warning when tag lists have same length but different content (falls back to unordered union)
+- Debug logging for edge cases in union operations
+
+## [4.1.0] - 2025-01-16
+
+### Added
+- "API Compatibility" field in dependencies.json with "Strict" and "Permissive" modes
+- `-ApiCompatibility` parameter to set default compatibility mode (defaults to "Permissive")
+- Enhanced tag selection algorithm based on compatibility mode:
+  - **Strict mode**: Uses intersection of compatible tags (existing behavior)
+  - **Permissive mode**: Uses union of compatible tags for more flexible version management
+- Compatibility mode inheritance rules:
+  - Strict + Strict = Use intersection algorithm
+  - Strict + Permissive = Keep existing Strict repository unchanged
+  - Permissive + Permissive = Use union algorithm
+  - Permissive + Strict = Adopt Strict mode and its tags
+
+### Changed
+- Tag selection in Permissive mode now selects the most recent tag from the union of all compatible versions
+- Repository dictionary now tracks API Compatibility mode for each repository
+- Summary report now displays the default API Compatibility mode
+
+### Fixed
+- Improved handling of tag ordering in union operations
+
 ## [4.0.2] - 2025-01-15
 
 ### Fixed

@@ -24,17 +24,30 @@
     Enables recursive dependency discovery and processing.
 .PARAMETER MaxDepth
     Maximum recursion depth for dependency discovery. Defaults to 5.
+.PARAMETER ApiCompatibility
+    Default API compatibility mode when not specified in dependencies. Can be 'Strict' or 'Permissive'. Defaults to 'Permissive'.
 .EXAMPLE
     .\LsiGitCheckout.ps1
     .\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
     .\LsiGitCheckout.ps1 -Recursive -MaxDepth 10
-    .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug -Recursive
+    .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug -Recursive -ApiCompatibility Strict
 .NOTES
-    Version: 4.0.2
-    Last Modified: 2025-01-15
+    Version: 4.1.1
+    Last Modified: 2025-01-16
     
     This script uses PuTTY/plink for SSH authentication. SSH keys must be in PuTTY format (.ppk).
     Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.
+    
+    Changes in 4.1.1:
+    - Fixed temporal ordering in union operations for Permissive mode
+    - Added warnings for incompatible tag lists (different starting tags or same length with different content)
+    - Improved union algorithm to preserve temporal order when constraints are met
+    
+    Changes in 4.1.0:
+    - Added "API Compatibility" field with "Strict" and "Permissive" modes
+    - Added -ApiCompatibility parameter to set default compatibility mode
+    - Enhanced tag selection algorithm based on compatibility mode
+    - Permissive mode now uses union instead of intersection for compatible tags
     
     Changes in 4.0.2:
     - Fixed git checkout error capture to properly display stderr messages
@@ -59,6 +72,7 @@
         "Base Path": "C:\\Projects\\repo",
         "Tag": "v1.0.0",
         "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.1.0"],
+        "API Compatibility": "Strict",
         "Skip LFS": false
       }
     ]
@@ -89,11 +103,15 @@ param(
     [switch]$Recursive,
     
     [Parameter()]
-    [int]$MaxDepth = 5
+    [int]$MaxDepth = 5,
+    
+    [Parameter()]
+    [ValidateSet('Strict', 'Permissive')]
+    [string]$ApiCompatibility = 'Permissive'
 )
 
 # Script configuration
-$script:Version = "4.0.2"
+$script:Version = "4.1.1"
 $script:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:ErrorFile = Join-Path $ScriptPath "LsiGitCheckout_Errors.txt"
 $script:DebugLogFile = Join-Path $ScriptPath ("debug_log_{0}.txt" -f (Get-Date -Format "yyyyMMddHHmm"))
@@ -104,6 +122,7 @@ $script:SshCredentials = @{}
 $script:RepositoryDictionary = @{}
 $script:CurrentDepth = 0
 $script:ProcessedDependencyFiles = @()
+$script:DefaultApiCompatibility = $ApiCompatibility
 
 # Initialize error file
 if (Test-Path $script:ErrorFile) {
@@ -459,6 +478,90 @@ function Get-TagIntersection {
     return $intersection
 }
 
+function Get-TagUnion {
+    param(
+        [array]$Tags1,
+        [array]$Tags2
+    )
+    
+    # Check if both lists start with the same tag
+    if ($Tags1.Count -gt 0 -and $Tags2.Count -gt 0 -and $Tags1[0] -ne $Tags2[0]) {
+        Write-Log "Warning: Tag lists for union do not start with the same tag. List1 starts with '$($Tags1[0])', List2 starts with '$($Tags2[0])'. Using unordered union." -Level Warning
+        
+        # Fall back to unordered union
+        $unionSet = @{}
+        foreach ($tag in $Tags1) {
+            $unionSet[$tag] = $true
+        }
+        foreach ($tag in $Tags2) {
+            $unionSet[$tag] = $true
+        }
+        return @($unionSet.Keys)
+    }
+    
+    # Check if lists have same length but are not equal
+    if ($Tags1.Count -eq $Tags2.Count -and $Tags1.Count -gt 0) {
+        $areEqual = $true
+        for ($i = 0; $i -lt $Tags1.Count; $i++) {
+            if ($Tags1[$i] -ne $Tags2[$i]) {
+                $areEqual = $false
+                break
+            }
+        }
+        
+        if (-not $areEqual) {
+            Write-Log "Warning: Tag lists have the same length ($($Tags1.Count)) but contain different tags. Using unordered union." -Level Warning
+            Write-Log "List1: $($Tags1 -join ', ')" -Level Debug
+            Write-Log "List2: $($Tags2 -join ', ')" -Level Debug
+            
+            # Fall back to unordered union
+            $unionSet = @{}
+            foreach ($tag in $Tags1) {
+                $unionSet[$tag] = $true
+            }
+            foreach ($tag in $Tags2) {
+                $unionSet[$tag] = $true
+            }
+            return @($unionSet.Keys)
+        }
+    }
+    
+    # Normal case: Lists are compatible for ordered union
+    # Since lists start with same tag and are temporally ordered,
+    # we can use the longer list as base and add any unique tags from shorter list
+    
+    if ($Tags1.Count -ge $Tags2.Count) {
+        $longerList = $Tags1
+        $shorterList = $Tags2
+    } else {
+        $longerList = $Tags2
+        $shorterList = $Tags1
+    }
+    
+    # Create ordered union
+    $orderedUnion = @()
+    $addedTags = @{}
+    
+    # Add all tags from longer list (preserves temporal order)
+    foreach ($tag in $longerList) {
+        if (-not $addedTags.ContainsKey($tag)) {
+            $orderedUnion += $tag
+            $addedTags[$tag] = $true
+        }
+    }
+    
+    # Add any remaining tags from shorter list (should typically be none if constraints are met)
+    foreach ($tag in $shorterList) {
+        if (-not $addedTags.ContainsKey($tag)) {
+            $orderedUnion += $tag
+            $addedTags[$tag] = $true
+            Write-Log "Note: Tag '$tag' from shorter list was not in longer list, added at end" -Level Debug
+        }
+    }
+    
+    return $orderedUnion
+}
+
 function Update-RepositoryDictionary {
     param(
         [PSCustomObject]$Repository,
@@ -469,6 +572,7 @@ function Update-RepositoryDictionary {
     $basePath = $Repository.'Base Path'
     $tag = $Repository.Tag
     $apiCompatibleTags = $Repository.'API Compatible Tags'
+    $apiCompatibility = if ($Repository.'API Compatibility') { $Repository.'API Compatibility' } else { $script:DefaultApiCompatibility }
     
     # Calculate absolute base path
     $absoluteBasePath = Get-AbsoluteBasePath -BasePath $basePath -DependencyFilePath $DependencyFilePath
@@ -503,8 +607,10 @@ function Update-RepositoryDictionary {
         
         Write-Log "Existing tags (ordered): $($existingOrderedTags -join ', ')" -Level Debug
         Write-Log "New tags (ordered): $($newOrderedTags -join ', ')" -Level Debug
+        Write-Log "Existing API Compatibility: $($existingRepo.ApiCompatibility)" -Level Debug
+        Write-Log "New API Compatibility: $apiCompatibility" -Level Debug
         
-        # Calculate intersection (unsorted)
+        # Calculate intersection for compatibility check (always performed)
         $intersection = @()
         foreach ($tag in $existingOrderedTags) {
             if ($tag -in $newOrderedTags) {
@@ -521,42 +627,113 @@ function Update-RepositoryDictionary {
         
         Write-Log "API compatibility check passed for '$repoUrl'. Intersection: $($intersection -join ', ')" -Level Debug
         
-        # Apply new tag selection rules
+        # Apply API Compatibility rules
         $oldTag = $existingRepo.Tag
         $newTag = $oldTag
         $newApiCompatibleTags = @()
+        $newApiCompatibility = $existingRepo.ApiCompatibility
         $needCheckout = $false
         
-        if ($existingRepo.Tag -in $intersection) {
-            # Existing tag is in intersection, remove it and use the rest as API compatible tags
-            $newApiCompatibleTags = @($intersection | Where-Object { $_ -ne $existingRepo.Tag })
-            Write-Log "Keeping existing tag '$oldTag' for repository '$repoUrl'" -Level Debug
-        } else {
-            # Existing tag not in intersection
-            # Find the rightmost (most recent) tag from the intersection
-            # by checking which appears last in the ordered lists
-            $mostRecentTag = $null
-            $mostRecentIndex = -1
-            
-            foreach ($intersectionTag in $intersection) {
-                # Check position in existing ordered tags
-                $existingIndex = [array]::IndexOf($existingOrderedTags, $intersectionTag)
-                # Check position in new ordered tags
-                $newIndex = [array]::IndexOf($newOrderedTags, $intersectionTag)
-                # Take the minimum to ensure it's valid in both
-                $effectiveIndex = [Math]::Min($existingIndex, $newIndex)
+        if ($existingRepo.ApiCompatibility -eq 'Strict') {
+            if ($apiCompatibility -eq 'Strict') {
+                # Both Strict: Use current algorithm (intersection)
+                Write-Log "Both repositories are Strict mode, using intersection algorithm" -Level Debug
                 
-                if ($effectiveIndex -gt $mostRecentIndex) {
-                    $mostRecentIndex = $effectiveIndex
-                    $mostRecentTag = $intersectionTag
+                if ($existingRepo.Tag -in $intersection) {
+                    # Existing tag is in intersection, remove it and use the rest as API compatible tags
+                    $newApiCompatibleTags = @($intersection | Where-Object { $_ -ne $existingRepo.Tag })
+                    Write-Log "Keeping existing tag '$oldTag' for repository '$repoUrl'" -Level Debug
+                } else {
+                    # Existing tag not in intersection
+                    # Find the rightmost (most recent) tag from the intersection
+                    $mostRecentTag = $null
+                    $mostRecentIndex = -1
+                    
+                    foreach ($intersectionTag in $intersection) {
+                        # Check position in existing ordered tags
+                        $existingIndex = [array]::IndexOf($existingOrderedTags, $intersectionTag)
+                        # Check position in new ordered tags
+                        $newIndex = [array]::IndexOf($newOrderedTags, $intersectionTag)
+                        # Take the minimum to ensure it's valid in both
+                        $effectiveIndex = [Math]::Min($existingIndex, $newIndex)
+                        
+                        if ($effectiveIndex -gt $mostRecentIndex) {
+                            $mostRecentIndex = $effectiveIndex
+                            $mostRecentTag = $intersectionTag
+                        }
+                    }
+                    
+                    if ($mostRecentTag) {
+                        $newTag = $mostRecentTag
+                        $newApiCompatibleTags = @($intersection | Where-Object { $_ -ne $mostRecentTag })
+                        $needCheckout = $true
+                        Write-Log "Updating tag from '$oldTag' to '$newTag' for repository '$repoUrl' (most recent common tag)" -Level Info
+                    }
                 }
+            } else {
+                # Existing Strict, new Permissive: Leave unchanged
+                Write-Log "Existing repository is Strict, new is Permissive - leaving tags unchanged" -Level Debug
+                $newTag = $existingRepo.Tag
+                $newApiCompatibleTags = $existingRepo.ApiCompatibleTags
             }
-            
-            if ($mostRecentTag) {
-                $newTag = $mostRecentTag
-                $newApiCompatibleTags = @($intersection | Where-Object { $_ -ne $mostRecentTag })
-                $needCheckout = $true
-                Write-Log "Updating tag from '$oldTag' to '$newTag' for repository '$repoUrl' (most recent common tag)" -Level Info
+        } else {
+            # Existing Permissive
+            if ($apiCompatibility -eq 'Permissive') {
+                # Both Permissive: Use union instead of intersection
+                Write-Log "Both repositories are Permissive mode, using union algorithm" -Level Debug
+                
+                $union = Get-TagUnion -Tags1 $existingOrderedTags -Tags2 $newOrderedTags
+                Write-Log "Union of tags: $($union -join ', ')" -Level Debug
+                
+                # Find the rightmost (most recent) tag from the union
+                # by checking which appears last in the combined ordered lists
+                $mostRecentTag = $null
+                $mostRecentIndex = -1
+                
+                # Create a combined ordered list preserving temporal order
+                $allOrderedTags = @()
+                $addedTags = @{}
+                
+                # Add from existing ordered tags
+                foreach ($tag in $existingOrderedTags) {
+                    if (-not $addedTags.ContainsKey($tag)) {
+                        $allOrderedTags += $tag
+                        $addedTags[$tag] = $true
+                    }
+                }
+                
+                # Add from new ordered tags (only those not already added)
+                foreach ($tag in $newOrderedTags) {
+                    if (-not $addedTags.ContainsKey($tag)) {
+                        $allOrderedTags += $tag
+                        $addedTags[$tag] = $true
+                    }
+                }
+                
+                # The most recent tag is the last one in the ordered list
+                if ($allOrderedTags.Count -gt 0) {
+                    $mostRecentTag = $allOrderedTags[-1]
+                    $newTag = $mostRecentTag
+                    $newApiCompatibleTags = @($allOrderedTags | Where-Object { $_ -ne $mostRecentTag })
+                    
+                    if ($newTag -ne $oldTag) {
+                        $needCheckout = $true
+                        Write-Log "Updating tag from '$oldTag' to '$newTag' for repository '$repoUrl' (most recent tag from union)" -Level Info
+                    } else {
+                        Write-Log "Keeping existing tag '$oldTag' for repository '$repoUrl' (already most recent)" -Level Debug
+                    }
+                }
+            } else {
+                # Existing Permissive, new Strict: Copy from new and set to Strict
+                Write-Log "Existing repository is Permissive, new is Strict - adopting Strict mode" -Level Debug
+                $newTag = $tag
+                $newApiCompatibleTags = $apiCompatibleTags
+                $newApiCompatibility = 'Strict'
+                
+                if ($newTag -ne $oldTag) {
+                    $needCheckout = $true
+                    Write-Log "Updating tag from '$oldTag' to '$newTag' for repository '$repoUrl' (switching to Strict mode)" -Level Info
+                }
             }
         }
         
@@ -565,12 +742,13 @@ function Update-RepositoryDictionary {
             AbsolutePath = $existingAbsolutePath
             Tag = $newTag
             ApiCompatibleTags = $newApiCompatibleTags
+            ApiCompatibility = $newApiCompatibility
             AlreadyCheckedOut = $true
             NeedCheckout = $needCheckout
             CheckoutFailed = $false
         }
         
-        Write-Log "Updated repository '$repoUrl' - Tag: $newTag, API Compatible Tags: $($newApiCompatibleTags -join ', ')" -Level Debug
+        Write-Log "Updated repository '$repoUrl' - Tag: $newTag, API Compatible Tags: $($newApiCompatibleTags -join ', '), API Compatibility: $newApiCompatibility" -Level Debug
         
         # Return special value to indicate need for checkout
         if ($needCheckout) {
@@ -584,12 +762,13 @@ function Update-RepositoryDictionary {
             AbsolutePath = $absoluteBasePath
             Tag = $tag
             ApiCompatibleTags = $apiCompatibleTags
+            ApiCompatibility = $apiCompatibility
             AlreadyCheckedOut = $false
             NeedCheckout = $false
             CheckoutFailed = $false
         }
         
-        Write-Log "Added new repository to dictionary: '$repoUrl'" -Level Debug
+        Write-Log "Added new repository to dictionary: '$repoUrl' with API Compatibility: $apiCompatibility" -Level Debug
         
         return $false  # Repository needs to be checked out
     }
@@ -1203,6 +1382,7 @@ Failed: $($script:FailureCount)
     if ($Recursive) {
         $summary += "`nRecursive Mode: Enabled"
         $summary += "`nMax Depth: $MaxDepth"
+        $summary += "`nDefault API Compatibility: $($script:DefaultApiCompatibility)"
         $summary += "`nTotal Unique Repositories: $($script:RepositoryDictionary.Count)"
     }
     
@@ -1225,6 +1405,7 @@ try {
     Write-Log "Script path: $script:ScriptPath" -Level Debug
     Write-Log "PowerShell version: $($PSVersionTable.PSVersion)" -Level Debug
     Write-Log "Operating System: $([System.Environment]::OSVersion.VersionString)" -Level Debug
+    Write-Log "Default API Compatibility: $($script:DefaultApiCompatibility)" -Level Info
     
     # Calculate and log script hash in debug mode
     if ($EnableDebug) {
@@ -1285,7 +1466,7 @@ try {
     
     # If recursive mode is enabled, process nested dependencies
     if ($Recursive -and $checkedOutRepos.Count -gt 0) {
-        Process-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DependencyFileName $dependencyFileName -CurrentDepth 1
+        Process-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DependencyFileName $DependencyFileName -CurrentDepth 1
     }
     
     # Show summary
