@@ -6,7 +6,8 @@
     "Tag": "v2.5.0",
     "API Compatible Tags": ["v2.0.0", "v2.1.0", "v2.2.0", "v2.3.0", "v2.4.0"],
     "API Compatibility": "Strict",
-    "Skip LFS": false
+    "Skip LFS": false,
+    "_note": "With -EnableTagSorting, the API Compatible Tags order is flexible and will be sorted chronologically"
   },
   {
     "_comment": "Rapidly evolving UI component library with permissive compatibility",
@@ -15,7 +16,8 @@
     "Tag": "v4.2.0",
     "API Compatible Tags": ["v4.0.0", "v4.1.0"],
     "API Compatibility": "Permissive",
-    "Skip LFS": true
+    "Skip LFS": true,
+    "_note": "When -EnableTagSorting is enabled, manual temporal ordering is not required"
   },
   {
     "_comment": "Utility library using default compatibility mode (inherits from -ApiCompatibility parameter)",
@@ -23,7 +25,8 @@
     "Base Path": "libs/utils",
     "Tag": "v1.8.0",
     "API Compatible Tags": ["v1.5.0", "v1.6.0", "v1.7.0"],
-    "Skip LFS": false
+    "Skip LFS": false,
+    "_note": "With -EnableTagSorting disabled, ensure API Compatible Tags are listed oldest to newest"
   },
   {
     "_comment": "Database access layer - production critical with strict mode",
@@ -31,7 +34,8 @@
     "Base Path": "libs/database",
     "Tag": "v3.0.0",
     "API Compatible Tags": ["v2.8.0", "v2.9.0"],
-    "API Compatibility": "Strict"
+    "API Compatibility": "Strict",
+    "_note": "SSH repository with strict compatibility for maximum stability"
   },
   {
     "_comment": "Experimental AI/ML features with permissive mode for rapid iteration",
@@ -39,6 +43,16 @@
     "Base Path": "libs/ml",
     "Tag": "v0.5.0-beta",
     "API Compatible Tags": ["v0.3.0-beta", "v0.4.0-beta"],
-    "API Compatibility": "Permissive"
+    "API Compatibility": "Permissive",
+    "_note": "Flexible ordering with -EnableTagSorting ideal for experimental components"
+  },
+  {
+    "_comment": "Example showcasing tag temporal sorting benefits",
+    "Repository URL": "https://github.com/myorg/legacy-lib.git",
+    "Base Path": "libs/legacy",
+    "Tag": "v1.2.3",
+    "API Compatible Tags": ["v1.0.5", "v1.2.1", "v1.1.0", "v1.0.8"],
+    "API Compatibility": "Permissive",
+    "_note": "Without -EnableTagSorting: must be manually ordered as ['v1.0.5', 'v1.0.8', 'v1.1.0', 'v1.2.1']. With -EnableTagSorting: automatic chronological sorting based on git tag dates"
   }
 ]

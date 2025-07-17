@@ -10,6 +10,9 @@
     SSH credentials are managed through a separate git_credentials.json file.
     
     With the -Recursive option, it can discover and process nested dependencies.
+    
+    With the -EnableTagSorting option, it fetches tag dates from repositories and uses
+    them to properly sort API Compatible Tags temporally, removing manual ordering requirements.
 .PARAMETER InputFile
     Path to the JSON configuration file. Defaults to 'dependencies.json' in the script directory.
 .PARAMETER CredentialsFile
@@ -26,17 +29,28 @@
     Maximum recursion depth for dependency discovery. Defaults to 5.
 .PARAMETER ApiCompatibility
     Default API compatibility mode when not specified in dependencies. Can be 'Strict' or 'Permissive'. Defaults to 'Permissive'.
+.PARAMETER EnableTagSorting
+    Enables automatic tag temporal sorting using git tag dates. This removes the requirement for manual temporal ordering in "API Compatible Tags" and suppresses related warnings in Permissive mode.
 .EXAMPLE
     .\LsiGitCheckout.ps1
     .\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
     .\LsiGitCheckout.ps1 -Recursive -MaxDepth 10
     .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug -Recursive -ApiCompatibility Strict
+    .\LsiGitCheckout.ps1 -Recursive -EnableTagSorting -Verbose
 .NOTES
-    Version: 4.1.1
+    Version: 4.2.0-dev
     Last Modified: 2025-01-16
     
     This script uses PuTTY/plink for SSH authentication. SSH keys must be in PuTTY format (.ppk).
     Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.
+    
+    Changes in 4.2.0-dev:
+    - Added -EnableTagSorting parameter for automatic tag temporal sorting
+    - Added tag date fetching functionality after repository checkout
+    - Enhanced tag sorting using actual git tag dates instead of manual ordering
+    - Improved compatibility tag merging with temporal ordering
+    - Suppressed manual ordering warnings when tag sorting is enabled
+    - Added comprehensive debug logging for tag sorting operations
     
     Changes in 4.1.1:
     - Fixed temporal ordering in union operations for Permissive mode
@@ -107,11 +121,14 @@ param(
     
     [Parameter()]
     [ValidateSet('Strict', 'Permissive')]
-    [string]$ApiCompatibility = 'Permissive'
+    [string]$ApiCompatibility = 'Permissive',
+    
+    [Parameter()]
+    [switch]$EnableTagSorting
 )
 
 # Script configuration
-$script:Version = "4.1.1"
+$script:Version = "4.2.0-dev"
 $script:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:ErrorFile = Join-Path $ScriptPath "LsiGitCheckout_Errors.txt"
 $script:DebugLogFile = Join-Path $ScriptPath ("debug_log_{0}.txt" -f (Get-Date -Format "yyyyMMddHHmm"))
@@ -123,6 +140,7 @@ $script:RepositoryDictionary = @{}
 $script:CurrentDepth = 0
 $script:ProcessedDependencyFiles = @()
 $script:DefaultApiCompatibility = $ApiCompatibility
+$script:EnableTagSorting = $EnableTagSorting
 
 # Initialize error file
 if (Test-Path $script:ErrorFile) {
@@ -359,6 +377,130 @@ function Set-GitSshKey {
     return $true
 }
 
+function Get-GitTagDates {
+    param(
+        [string]$RepoPath
+    )
+    
+    Write-Log "Fetching tag dates for repository at: $RepoPath" -Level Debug
+    
+    if (-not (Test-Path $RepoPath)) {
+        Write-Log "Repository path does not exist: $RepoPath" -Level Warning
+        return @{}
+    }
+    
+    try {
+        Push-Location $RepoPath
+        
+        # Fetch all tags with their dates using git for-each-ref
+        # This is more efficient than git log for each tag
+        $gitCommand = "git for-each-ref --sort=creatordate --format='%(refname:short)|%(creatordate:iso8601)' refs/tags"
+        Write-Log "Executing tag date fetch: $gitCommand" -Level Debug
+        
+        if ($DryRun) {
+            Write-Log "DRY RUN: Would fetch tag dates from repository" -Level Verbose
+            Pop-Location
+            return @{}
+        }
+        
+        $output = Invoke-Expression $gitCommand 2>&1
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "Git command failed to fetch tag dates: $output" -Level Warning
+            Pop-Location
+            return @{}
+        }
+        
+        $tagDates = @{}
+        $tagCount = 0
+        
+        foreach ($line in $output) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            
+            $parts = $line -split '\|', 2
+            if ($parts.Count -eq 2) {
+                $tagName = $parts[0].Trim()
+                $dateString = $parts[1].Trim()
+                
+                try {
+                    $tagDate = [DateTime]::Parse($dateString)
+                    $tagDates[$tagName] = $tagDate
+                    $tagCount++
+                    Write-Log "Parsed tag: $tagName -> $($tagDate.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Debug
+                }
+                catch {
+                    Write-Log "Failed to parse date for tag '$tagName': $dateString" -Level Warning
+                }
+            }
+        }
+        
+        Pop-Location
+        
+        Write-Log "Successfully fetched dates for $tagCount tags" -Level Info
+        
+        # Output discovered tags in verbose mode
+        if ($VerbosePreference -eq 'Continue') {
+            Write-Log "Discovered tags and dates:" -Level Verbose
+            $sortedTags = $tagDates.GetEnumerator() | Sort-Object Value
+            foreach ($tag in $sortedTags) {
+                Write-Log "  $($tag.Key): $($tag.Value.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Verbose
+            }
+        }
+        
+        return $tagDates
+    }
+    catch {
+        Pop-Location -ErrorAction SilentlyContinue
+        Write-Log "Error fetching tag dates: $_" -Level Warning
+        return @{}
+    }
+}
+
+function Sort-TagsByDate {
+    param(
+        [array]$Tags,
+        [hashtable]$TagDates,
+        [string]$RepositoryUrl
+    )
+    
+    if (-not $script:EnableTagSorting -or $TagDates.Count -eq 0) {
+        Write-Log "Tag sorting disabled or no tag dates available, returning tags in original order" -Level Debug
+        return $Tags
+    }
+    
+    # Separate tags that have dates from those that don't
+    $tagsWithDates = @()
+    $tagsWithoutDates = @()
+    
+    foreach ($tag in $Tags) {
+        if ($TagDates.ContainsKey($tag)) {
+            $tagsWithDates += [PSCustomObject]@{
+                Tag = $tag
+                Date = $TagDates[$tag]
+            }
+        } else {
+            $tagsWithoutDates += $tag
+        }
+    }
+    
+    # Sort tags with dates by their creation date (oldest first)
+    $sortedTagsWithDates = $tagsWithDates | Sort-Object { $_.Date } | ForEach-Object { $_.Tag }
+    
+    # Combine: sorted tags with dates first, then tags without dates in original order
+    $sortedTags = @()
+    $sortedTags += $sortedTagsWithDates
+    $sortedTags += $tagsWithoutDates
+    
+    # Only show verbose output for temporal sorting results
+    if ($VerbosePreference -eq 'Continue') {
+        Write-Log "Tag temporal sorting for $RepositoryUrl :" -Level Verbose
+        Write-Log "  Original: $($Tags -join ', ')" -Level Verbose
+        Write-Log "  Temporal: $($sortedTags -join ', ')" -Level Verbose
+    }
+    
+    return $sortedTags
+}
+
 function Reset-GitRepository {
     param(
         [string]$RepoPath,
@@ -481,9 +623,36 @@ function Get-TagIntersection {
 function Get-TagUnion {
     param(
         [array]$Tags1,
-        [array]$Tags2
+        [array]$Tags2,
+        [hashtable]$TagDates = @{},
+        [string]$RepositoryUrl = ""
     )
     
+    Write-Log "Computing tag union for repository: $RepositoryUrl" -Level Debug
+    Write-Log "Tags1: $($Tags1 -join ', ')" -Level Debug
+    Write-Log "Tags2: $($Tags2 -join ', ')" -Level Debug
+    
+    # If tag sorting is enabled and we have tag dates, use temporal sorting
+    if ($script:EnableTagSorting -and $TagDates.Count -gt 0) {
+        Write-Log "Using temporal sorting for tag union" -Level Debug
+        
+        # Create union of all tags
+        $unionSet = @{}
+        foreach ($tag in $Tags1) {
+            $unionSet[$tag] = $true
+        }
+        foreach ($tag in $Tags2) {
+            $unionSet[$tag] = $true
+        }
+        
+        $allTags = @($unionSet.Keys)
+        $sortedUnion = Sort-TagsByDate -Tags $allTags -TagDates $TagDates -RepositoryUrl $RepositoryUrl
+        
+        Write-Log "Temporal union result: $($sortedUnion -join ', ')" -Level Debug
+        return $sortedUnion
+    }
+    
+    # Fall back to original logic when tag sorting is disabled
     # Check if both lists start with the same tag
     if ($Tags1.Count -gt 0 -and $Tags2.Count -gt 0 -and $Tags1[0] -ne $Tags2[0]) {
         Write-Log "Warning: Tag lists for union do not start with the same tag. List1 starts with '$($Tags1[0])', List2 starts with '$($Tags2[0])'. Using unordered union." -Level Warning
@@ -570,7 +739,7 @@ function Update-RepositoryDictionary {
     
     $repoUrl = $Repository.'Repository URL'
     $basePath = $Repository.'Base Path'
-    $tag = $Repository.Tag
+    $newRepositoryTag = $Repository.Tag
     $apiCompatibleTags = $Repository.'API Compatible Tags'
     $apiCompatibility = if ($Repository.'API Compatibility') { $Repository.'API Compatibility' } else { $script:DefaultApiCompatibility }
     
@@ -590,20 +759,23 @@ function Update-RepositoryDictionary {
             throw $errorMessage
         }
         
+        # Get tag dates if available
+        $tagDates = if ($existingRepo.ContainsKey('TagDates')) { $existingRepo.TagDates } else { @{} }
+        
         # Create ordered tag lists (API Compatible Tags + Tag at the end)
-        # For existing repository
+        # For existing repository - use as-is since already sorted when added to dictionary
         $existingOrderedTags = @()
         if ($existingRepo.ApiCompatibleTags) {
             $existingOrderedTags += $existingRepo.ApiCompatibleTags
         }
         $existingOrderedTags += $existingRepo.Tag
         
-        # For new repository
+        # For new repository - use as-is, will be sorted in final union/intersection if needed
         $newOrderedTags = @()
         if ($apiCompatibleTags) {
             $newOrderedTags += $apiCompatibleTags
         }
-        $newOrderedTags += $tag
+        $newOrderedTags += $newRepositoryTag
         
         Write-Log "Existing tags (ordered): $($existingOrderedTags -join ', ')" -Level Debug
         Write-Log "New tags (ordered): $($newOrderedTags -join ', ')" -Level Debug
@@ -633,41 +805,89 @@ function Update-RepositoryDictionary {
         $newApiCompatibleTags = @()
         $newApiCompatibility = $existingRepo.ApiCompatibility
         $needCheckout = $false
+        $finalOrderedTags = @()
         
         if ($existingRepo.ApiCompatibility -eq 'Strict') {
             if ($apiCompatibility -eq 'Strict') {
-                # Both Strict: Use current algorithm (intersection)
+                # Both Strict: Use intersection algorithm
                 Write-Log "Both repositories are Strict mode, using intersection algorithm" -Level Debug
                 
-                if ($existingRepo.Tag -in $intersection) {
-                    # Existing tag is in intersection, remove it and use the rest as API compatible tags
-                    $newApiCompatibleTags = @($intersection | Where-Object { $_ -ne $existingRepo.Tag })
-                    Write-Log "Keeping existing tag '$oldTag' for repository '$repoUrl'" -Level Debug
+                # Sort intersection if tag sorting is enabled
+                if ($script:EnableTagSorting -and $tagDates.Count -gt 0) {
+                    $finalOrderedTags = Sort-TagsByDate -Tags $intersection -TagDates $tagDates -RepositoryUrl $repoUrl
+                    Write-Log "Intersection after temporal sorting: $($finalOrderedTags -join ', ')" -Level Debug
                 } else {
-                    # Existing tag not in intersection
-                    # Find the rightmost (most recent) tag from the intersection
-                    $mostRecentTag = $null
-                    $mostRecentIndex = -1
-                    
-                    foreach ($intersectionTag in $intersection) {
-                        # Check position in existing ordered tags
-                        $existingIndex = [array]::IndexOf($existingOrderedTags, $intersectionTag)
-                        # Check position in new ordered tags
-                        $newIndex = [array]::IndexOf($newOrderedTags, $intersectionTag)
-                        # Take the minimum to ensure it's valid in both
-                        $effectiveIndex = [Math]::Min($existingIndex, $newIndex)
+                    $finalOrderedTags = $intersection
+                }
+                
+                # Select tag based on EnableTagSorting setting
+                if ($finalOrderedTags.Count -gt 0) {
+                    if ($script:EnableTagSorting -and $tagDates.Count -gt 0) {
+                        # Enhanced logic: Check if existing or new Tag are in the compatible list
+                        $existingTagInList = $existingRepo.Tag -in $finalOrderedTags
+                        $newTagInList = $newRepositoryTag -in $finalOrderedTags
                         
-                        if ($effectiveIndex -gt $mostRecentIndex) {
-                            $mostRecentIndex = $effectiveIndex
-                            $mostRecentTag = $intersectionTag
+                        Write-Log "Existing tag '$($existingRepo.Tag)' in compatible list: $existingTagInList" -Level Debug
+                        Write-Log "New tag '$newRepositoryTag' in compatible list: $newTagInList" -Level Debug
+                        
+                        if ($existingTagInList -and $newTagInList) {
+                            # Both tags are compatible, choose the chronologically most recent
+                            $existingTagDate = $tagDates[$existingRepo.Tag]
+                            $newTagDate = $tagDates[$newRepositoryTag]
+                            
+                            if ($newTagDate -gt $existingTagDate) {
+                                $selectedTag = $newRepositoryTag
+                                Write-Log "Selected new tag '$newRepositoryTag' (newer: $($newTagDate.ToString('yyyy-MM-dd HH:mm:ss')) vs $($existingTagDate.ToString('yyyy-MM-dd HH:mm:ss')))" -Level Debug
+                            } else {
+                                $selectedTag = $existingRepo.Tag
+                                Write-Log "Selected existing tag '$($existingRepo.Tag)' (newer: $($existingTagDate.ToString('yyyy-MM-dd HH:mm:ss')) vs $($newTagDate.ToString('yyyy-MM-dd HH:mm:ss')))" -Level Debug
+                            }
+                        } elseif ($existingTagInList) {
+                            # Only existing tag is compatible
+                            $selectedTag = $existingRepo.Tag
+                            Write-Log "Selected existing tag '$($existingRepo.Tag)' (only existing tag is compatible)" -Level Debug
+                        } elseif ($newTagInList) {
+                            # Only new tag is compatible
+                            $selectedTag = $newRepositoryTag
+                            Write-Log "Selected new tag '$newRepositoryTag' (only new tag is compatible)" -Level Debug
+                        } else {
+                            # Neither tag is in the compatible list, choose chronologically most recent from list
+                            $mostRecentTag = $null
+                            $mostRecentDate = [DateTime]::MinValue
+                            
+                            foreach ($compatibleTag in $finalOrderedTags) {
+                                if ($tagDates.ContainsKey($compatibleTag) -and $tagDates[$compatibleTag] -gt $mostRecentDate) {
+                                    $mostRecentDate = $tagDates[$compatibleTag]
+                                    $mostRecentTag = $compatibleTag
+                                }
+                            }
+                            
+                            $selectedTag = if ($mostRecentTag) { $mostRecentTag } else { $finalOrderedTags[-1] }
+                            Write-Log "Neither existing nor new tag compatible, selected most recent from list: '$selectedTag'" -Level Debug
+                        }
+                        
+                        $newTag = $selectedTag
+                        $newApiCompatibleTags = @($finalOrderedTags | Where-Object { $_ -ne $selectedTag })
+                    } else {
+                        # Original logic when tag sorting is disabled
+                        if ($existingRepo.Tag -in $finalOrderedTags) {
+                            # Existing tag is in final list, remove it and use the rest as API compatible tags
+                            $newApiCompatibleTags = @($finalOrderedTags | Where-Object { $_ -ne $existingRepo.Tag })
+                            Write-Log "Keeping existing tag '$oldTag' for repository '$repoUrl'" -Level Debug
+                        } else {
+                            # Existing tag not in final list, use the most recent (last) tag
+                            $mostRecentTag = $finalOrderedTags[-1]
+                            $newTag = $mostRecentTag
+                            $newApiCompatibleTags = @($finalOrderedTags | Where-Object { $_ -ne $mostRecentTag })
+                            Write-Log "Existing tag not compatible, selected rightmost tag: '$newTag'" -Level Debug
                         }
                     }
                     
-                    if ($mostRecentTag) {
-                        $newTag = $mostRecentTag
-                        $newApiCompatibleTags = @($intersection | Where-Object { $_ -ne $mostRecentTag })
+                    if ($newTag -ne $oldTag) {
                         $needCheckout = $true
-                        Write-Log "Updating tag from '$oldTag' to '$newTag' for repository '$repoUrl' (most recent common tag)" -Level Info
+                        Write-Log "Updating tag from '$oldTag' to '$newTag' for repository '$repoUrl' (intersection result)" -Level Info
+                    } else {
+                        Write-Log "Keeping existing tag '$oldTag' for repository '$repoUrl'" -Level Debug
                     }
                 }
             } else {
@@ -679,55 +899,92 @@ function Update-RepositoryDictionary {
         } else {
             # Existing Permissive
             if ($apiCompatibility -eq 'Permissive') {
-                # Both Permissive: Use union instead of intersection
+                # Both Permissive: Use union
                 Write-Log "Both repositories are Permissive mode, using union algorithm" -Level Debug
                 
-                $union = Get-TagUnion -Tags1 $existingOrderedTags -Tags2 $newOrderedTags
+                $union = Get-TagUnion -Tags1 $existingOrderedTags -Tags2 $newOrderedTags -TagDates $tagDates -RepositoryUrl $repoUrl
                 Write-Log "Union of tags: $($union -join ', ')" -Level Debug
                 
-                # Find the rightmost (most recent) tag from the union
-                # by checking which appears last in the combined ordered lists
-                $mostRecentTag = $null
-                $mostRecentIndex = -1
-                
-                # Create a combined ordered list preserving temporal order
-                $allOrderedTags = @()
-                $addedTags = @{}
-                
-                # Add from existing ordered tags
-                foreach ($tag in $existingOrderedTags) {
-                    if (-not $addedTags.ContainsKey($tag)) {
-                        $allOrderedTags += $tag
-                        $addedTags[$tag] = $true
+                # Select tag based on EnableTagSorting setting
+                if ($union.Count -gt 0) {
+                    if ($script:EnableTagSorting -and $tagDates.Count -gt 0) {
+                        # Enhanced logic: Check if existing or new Tag are in the union
+                        $existingTagInList = $existingRepo.Tag -in $union
+                        $newTagInList = $newRepositoryTag -in $union
+                        
+                        Write-Log "Existing tag '$($existingRepo.Tag)' in union: $existingTagInList" -Level Debug
+                        Write-Log "New tag '$newRepositoryTag' in union: $newTagInList" -Level Debug
+                        
+                        if ($existingTagInList -and $newTagInList) {
+                            # Both tags are in union, choose the chronologically most recent
+                            $existingTagDate = $tagDates[$existingRepo.Tag]
+                            $newTagDate = $tagDates[$newRepositoryTag]
+                            
+                            if ($newTagDate -gt $existingTagDate) {
+                                $selectedTag = $newRepositoryTag
+                                Write-Log "Selected new tag '$newRepositoryTag' (newer: $($newTagDate.ToString('yyyy-MM-dd HH:mm:ss')) vs $($existingTagDate.ToString('yyyy-MM-dd HH:mm:ss')))" -Level Debug
+                            } else {
+                                $selectedTag = $existingRepo.Tag
+                                Write-Log "Selected existing tag '$($existingRepo.Tag)' (newer: $($existingTagDate.ToString('yyyy-MM-dd HH:mm:ss')) vs $($newTagDate.ToString('yyyy-MM-dd HH:mm:ss')))" -Level Debug
+                            }
+                        } elseif ($existingTagInList) {
+                            # Only existing tag is in union
+                            $selectedTag = $existingRepo.Tag
+                            Write-Log "Selected existing tag '$($existingRepo.Tag)' (only existing tag in union)" -Level Debug
+                        } elseif ($newTagInList) {
+                            # Only new tag is in union
+                            $selectedTag = $newRepositoryTag
+                            Write-Log "Selected new tag '$newRepositoryTag' (only new tag in union)" -Level Debug
+                        } else {
+                            # Neither tag is in union, choose chronologically most recent from union
+                            $mostRecentTag = $null
+                            $mostRecentDate = [DateTime]::MinValue
+                            
+                            foreach ($unionTag in $union) {
+                                if ($tagDates.ContainsKey($unionTag) -and $tagDates[$unionTag] -gt $mostRecentDate) {
+                                    $mostRecentDate = $tagDates[$unionTag]
+                                    $mostRecentTag = $unionTag
+                                }
+                            }
+                            
+                            $selectedTag = if ($mostRecentTag) { $mostRecentTag } else { $union[-1] }
+                            Write-Log "Neither existing nor new tag in union, selected most recent from union: '$selectedTag'" -Level Debug
+                        }
+                        
+                        $newTag = $selectedTag
+                        $newApiCompatibleTags = @($union | Where-Object { $_ -ne $selectedTag })
+                    } else {
+                        # Original logic when tag sorting is disabled
+                        $mostRecentTag = $union[-1]
+                        $newTag = $mostRecentTag
+                        $newApiCompatibleTags = @($union | Where-Object { $_ -ne $mostRecentTag })
+                        Write-Log "Tag sorting disabled, selected rightmost tag: '$newTag'" -Level Debug
                     }
-                }
-                
-                # Add from new ordered tags (only those not already added)
-                foreach ($tag in $newOrderedTags) {
-                    if (-not $addedTags.ContainsKey($tag)) {
-                        $allOrderedTags += $tag
-                        $addedTags[$tag] = $true
-                    }
-                }
-                
-                # The most recent tag is the last one in the ordered list
-                if ($allOrderedTags.Count -gt 0) {
-                    $mostRecentTag = $allOrderedTags[-1]
-                    $newTag = $mostRecentTag
-                    $newApiCompatibleTags = @($allOrderedTags | Where-Object { $_ -ne $mostRecentTag })
                     
                     if ($newTag -ne $oldTag) {
                         $needCheckout = $true
-                        Write-Log "Updating tag from '$oldTag' to '$newTag' for repository '$repoUrl' (most recent tag from union)" -Level Info
+                        Write-Log "Updating tag from '$oldTag' to '$newTag' for repository '$repoUrl' (union result)" -Level Info
                     } else {
-                        Write-Log "Keeping existing tag '$oldTag' for repository '$repoUrl' (already most recent)" -Level Debug
+                        Write-Log "Keeping existing tag '$oldTag' for repository '$repoUrl' (already optimal)" -Level Debug
                     }
                 }
             } else {
                 # Existing Permissive, new Strict: Copy from new and set to Strict
                 Write-Log "Existing repository is Permissive, new is Strict - adopting Strict mode" -Level Debug
-                $newTag = $tag
-                $newApiCompatibleTags = $apiCompatibleTags
+                
+                # When switching to Strict mode, use the new repository's settings
+                if ($script:EnableTagSorting -and $tagDates.Count -gt 0) {
+                    $sortedNewTags = Sort-TagsByDate -Tags $newOrderedTags -TagDates $tagDates -RepositoryUrl $repoUrl
+                    # In this case, the new tag is the definitive choice since we're adopting Strict mode
+                    $newTag = $newRepositoryTag
+                    $newApiCompatibleTags = $apiCompatibleTags
+                    Write-Log "Adopting Strict mode with new tag: '$newRepositoryTag'" -Level Debug
+                } else {
+                    $newTag = $newRepositoryTag
+                    $newApiCompatibleTags = $apiCompatibleTags
+                    Write-Log "Tag sorting disabled, adopting new tag: '$newRepositoryTag'" -Level Debug
+                }
+                
                 $newApiCompatibility = 'Strict'
                 
                 if ($newTag -ne $oldTag) {
@@ -746,6 +1003,7 @@ function Update-RepositoryDictionary {
             AlreadyCheckedOut = $true
             NeedCheckout = $needCheckout
             CheckoutFailed = $false
+            TagDates = $tagDates  # Preserve existing tag dates
         }
         
         Write-Log "Updated repository '$repoUrl' - Tag: $newTag, API Compatible Tags: $($newApiCompatibleTags -join ', '), API Compatibility: $newApiCompatibility" -Level Debug
@@ -757,15 +1015,23 @@ function Update-RepositoryDictionary {
             return $true  # Repository already checked out with correct tag
         }
     } else {
-        # New repository, add to dictionary
+        # New repository, add to dictionary with sorted API Compatible Tags if tag sorting enabled
+        $sortedApiCompatibleTags = $apiCompatibleTags
+        if ($script:EnableTagSorting -and $Recursive) {
+            # We'll sort the API Compatible Tags when we get the tag dates after checkout
+            # For now, store them as-is
+            $sortedApiCompatibleTags = $apiCompatibleTags
+        }
+        
         $script:RepositoryDictionary[$repoUrl] = @{
             AbsolutePath = $absoluteBasePath
-            Tag = $tag
-            ApiCompatibleTags = $apiCompatibleTags
+            Tag = $newRepositoryTag
+            ApiCompatibleTags = $sortedApiCompatibleTags
             ApiCompatibility = $apiCompatibility
             AlreadyCheckedOut = $false
             NeedCheckout = $false
             CheckoutFailed = $false
+            TagDates = @{}  # Will be populated after checkout
         }
         
         Write-Log "Added new repository to dictionary: '$repoUrl' with API Compatibility: $apiCompatibility" -Level Debug
@@ -1032,6 +1298,27 @@ function Invoke-GitCheckout {
                         throw "Checkout failed with exit code $LASTEXITCODE (no error details available)"
                     }
                 }
+            }
+        }
+        
+        # Fetch tag dates if tag sorting is enabled and this is the first checkout
+        if ($script:EnableTagSorting -and $Recursive) {
+            Write-Log "Tag sorting enabled, fetching tag dates for repository: $repoUrl" -Level Info
+            $tagDates = Get-GitTagDates -RepoPath $absoluteBasePath
+            
+            # Store tag dates in repository dictionary and sort API Compatible Tags
+            if ($script:RepositoryDictionary.ContainsKey($repoUrl)) {
+                $script:RepositoryDictionary[$repoUrl].TagDates = $tagDates
+                
+                # Sort the API Compatible Tags now that we have tag dates
+                $currentApiTags = $script:RepositoryDictionary[$repoUrl].ApiCompatibleTags
+                if ($currentApiTags -and $tagDates.Count -gt 0) {
+                    $sortedApiTags = Sort-TagsByDate -Tags $currentApiTags -TagDates $tagDates -RepositoryUrl $repoUrl
+                    $script:RepositoryDictionary[$repoUrl].ApiCompatibleTags = $sortedApiTags
+                    Write-Log "Sorted API Compatible Tags for repository '$repoUrl': $($sortedApiTags -join ', ')" -Level Debug
+                }
+                
+                Write-Log "Stored tag dates for $($tagDates.Count) tags in repository dictionary" -Level Debug
             }
         }
         
@@ -1386,6 +1673,26 @@ Failed: $($script:FailureCount)
         $summary += "`nTotal Unique Repositories: $($script:RepositoryDictionary.Count)"
     }
     
+    if ($script:EnableTagSorting) {
+        $summary += "`nTag Temporal Sorting: Enabled"
+        
+        # Show tag statistics in debug mode
+        if ($EnableDebug -and $script:RepositoryDictionary.Count -gt 0) {
+            $totalTags = 0
+            $reposWithTags = 0
+            foreach ($repo in $script:RepositoryDictionary.Values) {
+                if ($repo.ContainsKey('TagDates') -and $repo.TagDates.Count -gt 0) {
+                    $totalTags += $repo.TagDates.Count
+                    $reposWithTags++
+                }
+            }
+            $summary += "`nRepositories with Tag Data: $reposWithTags"
+            $summary += "`nTotal Tags Processed: $totalTags"
+        }
+    } else {
+        $summary += "`nTag Temporal Sorting: Disabled"
+    }
+    
     $summary += "`n========================================"
     
     Write-Log $summary -Level Info
@@ -1406,6 +1713,14 @@ try {
     Write-Log "PowerShell version: $($PSVersionTable.PSVersion)" -Level Debug
     Write-Log "Operating System: $([System.Environment]::OSVersion.VersionString)" -Level Debug
     Write-Log "Default API Compatibility: $($script:DefaultApiCompatibility)" -Level Info
+    
+    if ($script:EnableTagSorting) {
+        Write-Log "Tag temporal sorting: ENABLED" -Level Info
+        Write-Log "Manual temporal ordering requirements relaxed in Permissive mode" -Level Info
+    } else {
+        Write-Log "Tag temporal sorting: DISABLED" -Level Info
+        Write-Log "Manual temporal ordering required for API Compatible Tags" -Level Info
+    }
     
     # Calculate and log script hash in debug mode
     if ($EnableDebug) {
