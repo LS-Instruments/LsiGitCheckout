@@ -24,13 +24,13 @@
 .PARAMETER Verbose
     Increases verbosity of output messages.
 .PARAMETER Recursive
-    Enables recursive dependency discovery and processing.
+    Enables recursive dependency discovery and processing. Enabled by default.
 .PARAMETER MaxDepth
     Maximum recursion depth for dependency discovery. Defaults to 5.
 .PARAMETER ApiCompatibility
     Default API compatibility mode when not specified in dependencies. Can be 'Strict' or 'Permissive'. Defaults to 'Permissive'.
 .PARAMETER EnableTagSorting
-    Enables automatic tag temporal sorting using git tag dates. This removes the requirement for manual temporal ordering in "API Compatible Tags" and suppresses related warnings in Permissive mode.
+    Enables automatic tag temporal sorting using git tag dates. This removes the requirement for manual temporal ordering in "API Compatible Tags" and provides intelligent tag selection. Enabled by default.
 .EXAMPLE
     .\LsiGitCheckout.ps1
     .\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
@@ -38,11 +38,18 @@
     .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug -Recursive -ApiCompatibility Strict
     .\LsiGitCheckout.ps1 -Recursive -EnableTagSorting -Verbose
 .NOTES
-    Version: 4.2.0-dev
-    Last Modified: 2025-01-16
+    Version: 4.2.0
+    Last Modified: 2025-01-17
     
     This script uses PuTTY/plink for SSH authentication. SSH keys must be in PuTTY format (.ppk).
     Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.
+    
+    Changes in 4.2.0:
+    - Made -Recursive and -EnableTagSorting default (enabled by default)
+    - Optimized tag sorting to only run when needed during API compatibility resolution
+    - Improved logging to clearly indicate when repositories already exist in dictionary
+    - Enhanced repository conflict detection messaging
+    - Reduced unnecessary tag date fetching and sorting operations
     
     Changes in 4.2.0-dev:
     - Added -EnableTagSorting parameter for automatic tag temporal sorting
@@ -114,7 +121,7 @@ param(
     [switch]$EnableDebug,
     
     [Parameter()]
-    [switch]$Recursive,
+    [switch]$Recursive = $true,
     
     [Parameter()]
     [int]$MaxDepth = 5,
@@ -124,11 +131,11 @@ param(
     [string]$ApiCompatibility = 'Permissive',
     
     [Parameter()]
-    [switch]$EnableTagSorting
+    [switch]$EnableTagSorting = $true
 )
 
 # Script configuration
-$script:Version = "4.2.0-dev"
+$script:Version = "4.2.0"
 $script:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:ErrorFile = Join-Path $ScriptPath "LsiGitCheckout_Errors.txt"
 $script:DebugLogFile = Join-Path $ScriptPath ("debug_log_{0}.txt" -f (Get-Date -Format "yyyyMMddHHmm"))
@@ -460,13 +467,16 @@ function Sort-TagsByDate {
     param(
         [array]$Tags,
         [hashtable]$TagDates,
-        [string]$RepositoryUrl
+        [string]$RepositoryUrl,
+        [string]$Context = "compatibility resolution"
     )
     
     if (-not $script:EnableTagSorting -or $TagDates.Count -eq 0) {
-        Write-Log "Tag sorting disabled or no tag dates available, returning tags in original order" -Level Debug
+        Write-Log "Tag sorting disabled or no tag dates available for $Context, returning tags in original order" -Level Debug
         return $Tags
     }
+    
+    Write-Log "Performing tag temporal sorting for $Context on repository: $RepositoryUrl" -Level Debug
     
     # Separate tags that have dates from those that don't
     $tagsWithDates = @()
@@ -493,7 +503,7 @@ function Sort-TagsByDate {
     
     # Only show verbose output for temporal sorting results
     if ($VerbosePreference -eq 'Continue') {
-        Write-Log "Tag temporal sorting for $RepositoryUrl :" -Level Verbose
+        Write-Log "Tag temporal sorting for $RepositoryUrl ($Context):" -Level Verbose
         Write-Log "  Original: $($Tags -join ', ')" -Level Verbose
         Write-Log "  Temporal: $($sortedTags -join ', ')" -Level Verbose
     }
@@ -646,7 +656,7 @@ function Get-TagUnion {
         }
         
         $allTags = @($unionSet.Keys)
-        $sortedUnion = Sort-TagsByDate -Tags $allTags -TagDates $TagDates -RepositoryUrl $RepositoryUrl
+        $sortedUnion = Sort-TagsByDate -Tags $allTags -TagDates $TagDates -RepositoryUrl $RepositoryUrl -Context "union calculation"
         
         Write-Log "Temporal union result: $($sortedUnion -join ', ')" -Level Debug
         return $sortedUnion
@@ -748,6 +758,8 @@ function Update-RepositoryDictionary {
     
     if ($script:RepositoryDictionary.ContainsKey($repoUrl)) {
         # Repository already exists, check compatibility
+        Write-Log "Repository already exists in dictionary, performing API compatibility check..." -Level Info
+        
         $existingRepo = $script:RepositoryDictionary[$repoUrl]
         $existingAbsolutePath = $existingRepo.AbsolutePath
         
@@ -759,11 +771,11 @@ function Update-RepositoryDictionary {
             throw $errorMessage
         }
         
-        # Get tag dates if available
+        # Get tag dates if available (only fetch if we need them for sorting)
         $tagDates = if ($existingRepo.ContainsKey('TagDates')) { $existingRepo.TagDates } else { @{} }
         
         # Create ordered tag lists (API Compatible Tags + Tag at the end)
-        # For existing repository - use as-is since already sorted when added to dictionary
+        # For existing repository - use as-is since already processed
         $existingOrderedTags = @()
         if ($existingRepo.ApiCompatibleTags) {
             $existingOrderedTags += $existingRepo.ApiCompatibleTags
@@ -812,9 +824,9 @@ function Update-RepositoryDictionary {
                 # Both Strict: Use intersection algorithm
                 Write-Log "Both repositories are Strict mode, using intersection algorithm" -Level Debug
                 
-                # Sort intersection if tag sorting is enabled
+                # Sort intersection if tag sorting is enabled and we need to make chronological decisions
                 if ($script:EnableTagSorting -and $tagDates.Count -gt 0) {
-                    $finalOrderedTags = Sort-TagsByDate -Tags $intersection -TagDates $tagDates -RepositoryUrl $repoUrl
+                    $finalOrderedTags = Sort-TagsByDate -Tags $intersection -TagDates $tagDates -RepositoryUrl $repoUrl -Context "intersection"
                     Write-Log "Intersection after temporal sorting: $($finalOrderedTags -join ', ')" -Level Debug
                 } else {
                     $finalOrderedTags = $intersection
@@ -974,7 +986,6 @@ function Update-RepositoryDictionary {
                 
                 # When switching to Strict mode, use the new repository's settings
                 if ($script:EnableTagSorting -and $tagDates.Count -gt 0) {
-                    $sortedNewTags = Sort-TagsByDate -Tags $newOrderedTags -TagDates $tagDates -RepositoryUrl $repoUrl
                     # In this case, the new tag is the definitive choice since we're adopting Strict mode
                     $newTag = $newRepositoryTag
                     $newApiCompatibleTags = $apiCompatibleTags
@@ -1015,23 +1026,18 @@ function Update-RepositoryDictionary {
             return $true  # Repository already checked out with correct tag
         }
     } else {
-        # New repository, add to dictionary with sorted API Compatible Tags if tag sorting enabled
-        $sortedApiCompatibleTags = $apiCompatibleTags
-        if ($script:EnableTagSorting -and $Recursive) {
-            # We'll sort the API Compatible Tags when we get the tag dates after checkout
-            # For now, store them as-is
-            $sortedApiCompatibleTags = $apiCompatibleTags
-        }
+        # New repository, add to dictionary
+        # Note: We don't sort API Compatible Tags here anymore - only during conflict resolution if needed
         
         $script:RepositoryDictionary[$repoUrl] = @{
             AbsolutePath = $absoluteBasePath
             Tag = $newRepositoryTag
-            ApiCompatibleTags = $sortedApiCompatibleTags
+            ApiCompatibleTags = $apiCompatibleTags  # Store as-is from JSON
             ApiCompatibility = $apiCompatibility
             AlreadyCheckedOut = $false
             NeedCheckout = $false
             CheckoutFailed = $false
-            TagDates = @{}  # Will be populated after checkout
+            TagDates = @{}  # Will be populated after checkout if EnableTagSorting is enabled
         }
         
         Write-Log "Added new repository to dictionary: '$repoUrl' with API Compatibility: $apiCompatibility" -Level Debug
@@ -1301,23 +1307,15 @@ function Invoke-GitCheckout {
             }
         }
         
-        # Fetch tag dates if tag sorting is enabled and this is the first checkout
+        # Fetch tag dates only if tag sorting is enabled and this is recursive mode
+        # This optimization only fetches tag dates when they might be needed for conflict resolution
         if ($script:EnableTagSorting -and $Recursive) {
             Write-Log "Tag sorting enabled, fetching tag dates for repository: $repoUrl" -Level Info
             $tagDates = Get-GitTagDates -RepoPath $absoluteBasePath
             
-            # Store tag dates in repository dictionary and sort API Compatible Tags
+            # Store tag dates in repository dictionary
             if ($script:RepositoryDictionary.ContainsKey($repoUrl)) {
                 $script:RepositoryDictionary[$repoUrl].TagDates = $tagDates
-                
-                # Sort the API Compatible Tags now that we have tag dates
-                $currentApiTags = $script:RepositoryDictionary[$repoUrl].ApiCompatibleTags
-                if ($currentApiTags -and $tagDates.Count -gt 0) {
-                    $sortedApiTags = Sort-TagsByDate -Tags $currentApiTags -TagDates $tagDates -RepositoryUrl $repoUrl
-                    $script:RepositoryDictionary[$repoUrl].ApiCompatibleTags = $sortedApiTags
-                    Write-Log "Sorted API Compatible Tags for repository '$repoUrl': $($sortedApiTags -join ', ')" -Level Debug
-                }
-                
                 Write-Log "Stored tag dates for $($tagDates.Count) tags in repository dictionary" -Level Debug
             }
         }
@@ -1531,6 +1529,13 @@ function Process-DependencyFile {
             if ($Recursive) {
                 $repoUrl = $repo.'Repository URL'
                 $wasNewCheckout = -not $script:RepositoryDictionary.ContainsKey($repoUrl)
+                
+                # Log repository processing status
+                if (-not $wasNewCheckout) {
+                    Write-Log "Processing repository: $repoUrl (already in dictionary)" -Level Info
+                } else {
+                    Write-Log "Processing repository: $repoUrl (new repository)" -Level Info
+                }
             }
             
             if (Invoke-GitCheckout -Repository $repo -DependencyFilePath $DependencyFilePath) {
@@ -1715,11 +1720,17 @@ try {
     Write-Log "Default API Compatibility: $($script:DefaultApiCompatibility)" -Level Info
     
     if ($script:EnableTagSorting) {
-        Write-Log "Tag temporal sorting: ENABLED" -Level Info
-        Write-Log "Manual temporal ordering requirements relaxed in Permissive mode" -Level Info
+        Write-Log "Tag temporal sorting: ENABLED (default)" -Level Info
+        Write-Log "Tag sorting optimized to run only during API compatibility resolution" -Level Info
     } else {
         Write-Log "Tag temporal sorting: DISABLED" -Level Info
         Write-Log "Manual temporal ordering required for API Compatible Tags" -Level Info
+    }
+    
+    if ($Recursive) {
+        Write-Log "Recursive mode: ENABLED (default) with max depth: $MaxDepth" -Level Info
+    } else {
+        Write-Log "Recursive mode: DISABLED" -Level Info
     }
     
     # Calculate and log script hash in debug mode
@@ -1741,9 +1752,8 @@ try {
         Write-Log "Debug logging enabled" -Level Info
     }
     
-    if ($Recursive) {
-        Write-Log "Recursive mode enabled with max depth: $MaxDepth" -Level Info
-    }
+    # Note: Recursive mode is now enabled by default, but still log it
+    # (removed the separate recursive mode logging since it's now handled above)
     
     # Check Git installation
     if (-not (Test-GitInstalled)) {
@@ -1781,7 +1791,7 @@ try {
     
     # If recursive mode is enabled, process nested dependencies
     if ($Recursive -and $checkedOutRepos.Count -gt 0) {
-        Process-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DependencyFileName $DependencyFileName -CurrentDepth 1
+        Process-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DependencyFileName $dependencyFileName -CurrentDepth 1
     }
     
     # Show summary

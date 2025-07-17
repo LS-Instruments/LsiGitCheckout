@@ -5,11 +5,11 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.2.0] - 2025-01-16
+## [4.2.0] - 2025-01-17
 
 ### Added
-- **Tag Temporal Sorting**: New `-EnableTagSorting` parameter enables automatic chronological tag ordering using actual git tag dates
-- Intelligent tag selection algorithm that prioritizes existing/new "Tag" values when resolving repository conflicts
+- **Default Intelligent Behavior**: Made `-Recursive` and `-EnableTagSorting` enabled by default for optimal out-of-the-box experience
+- **Performance-Optimized Tag Temporal Sorting**: Intelligent tag selection algorithm that prioritizes existing/new "Tag" values when resolving repository conflicts
 - `Get-GitTagDates` function for efficient tag date fetching using `git for-each-ref`
 - `Sort-TagsByDate` function for chronological tag sorting with comprehensive debug logging
 - Enhanced `Get-TagUnion` function with temporal sorting support when tag dates are available
@@ -17,15 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fallback to chronologically most recent tag when neither existing nor new "Tag" is compatible
 - Comprehensive verbose and debug logging for tag temporal sorting operations
 - Tag date verification and temporal order display in verbose mode
-- Relaxed temporal ordering requirements when `-EnableTagSorting` is enabled
 - Tag date caching in repository dictionary for performance optimization
+- Enhanced repository conflict detection logging with clear status indicators
 
 ### Changed
+- **BREAKING (Default Behavior)**: `-Recursive` now defaults to `$true` (enabled by default)
+- **BREAKING (Default Behavior)**: `-EnableTagSorting` now defaults to `$true` (enabled by default)
 - Enhanced repository dictionary structure to include `TagDates` field for storing tag date mappings
 - Improved tag selection logic in all API compatibility scenarios (Strict-Strict, Strict-Permissive, Permissive-Permissive, Permissive-Strict)
 - Updated summary report to display tag temporal sorting status and statistics
 - Enhanced union algorithm to use temporal sorting when enabled, falling back to original logic when disabled
-- Improved error handling for tag date parsing and git command failures
+- Optimized tag sorting to only run when needed during API compatibility resolution
+- Improved repository conflict logging to clearly indicate when repositories already exist in dictionary
+- Enhanced error handling for tag date parsing and git command failures
 
 ### Fixed
 - PowerShell string interpolation issues with datetime formatting in log messages
@@ -33,15 +37,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced temporal verification logging with proper variable delimiting
 
 ### Performance
-- Minimal server impact: tag dates fetched only once per repository after initial checkout
+- **Optimized on-demand processing**: Tag dates fetched only when conflicts require resolution during recursive processing
 - Efficient `git for-each-ref` command usage instead of individual `git log` calls per tag
 - Tag date caching eliminates redundant git operations during recursive processing
+- Reduced unnecessary tag date fetching and sorting operations
 
 ### Backward Compatibility
+- **Behavior Change**: Default behavior now includes recursive processing and intelligent tag sorting
+- **Legacy Support**: Use `-Recursive:$false -EnableTagSorting:$false` to restore v4.1.x behavior
 - **Non-breaking**: All existing configurations work without modification
-- **Default behavior**: `-EnableTagSorting` is disabled by default, maintaining v4.1.x behavior
-- **Opt-in feature**: New functionality only active when explicitly enabled
-- Manual temporal ordering requirements preserved when tag sorting is disabled
+- Manual temporal ordering requirements preserved when tag sorting is explicitly disabled
+
+### Migration Notes
+- **Zero configuration upgrade**: Most users get optimal behavior without any parameter changes
+- **Enhanced user experience**: New users get intelligent behavior by default
+- **Optional legacy mode**: Previous behavior available via explicit parameter flags
+- **Performance benefits**: Automatic optimization for complex dependency graphs
 
 ## [4.1.1] - 2025-01-16
 
