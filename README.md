@@ -555,6 +555,8 @@ LsiCheckOutTestRootA/dependencies.json:
    - Processes TestB's dependencies
    - Continues applying compatibility rules
 
+**Important**: The script uses the same filename for all recursive processing. If you run `.\LsiGitCheckout.ps1 -InputFile "mydeps.json"`, it will look for "mydeps.json" in each checked-out repository, not "dependencies.json".
+
 ### API Compatibility Checking
 
 When the same repository is referenced multiple times:
