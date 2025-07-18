@@ -688,7 +688,7 @@ Check the generated debug log file for:
 - SSH key lookup attempts
 - API compatibility calculations
 - Compatibility mode interactions
-- Tag date fetching operations (when `-EnableTagSorting` is enabled)
+- Tag date fetching operations (when tag sorting is enabled)
 - Detailed Git command execution
 
 ## Migration Guide
@@ -748,9 +748,9 @@ Version 4.0 adds recursive dependency support. Existing configurations continue 
 
 To use recursive features:
 1. Add "API Compatible Tags" to your repository configurations
-2. Ensure proper temporal ordering (when not using `-EnableTagSorting`)
+2. Ensure proper temporal ordering (when using `-DisableTagSorting`)
 3. Place dependencies.json files in your repositories
-4. Run with `-Recursive` flag
+4. Run the script (recursive mode is enabled by default)
 
 ### From Version 2.x to 3.x/4.x
 
