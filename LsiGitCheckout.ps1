@@ -9,10 +9,9 @@
     
     SSH credentials are managed through a separate git_credentials.json file.
     
-    With the -Recursive option, it can discover and process nested dependencies.
+    With the -DisableRecursion option, it processes only the main dependency file.
     
-    With the -EnableTagSorting option, it fetches tag dates from repositories and uses
-    them to properly sort API Compatible Tags temporally, removing manual ordering requirements.
+    With the -DisableTagSorting option, it requires manual temporal ordering in "API Compatible Tags".
 .PARAMETER InputFile
     Path to the JSON configuration file. Defaults to 'dependencies.json' in the script directory.
 .PARAMETER CredentialsFile
@@ -23,26 +22,32 @@
     Enables debug logging to a timestamped log file.
 .PARAMETER Verbose
     Increases verbosity of output messages.
-.PARAMETER Recursive
-    Enables recursive dependency discovery and processing. Enabled by default.
+.PARAMETER DisableRecursion
+    Disables recursive dependency discovery and processing. By default, recursive mode is enabled.
 .PARAMETER MaxDepth
     Maximum recursion depth for dependency discovery. Defaults to 5.
 .PARAMETER ApiCompatibility
     Default API compatibility mode when not specified in dependencies. Can be 'Strict' or 'Permissive'. Defaults to 'Permissive'.
-.PARAMETER EnableTagSorting
-    Enables automatic tag temporal sorting using git tag dates. This removes the requirement for manual temporal ordering in "API Compatible Tags" and provides intelligent tag selection. Enabled by default.
+.PARAMETER DisableTagSorting
+    Disables automatic tag temporal sorting. By default, intelligent tag temporal sorting using git tag dates is enabled, removing the requirement for manual temporal ordering in "API Compatible Tags".
 .EXAMPLE
     .\LsiGitCheckout.ps1
     .\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
-    .\LsiGitCheckout.ps1 -Recursive -MaxDepth 10
-    .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug -Recursive -ApiCompatibility Strict
-    .\LsiGitCheckout.ps1 -Recursive -EnableTagSorting -Verbose
+    .\LsiGitCheckout.ps1 -DisableRecursion -MaxDepth 10
+    .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug -ApiCompatibility Strict
+    .\LsiGitCheckout.ps1 -DisableTagSorting -Verbose
 .NOTES
-    Version: 4.2.0
+    Version: 5.0.0
     Last Modified: 2025-01-17
     
     This script uses PuTTY/plink for SSH authentication. SSH keys must be in PuTTY format (.ppk).
     Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.
+    
+    Changes in 5.0.0:
+    - BREAKING: Changed -Recursive to -DisableRecursion (recursive mode enabled by default)
+    - BREAKING: Changed -EnableTagSorting to -DisableTagSorting (tag sorting enabled by default)
+    - Cleaner API with proper switch parameter naming conventions
+    - Recursive processing and intelligent tag sorting enabled by default
     
     Changes in 4.2.0:
     - Made -Recursive and -EnableTagSorting default (enabled by default)
@@ -121,7 +126,7 @@ param(
     [switch]$EnableDebug,
     
     [Parameter()]
-    [switch]$Recursive = $true,
+    [switch]$DisableRecursion,
     
     [Parameter()]
     [int]$MaxDepth = 5,
@@ -131,11 +136,11 @@ param(
     [string]$ApiCompatibility = 'Permissive',
     
     [Parameter()]
-    [switch]$EnableTagSorting = $true
+    [switch]$DisableTagSorting
 )
 
 # Script configuration
-$script:Version = "4.2.0"
+$script:Version = "5.0.0"
 $script:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:ErrorFile = Join-Path $ScriptPath "LsiGitCheckout_Errors.txt"
 $script:DebugLogFile = Join-Path $ScriptPath ("debug_log_{0}.txt" -f (Get-Date -Format "yyyyMMddHHmm"))
@@ -147,7 +152,8 @@ $script:RepositoryDictionary = @{}
 $script:CurrentDepth = 0
 $script:ProcessedDependencyFiles = @()
 $script:DefaultApiCompatibility = $ApiCompatibility
-$script:EnableTagSorting = $EnableTagSorting
+$script:RecursiveMode = -not $DisableRecursion
+$script:EnableTagSorting = -not $DisableTagSorting
 
 # Initialize error file
 if (Test-Path $script:ErrorFile) {
@@ -1059,7 +1065,7 @@ function Invoke-GitCheckout {
     $wasNewClone = $false
     
     # Check if we should skip this repository (already checked out with compatible API)
-    if ($Recursive) {
+    if ($script:RecursiveMode) {
         $checkoutResult = Update-RepositoryDictionary -Repository $Repository -DependencyFilePath $DependencyFilePath
         if ($checkoutResult -eq $true) {
             Write-Log "Skipping repository '$repoUrl' - already checked out with compatible API" -Level Info
@@ -1309,7 +1315,7 @@ function Invoke-GitCheckout {
         
         # Fetch tag dates only if tag sorting is enabled and this is recursive mode
         # This optimization only fetches tag dates when they might be needed for conflict resolution
-        if ($script:EnableTagSorting -and $Recursive) {
+        if ($script:EnableTagSorting -and $script:RecursiveMode) {
             Write-Log "Tag sorting enabled, fetching tag dates for repository: $repoUrl" -Level Info
             $tagDates = Get-GitTagDates -RepoPath $absoluteBasePath
             
@@ -1433,7 +1439,7 @@ function Invoke-GitCheckout {
         Pop-Location
         
         # Mark repository as checked out in dictionary
-        if ($Recursive -and $script:RepositoryDictionary.ContainsKey($repoUrl)) {
+        if ($script:RecursiveMode -and $script:RepositoryDictionary.ContainsKey($repoUrl)) {
             $script:RepositoryDictionary[$repoUrl].AlreadyCheckedOut = $true
             $script:RepositoryDictionary[$repoUrl].CheckoutFailed = $false
         }
@@ -1457,7 +1463,7 @@ function Invoke-GitCheckout {
         }
         
         # Mark repository as failed in dictionary
-        if ($Recursive -and $script:RepositoryDictionary.ContainsKey($repoUrl)) {
+        if ($script:RecursiveMode -and $script:RepositoryDictionary.ContainsKey($repoUrl)) {
             $script:RepositoryDictionary[$repoUrl].CheckoutFailed = $true
         }
         
@@ -1526,7 +1532,7 @@ function Process-DependencyFile {
             $checkoutSucceeded = $false
             
             # Track if this repository exists before processing
-            if ($Recursive) {
+            if ($script:RecursiveMode) {
                 $repoUrl = $repo.'Repository URL'
                 $wasNewCheckout = -not $script:RepositoryDictionary.ContainsKey($repoUrl)
                 
@@ -1543,7 +1549,7 @@ function Process-DependencyFile {
                 $checkoutSucceeded = $true
                 
                 # Add to checked out repos list for recursive processing
-                if ($Recursive -and $Depth -lt $MaxDepth -and $checkoutSucceeded) {
+                if ($script:RecursiveMode -and $Depth -lt $MaxDepth -and $checkoutSucceeded) {
                     # Only process if this was a new checkout or required a tag update
                     if ($wasNewCheckout) {
                         $repoInfo = $script:RepositoryDictionary[$repo.'Repository URL']
@@ -1671,7 +1677,7 @@ Successful: $($script:SuccessCount)
 Failed: $($script:FailureCount)
 "@
     
-    if ($Recursive) {
+    if ($script:RecursiveMode) {
         $summary += "`nRecursive Mode: Enabled"
         $summary += "`nMax Depth: $MaxDepth"
         $summary += "`nDefault API Compatibility: $($script:DefaultApiCompatibility)"
@@ -1727,7 +1733,7 @@ try {
         Write-Log "Manual temporal ordering required for API Compatible Tags" -Level Info
     }
     
-    if ($Recursive) {
+    if ($script:RecursiveMode) {
         Write-Log "Recursive mode: ENABLED (default) with max depth: $MaxDepth" -Level Info
     } else {
         Write-Log "Recursive mode: DISABLED" -Level Info
@@ -1790,7 +1796,7 @@ try {
     $checkedOutRepos = Process-DependencyFile -DependencyFilePath $InputFile -Depth 0
     
     # If recursive mode is enabled, process nested dependencies
-    if ($Recursive -and $checkedOutRepos.Count -gt 0) {
+    if ($script:RecursiveMode -and $checkedOutRepos.Count -gt 0) {
         Process-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DependencyFileName $dependencyFileName -CurrentDepth 1
     }
     

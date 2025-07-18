@@ -82,10 +82,10 @@ In non-recursive mode, the script processes only the repositories listed in your
 .\LsiGitCheckout.ps1 -ApiCompatibility Strict
 
 # Disable recursive mode (non-recursive mode)
-.\LsiGitCheckout.ps1 -Recursive:$false
+.\LsiGitCheckout.ps1 -DisableRecursion
 
 # Disable tag temporal sorting (legacy mode)
-.\LsiGitCheckout.ps1 -EnableTagSorting:$false
+.\LsiGitCheckout.ps1 -DisableTagSorting
 ```
 
 ### Parameters
@@ -96,8 +96,8 @@ In non-recursive mode, the script processes only the repositories listed in your
 - `-EnableDebug`: Create detailed debug log file
 - `-Verbose`: Show verbose output messages
 - `-ApiCompatibility`: Default API compatibility mode ('Strict' or 'Permissive', default: 'Permissive')
-- `-Recursive`: Enable recursive dependency processing (default: enabled, use `-Recursive:$false` to disable)
-- `-EnableTagSorting`: Enable intelligent tag temporal sorting using git tag dates (default: enabled, use `-EnableTagSorting:$false` to disable)
+- `-DisableRecursion`: Disable recursive dependency processing (default: recursive mode enabled)
+- `-DisableTagSorting`: Disable intelligent tag temporal sorting, requiring manual temporal ordering (default: tag sorting enabled)
 
 ### Configuration Files
 
@@ -193,7 +193,7 @@ git_credentials.json:
 .\LsiGitCheckout.ps1
 
 # Disable recursive mode for simple single-file processing
-.\LsiGitCheckout.ps1 -Recursive:$false
+.\LsiGitCheckout.ps1 -DisableRecursion
 
 # Customize recursive behavior
 .\LsiGitCheckout.ps1 -MaxDepth 10
@@ -202,7 +202,7 @@ git_credentials.json:
 .\LsiGitCheckout.ps1 -ApiCompatibility Strict
 
 # Disable tag sorting for legacy manual ordering
-.\LsiGitCheckout.ps1 -EnableTagSorting:$false
+.\LsiGitCheckout.ps1 -DisableTagSorting
 ```
 
 ### API Compatible Tags - Critical Concept
@@ -211,13 +211,13 @@ The **"API Compatible Tags"** field is fundamental to recursive dependency resol
 
 #### Tag Management Approaches
 
-**With `-EnableTagSorting` Enabled (Default):**
+**With `-DisableTagSorting` Not Set (Default):**
 - **"API Compatible Tags"**: Can be listed in any order - the script uses actual git tag dates for chronological sorting
 - **"Tag"**: The preferred tag for the current dependency
 - **No manual ordering required**: The script automatically sorts tags by their actual git creation dates
 - **Intelligent conflict resolution**: Prioritizes specified "Tag" values when they're API-compatible
 
-**With `-EnableTagSorting` Disabled (Legacy):**
+**With `-DisableTagSorting` Set (Legacy):**
 - **"API Compatible Tags"**: Must be listed from **oldest to newest** (left to right)
 - **"Tag"**: Must be the **most recent** tag for the current API version
 - **Manual ordering required**: You must maintain temporal ordering in the JSON files
@@ -225,7 +225,7 @@ The **"API Compatible Tags"** field is fundamental to recursive dependency resol
 
 #### Version Management Rules
 
-**When `-EnableTagSorting` is Enabled:**
+**When `-DisableTagSorting` is Not Set (Default):**
 Adding or updating versions is simplified since ordering is automatic:
 
 ```json
@@ -236,7 +236,7 @@ Adding or updating versions is simplified since ordering is automatic:
 ```
 The script will automatically sort these chronologically based on git tag dates.
 
-**When `-EnableTagSorting` is Disabled:**
+**When `-DisableTagSorting` is Set (Legacy):**
 When updating dependencies, you must maintain manual ordering:
 
 1. **Adding a new compatible version** (e.g., v1.0.3 → v1.0.4):
@@ -279,6 +279,46 @@ When updating dependencies, you must maintain manual ordering:
    }
    ```
 
+**Important: Permissive Mode Requirements with `-DisableTagSorting` Set**
+
+When `-DisableTagSorting` is set and both repositories have Permissive API compatibility mode, the union algorithm requires:
+
+1. **Temporal ordering**: Both "API Compatible Tags" lists must be ordered oldest to newest
+2. **Common starting tag**: Both lists must start with the same tag
+3. **Subset relationship**: All tags from one list must be contained in the other (one list should be a subset of the other)
+
+If these conditions are not met, the script will issue warnings and fall back to an unordered union, which may not produce optimal results.
+
+**Example of compatible Permissive mode lists:**
+```json
+// Repository A
+{
+  "Tag": "v1.0.4",
+  "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2", "v1.0.3"]
+}
+
+// Repository B  
+{
+  "Tag": "v1.0.2",
+  "API Compatible Tags": ["v1.0.0", "v1.0.1"]  // Subset of Repository A
+}
+```
+
+**Example of incompatible lists (will generate warnings):**
+```json
+// Repository A
+{
+  "Tag": "v1.0.3",
+  "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
+}
+
+// Repository B
+{
+  "Tag": "v1.0.3", 
+  "API Compatible Tags": ["v1.1.0", "v1.1.1", "v1.1.2"]  // Different starting tag
+}
+```
+
 #### Why This Convention Matters
 
 When multiple projects depend on the same repository with different version requirements, the script:
@@ -319,14 +359,14 @@ When the same repository is encountered multiple times with different compatibil
 **Strict Mode Algorithm:**
 - **Intersection**: Calculates the intersection of all compatible tag sets
 - **Tag Selection**: 
-  - **With `-EnableTagSorting`**: Prioritizes existing/new "Tag" values if they're in the intersection, otherwise selects the chronologically most recent tag from the intersection
-  - **Without `-EnableTagSorting`**: Selects the most recent (rightmost) tag from the intersection
+  - **With tag sorting enabled (default)**: Prioritizes existing/new "Tag" values if they're in the intersection, otherwise selects the chronologically most recent tag from the intersection
+  - **With `-DisableTagSorting` set**: Selects the most recent (rightmost) tag from the intersection
 
 **Permissive Mode Algorithm:**
 - **Union**: Calculates the union of all compatible tag sets  
 - **Tag Selection**:
-  - **With `-EnableTagSorting`**: Prioritizes existing/new "Tag" values if they're in the union, otherwise selects the chronologically most recent tag from the union
-  - **Without `-EnableTagSorting`**: Selects the most recent (rightmost) tag from the union
+  - **With tag sorting enabled (default)**: Prioritizes existing/new "Tag" values if they're in the union, otherwise selects the chronologically most recent tag from the union
+  - **With `-DisableTagSorting` set**: Selects the most recent (rightmost) tag from the union
 
 **Mode Combination Rules:**
 1. **Strict + Strict**: Uses intersection algorithm (conservative)
@@ -367,7 +407,7 @@ When the same repository is encountered multiple times with different compatibil
 .\LsiGitCheckout.ps1
 
 # Disable recursive mode if only processing single dependency file
-.\LsiGitCheckout.ps1 -Recursive:$false
+.\LsiGitCheckout.ps1 -DisableRecursion
 ```
 
 ## Tag Temporal Sorting
@@ -393,7 +433,7 @@ When `-EnableTagSorting` is enabled, the script:
 
 ### Enabling Tag Temporal Sorting
 
-**Tag temporal sorting is enabled by default** starting with v4.2.0. To customize or disable:
+**Tag temporal sorting is enabled by default** starting with v5.0.0. To customize or disable:
 
 ```powershell
 # Default behavior (tag sorting enabled)
@@ -406,7 +446,7 @@ When `-EnableTagSorting` is enabled, the script:
 .\LsiGitCheckout.ps1 -EnableDebug
 
 # Disable tag sorting for legacy manual ordering
-.\LsiGitCheckout.ps1 -EnableTagSorting:$false
+.\LsiGitCheckout.ps1 -DisableTagSorting
 ```
 
 ### Intelligent Tag Selection Algorithm
@@ -440,7 +480,7 @@ When multiple repositories reference the same dependency with different tags, th
 }
 ```
 
-With `-EnableTagSorting` enabled by default, the script automatically sorts these tags by their actual git creation dates during conflict resolution, removing the burden of manual ordering while providing more intelligent tag selection.
+With `-DisableTagSorting` not set (default behavior), the script automatically sorts these tags by their actual git creation dates during conflict resolution, removing the burden of manual ordering while providing more intelligent tag selection.
 
 ### Performance Optimization
 
@@ -451,9 +491,10 @@ With `-EnableTagSorting` enabled by default, the script automatically sorts thes
 
 ### Backward Compatibility
 
-- **New default behavior**: `-Recursive` and `-EnableTagSorting` are enabled by default in v4.2.0
-- **Legacy support**: Use `-Recursive:$false` and `-EnableTagSorting:$false` to restore v4.1.x behavior
-- **No breaking changes**: Existing configurations work without modification
+- **New default behavior**: Recursive mode and tag temporal sorting are enabled by default in v5.0.0
+- **Clean API**: Switch parameters use proper naming conventions (`-DisableRecursion`, `-DisableTagSorting`)
+- **Legacy support**: Use `-DisableRecursion` and `-DisableTagSorting` for legacy behavior
+- **No configuration changes**: Existing JSON configurations work without modification
 - **Graceful fallback**: If tag dates cannot be fetched, falls back to original ordering
 
 ### Real-World Example with Test Repositories
@@ -534,15 +575,15 @@ If TestA requires TestC compatible with [v1.0.0, v1.0.1, v1.0.2, v1.0.3] but Tes
 - **Algorithm**: Intersection of compatible tag sets
 - **Result**: [v1.0.2, v1.0.3]
 - **Tag Selection**:
-  - **With `-EnableTagSorting`**: TestA or TestB "Tag" if in intersection, otherwise chronologically most recent
-  - **Without `-EnableTagSorting`**: v1.0.3 (most recent in intersection)
+  - **With tag sorting enabled (default)**: TestA or TestB "Tag" if in intersection, otherwise chronologically most recent
+  - **With `-DisableTagSorting` set**: v1.0.3 (most recent in intersection)
 
 **Permissive Mode (both repositories):**
 - **Algorithm**: Union of compatible tag sets
 - **Result**: [v1.0.0, v1.0.1, v1.0.2, v1.0.3, v1.0.4]
 - **Tag Selection**:
-  - **With `-EnableTagSorting`**: TestA or TestB "Tag" if in union, otherwise chronologically most recent
-  - **Without `-EnableTagSorting`**: v1.0.4 (most recent in union)
+  - **With tag sorting enabled (default)**: TestA or TestB "Tag" if in union, otherwise chronologically most recent
+  - **With `-DisableTagSorting` set**: v1.0.4 (most recent in union)
 
 **Mixed Mode (TestA Strict, TestB Permissive):**
 - **Algorithm**: TestA is Strict, so its requirements are preserved
@@ -619,8 +660,8 @@ No common API-compatible tags found.
 
 5. **API Incompatibility errors in recursive mode**
    - Review the "API Compatible Tags" for conflicting repositories
-   - **With `-EnableTagSorting` disabled**: Ensure temporal ordering is correct
-   - **With `-EnableTagSorting` enabled (default)**: Ordering is automatic, focus on actual API compatibility
+   - **With `-DisableTagSorting` set**: Ensure temporal ordering is correct
+   - **With tag sorting enabled (default)**: Ordering is automatic, focus on actual API compatibility
    - Consider if versions truly are API compatible
    - Check if compatibility modes need adjustment
 
@@ -629,7 +670,7 @@ No common API-compatible tags found.
    - Check debug logs for tag date fetching errors
    - Ensure repositories are accessible for tag date queries
    - Review verbose output for tag selection decisions
-   - If needed, disable with `-EnableTagSorting:$false` for manual control
+   - If needed, disable with `-DisableTagSorting` for manual control
 
 ### Debug Mode
 
@@ -650,39 +691,36 @@ Check the generated debug log file for:
 
 ## Migration Guide
 
-### From Version 4.1.x to 4.2.x
+### From Version 4.x to 5.0.0
 
-Version 4.2 makes intelligent tag temporal sorting and recursive mode the default. Existing configurations continue to work:
+Version 5.0 introduces a cleaner API with breaking changes to parameter naming. Functionality remains the same with improved usability:
 
-1. **New default behavior**: `-Recursive` and `-EnableTagSorting` are now enabled by default
-2. **No breaking changes**: All v4.1.x configurations work in v4.2.x without modification
-3. **Enhanced user experience**: Most users get intelligent behavior out-of-the-box
-4. **Legacy support**: Use `-Recursive:$false -EnableTagSorting:$false` to restore v4.1.x behavior
-5. **Performance optimized**: Tag sorting only runs when needed during conflict resolution
+1. **BREAKING**: Changed `-Recursive` to `-DisableRecursion` (recursive mode enabled by default)
+2. **BREAKING**: Changed `-EnableTagSorting` to `-DisableTagSorting` (tag sorting enabled by default)
+3. **Cleaner API**: Switch parameters follow proper naming conventions
+4. **Same functionality**: All features work identically with better parameter names
+5. **Zero configuration**: Optimal behavior out-of-the-box without any parameters
 
-**Key improvements in v4.2:**
-- **Default intelligence**: Recursive processing and smart tag sorting enabled by default
-- **Intelligent tag selection**: Prioritizes specified "Tag" values during conflict resolution
-- **Optimized performance**: Only fetches tag dates when conflicts require resolution
-- **Simplified maintenance**: Add tags to "API Compatible Tags" in any order
-- **Better debugging**: Enhanced logging for repository conflicts and tag selection decisions
-
-**Default behavior (no parameters needed):**
+**Migration from v4.x:**
 ```powershell
-# v4.2.0 - Intelligent recursive processing with tag sorting
+# Old v4.x syntax
+.\LsiGitCheckout.ps1 -Recursive -EnableTagSorting
+
+# New v5.0 syntax (default behavior)
 .\LsiGitCheckout.ps1
-```
 
-**To maintain v4.1.x behavior exactly:**
-```powershell
+# Old v4.x legacy mode
 .\LsiGitCheckout.ps1 -Recursive:$false -EnableTagSorting:$false
+
+# New v5.0 legacy mode
+.\LsiGitCheckout.ps1 -DisableRecursion -DisableTagSorting
 ```
 
-**Migration benefits:**
-- **Zero configuration**: Most users get optimal behavior without any parameter changes
-- **Eliminates manual ordering**: No need for temporal ordering in JSON files by default
-- **Intelligent decisions**: Better tag selection based on actual git tag dates
-- **Reduced complexity**: Simpler mental model for new users
+**Benefits of v5.0:**
+- **Clean parameter API**: No more confusing `$true` defaults on switch parameters
+- **Intuitive usage**: Default behavior requires no parameters
+- **Consistent naming**: Disable flags follow PowerShell conventions
+- **Better documentation**: Clear parameter purposes and defaults
 
 ### From Version 4.0.x to 4.1.x
 

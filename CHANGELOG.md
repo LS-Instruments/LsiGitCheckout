@@ -5,6 +5,29 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2025-01-17
+
+### Breaking Changes
+- **BREAKING**: Renamed `-Recursive` parameter to `-DisableRecursion` for cleaner API design
+- **BREAKING**: Renamed `-EnableTagSorting` parameter to `-DisableTagSorting` for consistent naming conventions
+- **BREAKING**: Recursive mode and tag temporal sorting are now enabled by default (no parameters needed for optimal behavior)
+
+### Added
+- Clean parameter API following PowerShell switch parameter best practices
+- Intuitive default behavior requiring zero configuration for most use cases
+- Consistent naming conventions for all disable flags
+
+### Changed
+- Switch parameters now use proper naming conventions (disable flags instead of enable flags with defaults)
+- Default behavior provides intelligent recursive processing and tag sorting out-of-the-box
+- Enhanced user experience with no required parameters for optimal functionality
+
+### Migration
+- **Old**: `.\LsiGitCheckout.ps1 -Recursive -EnableTagSorting` → **New**: `.\LsiGitCheckout.ps1` (default)
+- **Old**: `.\LsiGitCheckout.ps1 -Recursive:$false -EnableTagSorting:$false` → **New**: `.\LsiGitCheckout.ps1 -DisableRecursion -DisableTagSorting`
+- All JSON configuration files work without modification
+- Functionality remains identical with improved parameter usability
+
 ## [4.2.0] - 2025-01-17
 
 ### Added
