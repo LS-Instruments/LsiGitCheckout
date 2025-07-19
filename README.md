@@ -97,7 +97,7 @@ In non-recursive mode, the script processes only the repositories listed in your
 - `-Verbose`: Show verbose output messages
 - `-ApiCompatibility`: Default API compatibility mode ('Strict' or 'Permissive', default: 'Permissive')
 - `-DisableRecursion`: Disable recursive dependency processing (default: recursive mode enabled)
-- `-DisableTagSorting`: Disable intelligent tag temporal sorting, requiring manual temporal ordering (default: tag sorting enabled)
+- `-DisableTagSorting`: Disable fetching tag dates from repositories and intelligent tag temporal sorting, requiring manual temporal tag ordering in the dependencies input files (default: tag sorting enabled)
 
 ### Configuration Files
 
@@ -123,7 +123,7 @@ Contains repository configurations without any credential information:
 - **Base Path** (required): Local directory path (relative or absolute)
 - **Tag** (required): Git tag to checkout
 - **API Compatible Tags** (optional): List of API-compatible tags
-- **API Compatibility** (optional): "Strict" or "Permissive" (defaults to script parameter)
+- **API Compatibility** (optional): "Strict" or "Permissive" (defaults to script parameter when absent)
 - **Skip LFS** (optional): Skip Git LFS downloads for this repository and all submodules
 
 #### git_credentials.json
@@ -180,11 +180,11 @@ git_credentials.json:
 }
 ```
 
-## Advanced Usage (Recursive Mode)
+## Recursive Mode
 
 ### Overview
 
-**Recursive mode is enabled by default** starting with v4.2.0. The script automatically discovers and processes nested dependencies. After checking out each repository, it looks for a dependencies.json file within that repository and processes it recursively, with intelligent handling of shared dependencies.
+**When Recursive Mode is enabled (Default)** the script automatically discovers and processes nested dependencies. After checking out each repository, it looks for a dependency file with the same name as the input file within that repository and processes it recursively, with intelligent handling of shared dependencies.
 
 ### Controlling Recursive Mode
 
@@ -205,9 +205,73 @@ git_credentials.json:
 .\LsiGitCheckout.ps1 -DisableTagSorting
 ```
 
-### API Compatible Tags - Critical Concept
+### Recursion and Discovering Common Dependencies
 
-The **"API Compatible Tags"** field is fundamental to recursive dependency resolution. It defines the set of tags that are API-compatible with the current "Tag" version, enabling intelligent version resolution when multiple projects depend on the same repository.
+When recursive mode processes nested dependencies, a common scenario emerges: **the same repository is required by multiple projects with potentially different version requirements**. This creates the fundamental challenge that the script's API compatibility system is designed to solve.
+
+#### The Challenge: Conflicting Dependency Requirements
+
+Consider this scenario:
+
+1. **ProjectA** requires `LibraryX` at version `v2.1.0`
+2. **ProjectB** also requires `LibraryX` but at version `v2.0.5`
+3. Both projects expect to work with `LibraryX`, but they're requesting different versions
+
+When the script encounters `LibraryX` for the second time, it faces a critical decision: **which version should be checked out to satisfy both callers?**
+
+#### Practical Example
+
+```
+Main Project Dependencies:
+├── ProjectA (requires LibraryX v2.1.0)
+└── ProjectB (requires LibraryX v2.0.5)
+```
+
+When processing recursively:
+1. **Round 1**: Processes main dependencies → clones ProjectA and ProjectB
+2. **Round 2**: 
+   - Processes ProjectA's dependencies → clones LibraryX at v2.1.0
+   - Processes ProjectB's dependencies → **discovers LibraryX already exists!**
+
+At this point, the script must determine:
+- Are v2.1.0 and v2.0.5 API-compatible?
+- If compatible, which version should be used?
+- How do we ensure both ProjectA and ProjectB continue to work?
+
+#### The API Compatibility Problem
+
+The core issue is that **the first caller (ProjectA) might be using APIs that are incompatible with those expected by the newly discovered caller (ProjectB)**. Simply keeping the first version could break ProjectB, while switching to the second version could break ProjectA.
+
+#### Solution: API Compatible Tags
+
+To solve this, the script introduces the concept of **"API Compatible Tags"**. Together with the main **"Tag"**, these define the complete set of versions that a caller declares as compatible with their usage:
+
+```json
+{
+  "Repository URL": "https://github.com/company/LibraryX.git",
+  "Base Path": "libs/library-x",
+  "Tag": "v2.1.0",
+  "API Compatible Tags": ["v2.0.0", "v2.0.1", "v2.0.2", "v2.0.3", "v2.0.4", "v2.0.5"]
+}
+```
+
+This declaration means: *"I'm using LibraryX v2.1.0, but I know my code works with any version from v2.0.0 through v2.0.5"*.
+
+#### The API Compatibility Algorithm
+
+When a repository conflict is detected, the script executes a compatibility algorithm that:
+
+1. **Assesses Compatibility**: Checks if the union of ("Tag" + "API Compatible Tags") from the first caller overlaps with the same set from the new caller. If there's no overlap, the dependencies are incompatible and the script reports an error.
+
+2. **Chooses the Optimal Version**: If the callers are not pointing to the same tag, the script determines which version to checkout based on the "API Compatibility" modes declared by both callers (Strict vs Permissive) and whether intelligent tag sorting is enabled.
+
+3. **Updates Repository State**: Once the algorithm completes, it stores the resolved "API Compatibility" mode, "Tag", and "API Compatible Tags" that will apply to the checked-out repository. These resolved values will be used if the same repository becomes a dependency of future callers during continued recursive processing.
+
+The specific rules for version selection and state resolution depend on the compatibility modes declared by the callers and the tag sorting configuration, which are detailed in the following sections.
+
+### API Compatibility - Critical Concepts
+
+The **"API Compatible Tags"** field is the foundation of the recursive dependency resolution system described above. This field, combined with the "Tag", enables intelligent version resolution when multiple projects depend on the same repository with different version requirements.
 
 #### Tag Management Approaches
 
@@ -278,46 +342,6 @@ When updating dependencies, you must maintain manual ordering:
      "API Compatible Tags": []
    }
    ```
-
-**Important: Permissive Mode Requirements with `-DisableTagSorting` Set**
-
-When `-DisableTagSorting` is set and both repositories have Permissive API compatibility mode, the union algorithm requires:
-
-1. **Temporal ordering**: Both "API Compatible Tags" lists must be ordered oldest to newest
-2. **Common starting tag**: Both lists must start with the same tag
-3. **Subset relationship**: All tags from one list must be contained in the other (one list should be a subset of the other)
-
-If these conditions are not met, the script will issue warnings and fall back to an unordered union, which may not produce optimal results.
-
-**Example of compatible Permissive mode lists:**
-```json
-// Repository A
-{
-  "Tag": "v1.0.4",
-  "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2", "v1.0.3"]
-}
-
-// Repository B  
-{
-  "Tag": "v1.0.2",
-  "API Compatible Tags": ["v1.0.0", "v1.0.1"]  // Subset of Repository A
-}
-```
-
-**Example of incompatible lists (will generate warnings):**
-```json
-// Repository A
-{
-  "Tag": "v1.0.3",
-  "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
-}
-
-// Repository B
-{
-  "Tag": "v1.0.3", 
-  "API Compatible Tags": ["v1.1.0", "v1.1.1", "v1.1.2"]  // Different starting tag
-}
-```
 
 #### Why This Convention Matters
 
@@ -410,9 +434,49 @@ When the same repository is encountered multiple times with different compatibil
 .\LsiGitCheckout.ps1 -DisableRecursion
 ```
 
+### Important: Permissive Mode Requirements with `-DisableTagSorting` Set
+
+When `-DisableTagSorting` is set and both repositories have Permissive API compatibility mode, the union algorithm requires:
+
+1. **Temporal ordering**: Both "API Compatible Tags" lists must be ordered oldest to newest
+2. **Common starting tag**: Both lists must start with the same tag
+3. **Subset relationship**: All tags from one list must be contained in the other (one list should be a subset of the other)
+
+If these conditions are not met, the script will issue warnings and fall back to an unordered union, which may not produce optimal results.
+
+**Example of compatible Permissive mode lists:**
+```json
+// Repository A
+{
+  "Tag": "v1.0.4",
+  "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2", "v1.0.3"]
+}
+
+// Repository B  
+{
+  "Tag": "v1.0.2",
+  "API Compatible Tags": ["v1.0.0", "v1.0.1"]  // Subset of Repository A
+}
+```
+
+**Example of incompatible lists (will generate warnings):**
+```json
+// Repository A
+{
+  "Tag": "v1.0.3",
+  "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
+}
+
+// Repository B
+{
+  "Tag": "v1.0.3", 
+  "API Compatible Tags": ["v1.1.0", "v1.1.1", "v1.1.2"]  // Different starting tag
+}
+```
+
 ## Tag Temporal Sorting
 
-**Available since Version 4.2.0**: Intelligent automatic tag temporal sorting using actual git tag dates eliminates the need for manual temporal ordering of API Compatible Tags and provides intelligent conflict resolution.
+Intelligent automatic tag temporal sorting using actual git tag dates eliminates the need for manual temporal ordering of API Compatible Tags and provides intelligent conflict resolution.
 
 ### Overview
 
@@ -433,7 +497,7 @@ When `-EnableTagSorting` is enabled, the script:
 
 ### Enabling Tag Temporal Sorting
 
-**Tag temporal sorting is enabled by default** starting with v5.0.0. To customize or disable:
+**Tag temporal sorting is enabled by default**. To customize or disable:
 
 ```powershell
 # Default behavior (tag sorting enabled)
