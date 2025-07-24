@@ -1,0 +1,85 @@
+[
+  {
+    "_comment": "Standard repository using default dependency file location (dependencies.json in root)",
+    "Repository URL": "https://github.com/myorg/standard-project.git",
+    "Base Path": "repos/standard",
+    "Tag": "v1.0.0",
+    "API Compatible Tags": ["v0.9.0", "v0.9.1"],
+    "API Compatibility": "Strict"
+  },
+  {
+    "_comment": "Repository with custom dependency file name but default location (root directory)",
+    "Repository URL": "https://github.com/myorg/custom-name-project.git",
+    "Base Path": "repos/custom-name",
+    "Tag": "v2.0.0",
+    "Dependency File Name": "project-modules.json",
+    "_note": "Will look for 'project-modules.json' in the repository root"
+  },
+  {
+    "_comment": "Repository with custom dependency file path but default name",
+    "Repository URL": "https://github.com/myorg/custom-path-project.git",
+    "Base Path": "repos/custom-path",
+    "Tag": "v1.5.0",
+    "Dependency File Path": "config/build",
+    "_note": "Will look for 'dependencies.json' in the 'config/build' subdirectory"
+  },
+  {
+    "_comment": "Repository with both custom path and custom name",
+    "Repository URL": "https://github.com/myorg/fully-custom-project.git",
+    "Base Path": "repos/fully-custom",
+    "Tag": "v3.0.0",
+    "Dependency File Path": "scripts/deployment",
+    "Dependency File Name": "required-components.json",
+    "API Compatible Tags": ["v2.8.0", "v2.9.0"],
+    "API Compatibility": "Permissive",
+    "_note": "Will look for 'required-components.json' in the 'scripts/deployment' subdirectory"
+  },
+  {
+    "_comment": "Repository with nested subdirectory structure",
+    "Repository URL": "https://github.com/myorg/deep-structure-project.git",
+    "Base Path": "repos/deep-structure",
+    "Tag": "v1.2.0",
+    "Dependency File Path": "build/config/deps",
+    "Dependency File Name": "external-deps.json",
+    "_note": "Will look for 'external-deps.json' in the 'build/config/deps' subdirectory"
+  },
+  {
+    "_comment": "SSH repository with custom dependency configuration",
+    "Repository URL": "git@github.com:myorg/private-custom.git",
+    "Base Path": "repos/private-custom",
+    "Tag": "v2.1.0",
+    "Dependency File Path": "internal/deps",
+    "Dependency File Name": "company-dependencies.json",
+    "Skip LFS": true,
+    "_note": "Private repository using custom dependency file location and SSH authentication"
+  },
+  {
+    "_comment": "Example showing isolation - nested repos won't inherit custom settings",
+    "Repository URL": "https://github.com/myorg/parent-with-custom.git",
+    "Base Path": "repos/parent",
+    "Tag": "v4.0.0",
+    "Dependency File Path": "parent-config",
+    "Dependency File Name": "parent-deps.json",
+    "_important": "When this repository is processed, its nested dependencies will be looked up using the default dependency file name (e.g., 'dependencies.json') in their respective repository roots, NOT 'parent-deps.json' in 'parent-config' directories"
+  },
+  {
+    "_comment": "Example demonstrating correct path resolution (v6.1.0 fix)",
+    "Repository URL": "https://github.com/myorg/path-resolution-demo.git",
+    "Base Path": "repos/demo",
+    "Tag": "v1.0.0",
+    "Dependency File Path": "build/config",
+    "Dependency File Name": "deps.json",
+    "_path_resolution_note": "If deps.json contains relative path '../libs/shared', it will correctly resolve to 'repos/demo/libs/shared' (relative to repository root), not 'repos/demo/build/libs/shared' (relative to deps.json location)"
+  },
+  {
+    "_comment": "Mixed API compatibility with custom dependency files",
+    "Repository URL": "https://github.com/myorg/mixed-compat.git",
+    "Base Path": "libs/mixed",
+    "Tag": "v1.8.0",
+    "API Compatible Tags": ["v1.6.0", "v1.7.0"],
+    "API Compatibility": "Strict",
+    "Dependency File Path": "meta",
+    "Dependency File Name": "lib-requirements.json",
+    "_note": "Custom dependency file settings work with all API compatibility modes and tag temporal sorting"
+  }
+]

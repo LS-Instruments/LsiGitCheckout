@@ -1,0 +1,12 @@
+[
+  {
+    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestRootA.git",
+    "Base Path": "test-root-a",
+    "Tag": "v1.0.0"
+  },
+  {
+    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestRootB.git",
+    "Base Path": "test-root-b",
+    "Tag": "v1.0.1"
+  }
+]

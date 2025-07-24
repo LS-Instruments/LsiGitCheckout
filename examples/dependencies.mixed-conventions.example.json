@@ -1,0 +1,35 @@
+[
+  {
+    "_comment": "Team A using standard convention",
+    "Repository URL": "https://github.com/company/team-a-service.git",
+    "Base Path": "services/team-a",
+    "Tag": "v2.0.0",
+    "_note": "Uses default dependencies.json in repository root"
+  },
+  {
+    "_comment": "Team B using their preferred naming",
+    "Repository URL": "https://github.com/company/team-b-service.git",
+    "Base Path": "services/team-b",
+    "Tag": "v1.5.0",
+    "Dependency File Name": "requirements.json",
+    "_note": "Team B prefers 'requirements.json' naming"
+  },
+  {
+    "_comment": "Team C using structured approach",
+    "Repository URL": "https://github.com/company/team-c-service.git",
+    "Base Path": "services/team-c",
+    "Tag": "v3.0.0",
+    "Dependency File Path": "config",
+    "Dependency File Name": "external-dependencies.json",
+    "_note": "Team C organizes configs in subdirectory with descriptive naming"
+  },
+  {
+    "_comment": "Infrastructure team using deployment-focused structure",
+    "Repository URL": "https://github.com/company/infrastructure-base.git",
+    "Base Path": "infrastructure/base",
+    "Tag": "v1.2.0",
+    "Dependency File Path": "deployment/manifests",
+    "Dependency File Name": "component-dependencies.json",
+    "_note": "Infrastructure team organizes by deployment concerns"
+  }
+]

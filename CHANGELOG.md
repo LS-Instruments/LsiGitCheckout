@@ -5,6 +5,85 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.1.0] - 2025-01-24
+
+### Added
+- **Custom Dependency File Support**: Added support for per-repository custom dependency file paths and names via "Dependency File Path" and "Dependency File Name" fields
+- **Repository-Level Dependency Configuration**: Each repository can specify its own dependency file location without affecting nested repositories
+- **Proper Path Resolution**: Relative paths in dependency files are now correctly resolved from repository root directories, not dependency file locations
+- **Isolation of Custom Settings**: Custom dependency file settings are not propagated to nested repositories (preserves dependency isolation)
+- Enhanced logging for custom dependency file configurations showing when custom paths/names are used
+- New `Get-CustomDependencyFilePath` function for resolving custom dependency file locations with proper path resolution
+- Summary statistics showing count of repositories using custom dependency file configurations
+
+### Changed
+- **Repository Dictionary Enhancement**: Extended repository dictionary to track custom dependency file settings per repository
+- **Recursive Processing Improvement**: Modified recursive dependency processing to handle per-repository custom dependency files while maintaining isolation
+- **Path Resolution Fix**: Fixed critical issue where relative paths were incorrectly resolved from dependency file directories instead of repository roots
+- Enhanced verbose logging to show custom dependency file path and name configurations during repository processing
+- Improved dependency file resolution logic to support both relative and absolute custom paths with correct base path calculation
+- Updated function signatures to support repository root path context for proper relative path resolution
+
+### Fixed
+- **Critical Path Resolution Bug**: Relative paths in nested dependency files now correctly resolve from the repository root instead of the dependency file's directory location
+- Resolved issue where custom dependency file paths could create incorrect absolute paths leading to repository conflicts
+- Fixed path calculation logic to properly handle ".." segments relative to repository roots
+
+### Benefits
+- **Flexible Dependency Management**: Repositories can use different dependency file naming conventions (e.g., "project-deps.json", "modules.json")
+- **Custom Directory Structure Support**: Dependency files can be located in subdirectories (e.g., "config/deps", "build/dependencies")
+- **Correct Path Behavior**: Relative paths in dependency files work as users expect (relative to repository root)
+- **Backward Compatibility**: All existing repositories continue to work without modification
+- **Dependency Isolation**: Custom settings don't leak to nested repositories, preventing unintended dependency file lookups
+- **Mixed Convention Support**: Teams can mix different dependency file conventions within the same project hierarchy
+- **Robust Path Resolution**: Eliminates path conflicts caused by incorrect relative path calculation
+
+### Configuration Examples
+
+#### Repository with Custom Dependency File Path and Name
+```json
+{
+  "Repository URL": "https://github.com/myorg/project.git",
+  "Base Path": "repos/project",
+  "Tag": "v1.0.0",
+  "Dependency File Path": "config/deps",
+  "Dependency File Name": "project-dependencies.json"
+}
+```
+
+#### Repository with Custom File Name Only
+```json
+{
+  "Repository URL": "https://github.com/myorg/library.git",
+  "Base Path": "libs/library",
+  "Tag": "v2.0.0",
+  "Dependency File Name": "modules.json"
+}
+```
+
+#### Correct Path Resolution Example
+```
+Repository root: /project/
+Custom dependency file: /project/build/config/deps.json
+Relative path in deps.json: ../libs/shared
+Correctly resolves to: /project/libs/shared (relative to repository root)
+```
+
+### Technical Implementation
+- Custom dependency file settings are stored in the repository dictionary but not propagated during recursive processing
+- Nested repositories always use the default dependency file name from the root invocation
+- Path resolution supports both relative paths (relative to repository root) and subdirectories
+- Enhanced `Get-AbsoluteBasePath` function with repository root context parameter
+- Updated `Process-DependencyFile`, `Invoke-GitCheckout`, and `Update-RepositoryDictionary` functions to support repository root path context
+- Maintains full backward compatibility with existing dependency file conventions
+
+### Migration Notes
+- **Zero configuration changes required**: All existing repositories work without modification
+- **Optional feature**: Custom dependency file settings are completely optional
+- **Gradual adoption**: Teams can add custom settings to repositories as needed
+- **Path resolution improvement**: Existing relative paths now work more intuitively
+- **Enhanced debugging**: Better logging for troubleshooting path resolution issues
+
 ## [6.0.0] - 2025-01-24
 
 ### Breaking Changes

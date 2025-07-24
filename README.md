@@ -1,6 +1,6 @@
 # LsiGitCheckout
 
-A PowerShell script for managing multiple Git repositories with support for tags, SSH authentication via PuTTY, Git LFS, and submodules. Features advanced recursive dependency resolution with API compatibility checking, flexible compatibility modes, and intelligent automatic tag temporal sorting.
+A PowerShell script for managing multiple Git repositories with support for tags, SSH authentication via PuTTY, Git LFS, and submodules. Features advanced recursive dependency resolution with API compatibility checking, flexible compatibility modes, intelligent automatic tag temporal sorting, and custom dependency file configurations.
 
 ## Table of Contents
 
@@ -11,6 +11,7 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - [Advanced Usage (Recursive Mode)](#advanced-usage-recursive-mode)
 - [API Compatibility Modes](#api-compatibility-modes)
 - [Intelligent Tag Temporal Sorting](#intelligent-tag-temporal-sorting)
+- [Custom Dependency Files](#custom-dependency-files)
 - [Security Best Practices](#security-best-practices)
 - [SSH Setup with PuTTY](#ssh-setup-with-putty)
 - [Troubleshooting](#troubleshooting)
@@ -33,6 +34,7 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - **Recursive Dependencies**: Discover and process nested repository dependencies with API compatibility checking
 - **Flexible Compatibility Modes**: Choose between Strict and Permissive API compatibility modes
 - **Intelligent Tag Temporal Sorting**: Always-on automatic chronological tag ordering using actual git tag dates with optimized performance
+- **Custom Dependency Files**: Per-repository custom dependency file paths and names with proper isolation
 
 ## Requirements
 
@@ -109,7 +111,9 @@ Contains repository configurations without any credential information:
     "Tag": "v1.0.0",
     "API Compatible Tags": ["v0.9.0", "v0.9.1", "v0.9.2"],
     "API Compatibility": "Strict",
-    "Skip LFS": false
+    "Skip LFS": false,
+    "Dependency File Path": "config/deps",
+    "Dependency File Name": "project-deps.json"
   }
 ]
 ```
@@ -121,6 +125,8 @@ Contains repository configurations without any credential information:
 - **API Compatible Tags** (optional): List of API-compatible tags (can be in any order - automatic chronological sorting)
 - **API Compatibility** (optional): "Strict" or "Permissive" (defaults to script parameter when absent)
 - **Skip LFS** (optional): Skip Git LFS downloads for this repository and all submodules
+- **Dependency File Path** (optional): Custom subdirectory within repository for dependency file
+- **Dependency File Name** (optional): Custom name for dependency file
 
 #### git_credentials.json
 
@@ -155,7 +161,7 @@ Maps hostnames to SSH key files:
 ]
 ```
 
-#### Example 2: Private Repository with SSH
+#### Example 2: Private Repository with SSH and Custom Dependency Files
 
 dependencies.json:
 ```json
@@ -164,7 +170,9 @@ dependencies.json:
     "Repository URL": "git@github.com:mycompany/private-repo.git",
     "Base Path": "C:\\Projects\\private-repo",
     "Tag": "release-2024.1",
-    "API Compatibility": "Strict"
+    "API Compatibility": "Strict",
+    "Dependency File Path": "build/config",
+    "Dependency File Name": "external-requirements.json"
   }
 ]
 ```
@@ -180,7 +188,7 @@ git_credentials.json:
 
 ### Overview
 
-**When Recursive Mode is enabled (Default)** the script automatically discovers and processes nested dependencies. After checking out each repository, it looks for a dependency file with the same name as the input file within that repository and processes it recursively, with intelligent handling of shared dependencies.
+**When Recursive Mode is enabled (Default)** the script automatically discovers and processes nested dependencies. After checking out each repository, it looks for a dependency file within that repository and processes it recursively, with intelligent handling of shared dependencies.
 
 ### Controlling Recursive Mode
 
@@ -458,112 +466,184 @@ The script automatically sorts these tags by their actual git creation dates dur
 - **Smart caching**: Tag dates are cached in memory during recursive processing
 - **Minimal server impact**: Only one tag date fetch per repository during initial checkout
 
-### Real-World Example with Test Repositories
+## Custom Dependency Files
 
-Using the LS-Instruments test repositories to demonstrate recursive dependencies:
+Version 6.1.0 introduces support for per-repository custom dependency file paths and names, providing flexibility for different project structures and naming conventions while maintaining proper dependency isolation.
 
-#### Initial Setup
+### Overview
 
-Main dependencies.json:
+By default, the script looks for dependency files with the same name as the input file (e.g., `dependencies.json`) in the root directory of each checked-out repository. With custom dependency file support, each repository can specify:
+
+- **Custom File Name**: Use different naming conventions (e.g., `project-modules.json`, `requirements.json`)
+- **Custom File Path**: Place dependency files in subdirectories (e.g., `config/deps`, `build/dependencies`)
+
+### Configuration Fields
+
+#### Dependency File Path
+- **Purpose**: Specifies a subdirectory within the repository where the dependency file is located
+- **Type**: String (relative path from repository root)
+- **Default**: Repository root directory
+- **Examples**: `"config"`, `"build/deps"`, `"scripts/deployment"`
+
+#### Dependency File Name  
+- **Purpose**: Specifies a custom name for the dependency file
+- **Type**: String (filename with extension)
+- **Default**: Same as the input file name (e.g., `dependencies.json`)
+- **Examples**: `"project-modules.json"`, `"external-deps.json"`, `"requirements.json"`
+
+### Dependency Isolation
+
+**Critical Behavior**: Custom dependency file settings are **NOT propagated** to nested repositories. Each repository's custom settings apply only to that repository. Nested repositories discovered during recursive processing always use the default dependency file name from the root invocation.
+
+This isolation prevents:
+- Unintended dependency file lookups in nested repositories
+- Coupling between parent and child repository configurations
+- Complexity in deeply nested dependency hierarchies
+
+### Path Resolution
+
+**Important**: Relative paths in dependency files are always resolved relative to the **repository root**, not the dependency file location.
+
+**Example:**
+```
+Repository: test-repo/
+Custom dependency file: test-repo/build/config/deps.json
+Relative path in deps.json: ../libs/library
+Resolves to: test-repo/libs/library (relative to repository root)
+```
+
+### Configuration Examples
+
+#### Basic Custom File Name
+```json
+{
+  "Repository URL": "https://github.com/myorg/project.git",
+  "Base Path": "repos/project",
+  "Tag": "v1.0.0",
+  "Dependency File Name": "project-modules.json"
+}
+```
+**Result**: Looks for `project-modules.json` in the repository root
+
+#### Custom Subdirectory
+```json
+{
+  "Repository URL": "https://github.com/myorg/project.git",
+  "Base Path": "repos/project",
+  "Tag": "v1.0.0",
+  "Dependency File Path": "config/deps"
+}
+```
+**Result**: Looks for `dependencies.json` in the `config/deps` subdirectory
+
+#### Both Custom Path and Name
+```json
+{
+  "Repository URL": "https://github.com/myorg/project.git",
+  "Base Path": "repos/project",
+  "Tag": "v1.0.0",
+  "Dependency File Path": "build/config",
+  "Dependency File Name": "external-dependencies.json"
+}
+```
+**Result**: Looks for `external-dependencies.json` in the `build/config` subdirectory
+
+### Real-World Usage Scenarios
+
+#### 1. Organization with Multiple Conventions
 ```json
 [
   {
-    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestRootA.git",
-    "Base Path": "test-root-a",
-    "Tag": "v1.0.0"
+    "_comment": "Legacy project using old naming convention",
+    "Repository URL": "https://github.com/myorg/legacy-app.git",
+    "Base Path": "apps/legacy",
+    "Tag": "v2.0.0",
+    "Dependency File Name": "modules.json"
   },
   {
-    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestRootB.git",
-    "Base Path": "test-root-b",
+    "_comment": "New project using standard convention",
+    "Repository URL": "https://github.com/myorg/new-app.git", 
+    "Base Path": "apps/new",
     "Tag": "v1.0.0"
   }
 ]
 ```
 
-#### Nested Dependencies
-
-LsiCheckOutTestRootA/dependencies.json:
+#### 2. Microservices with Centralized Configuration
 ```json
 [
   {
-    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestA.git",
-    "Base Path": "../libs/test-a",
-    "Tag": "v1.0.3",
-    "API Compatible Tags": ["v1.0.1", "v1.0.0", "v1.0.2"],
-    "API Compatibility": "Strict"
+    "_comment": "Service with dependencies in config directory",
+    "Repository URL": "https://github.com/myorg/auth-service.git",
+    "Base Path": "services/auth",
+    "Tag": "v1.5.0",
+    "Dependency File Path": "config",
+    "Dependency File Name": "service-deps.json"
   },
   {
-    "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestB.git",
-    "Base Path": "../libs/test-b",
-    "Tag": "v1.0.3",
-    "API Compatible Tags": ["v1.0.2", "v1.0.0", "v1.0.1"],
-    "API Compatibility": "Permissive"
+    "_comment": "Service with build-time dependencies",
+    "Repository URL": "https://github.com/myorg/api-gateway.git",
+    "Base Path": "services/gateway", 
+    "Tag": "v2.0.0",
+    "Dependency File Path": "build/dependencies"
   }
 ]
 ```
 
-Note: API Compatible Tags are listed in mixed order - the script automatically sorts them chronologically based on actual git tag dates.
+### Isolation Example
 
-#### Processing Flow
+Consider this scenario:
+1. **Root dependencies.json** contains a repository with custom settings
+2. **That repository** has its own dependency file with different custom settings
+3. **Nested repositories** within that repository
 
-1. **Round 1**: Clones RootA and RootB
-2. **Round 2**: 
-   - Processes RootA's dependencies → clones TestA and TestB
-   - Processes RootB's dependencies → clones TestC
-3. **Round 3**: 
-   - Processes TestA's dependencies
-   - Finds TestB already exists at same path
-   - Applies compatibility rules based on mode settings and chronological tag intelligence
-4. **Round 4**: 
-   - Processes TestB's dependencies
-   - Continues applying compatibility rules with automatic tag sorting
-
-**Important**: The script uses the same filename for all recursive processing. If you run `.\LsiGitCheckout.ps1 -InputFile "mydeps.json"`, it will look for "mydeps.json" in each checked-out repository, not "dependencies.json".
-
-### API Compatibility Checking
-
-When the same repository is referenced multiple times:
-
-1. **Path Check**: Ensures all references resolve to the same absolute path
-2. **API Compatibility**: 
-   - **Strict mode**: Calculates intersection of all compatible versions
-   - **Permissive mode**: Calculates union of all compatible versions
-3. **Version Selection**: Uses chronological tag selection algorithm with intelligent prioritization
-
-#### Example: Version Conflict Resolution
-
-If TestA requires TestC compatible with [v1.0.0, v1.0.1, v1.0.2, v1.0.3] but TestB requires TestC compatible with [v1.0.2, v1.0.3, v1.0.4]:
-
-**Strict Mode (both repositories):**
-- **Algorithm**: Intersection of compatible tag sets
-- **Result**: [v1.0.2, v1.0.3]
-- **Tag Selection**: TestA or TestB "Tag" if in intersection, otherwise chronologically most recent
-
-**Permissive Mode (both repositories):**
-- **Algorithm**: Union of compatible tag sets
-- **Result**: [v1.0.0, v1.0.1, v1.0.2, v1.0.3, v1.0.4]
-- **Tag Selection**: TestA or TestB "Tag" if in union, otherwise chronologically most recent
-
-**Mixed Mode (TestA Strict, TestB Permissive):**
-- **Algorithm**: TestA is Strict, so its requirements are preserved
-- **Result**: Uses TestA's compatible versions
-
-### Error Scenarios
-
-#### Path Conflict
 ```
-Repository path conflict for 'https://github.com/LS-Instruments/LsiCheckOutTestC.git':
-Existing path: C:\project\libs\test-c
-New path: C:\project\modules\test-c
+Root: dependencies.json
+├── ProjectA (custom: config/project-deps.json)
+│   └── config/project-deps.json
+│       ├── LibraryX (will use dependencies.json in root, NOT config/project-deps.json)
+│       └── LibraryY (will use dependencies.json in root, NOT config/project-deps.json)
 ```
 
-#### API Incompatibility
+**Key Point**: `LibraryX` and `LibraryY` will look for `dependencies.json` (the original input file name) in their repository roots, regardless of ProjectA's custom settings.
+
+### Command Line Usage
+
+Custom dependency file settings work with all existing command line options:
+
+```powershell
+# Standard usage - custom settings are read from the JSON file
+.\LsiGitCheckout.ps1
+
+# With custom input file - nested repos use "custom-deps.json" as default
+.\LsiGitCheckout.ps1 -InputFile "custom-deps.json"
+
+# Debugging custom dependency file resolution
+.\LsiGitCheckout.ps1 -EnableDebug -Verbose
+
+# Dry run to see what dependency files would be processed
+.\LsiGitCheckout.ps1 -DryRun
 ```
-API incompatibility for repository 'https://github.com/LS-Instruments/LsiCheckOutTestC.git':
-Existing tags: v2.0.0
-New tags: v1.0.0, v1.0.1, v1.0.2, v1.0.3
-No common API-compatible tags found.
+
+### Verbose Output
+
+When using `-Verbose`, the script shows custom dependency file configurations:
+
 ```
+[2025-01-24 10:30:15] [Info] Processing repository: https://github.com/myorg/project.git
+[2025-01-24 10:30:15] [Verbose] Custom Dependency File Path: config/deps
+[2025-01-24 10:30:15] [Verbose] Custom Dependency File Name: project-modules.json
+[2025-01-24 10:30:16] [Debug] Resolved dependency file path: C:\repos\project\config\deps\project-modules.json
+```
+
+### Benefits
+
+- **Flexibility**: Support different project structures and naming conventions
+- **Backward Compatibility**: No changes required for existing repositories  
+- **Isolation**: Custom settings don't affect nested dependencies
+- **Migration Friendly**: Gradual adoption without breaking existing workflows
+- **Organization Support**: Handle legacy and new projects with different conventions
+- **Correct Path Resolution**: Relative paths always resolve from repository roots
 
 ## Security Best Practices
 
@@ -629,6 +709,17 @@ No common API-compatible tags found.
    - Ensure repositories are accessible for tag date queries
    - Review verbose output for tag selection decisions
 
+7. **Custom dependency file not found**
+   - Verify the custom path and filename are correct
+   - Check that the dependency file exists in the specified location
+   - Remember that paths are relative to repository root
+   - Use debug logging to see resolved paths
+
+8. **Repository path conflicts**
+   - Ensure the same repository isn't referenced with different relative paths
+   - Check that custom dependency file paths don't create conflicting layouts
+   - Verify relative paths resolve correctly from repository roots
+
 ### Debug Mode
 
 Enable detailed logging to troubleshoot issues:
@@ -644,9 +735,31 @@ Check the generated debug log file for:
 - API compatibility calculations
 - Compatibility mode interactions
 - Tag date fetching operations and chronological sorting
+- Custom dependency file path resolution
+- Repository root path usage for relative path resolution
 - Detailed Git command execution
 
 ## Migration Guide
+
+### From Version 6.0.x to 6.1.0
+
+Version 6.1.0 introduces custom dependency file support with complete backward compatibility:
+
+1. **Non-breaking changes**: All v6.0.x configurations work in v6.1.0
+2. **New optional fields**: "Dependency File Path" and "Dependency File Name"
+3. **Enhanced path resolution**: Relative paths now properly resolve from repository roots
+4. **Dependency isolation**: Custom settings don't propagate to nested repositories
+
+**New Features Available:**
+- Per-repository custom dependency file paths and names
+- Flexible support for different project structures
+- Proper isolation of custom settings
+- Enhanced logging for custom configurations
+
+**Migration Steps:**
+1. **Immediate**: All existing repositories continue to work without changes
+2. **Optional**: Add custom dependency file settings to repositories as needed
+3. **Gradual**: Migrate to different naming conventions at your own pace
 
 ### From Version 5.x to 6.0.0
 
@@ -666,34 +779,6 @@ Version 6.0.0 introduces a major simplification by removing the `-DisableTagSort
 
 # New v6.0 behavior (always enabled)
 .\LsiGitCheckout.ps1  # Intelligent tag sorting always active
-```
-
-**Benefits of v6.0:**
-- **Always optimal behavior**: No configuration required for intelligent tag sorting
-- **Simplified maintenance**: API Compatible Tags can be in any order
-- **Better performance**: Optimized algorithms always used
-- **Cleaner codebase**: Single code path for all tag operations
-- **Enhanced reliability**: Eliminates possibility of manual ordering errors
-- **Improved troubleshooting**: Enhanced logging with clear depth boundaries and statistics
-
-**Enhanced Logging in v6.0:**
-- Consistent Info-level start/end messages for all dependency processing depths
-- Detailed completion statistics showing repositories examined and dependency files found
-- Fixed depth numbering (now correctly shows 0 → 1 → 2 → 3 progression)
-- Clear final completion message when recursive processing ends
-- Better visibility into the recursive dependency discovery process
-
-**API Compatible Tags Simplification:**
-```json
-// v5.x: Manual ordering required with -DisableTagSorting
-{
-  "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2", "v1.0.3"]
-}
-
-// v6.0: Any order works - automatic chronological sorting
-{
-  "API Compatible Tags": ["v1.0.2", "v1.0.0", "v1.0.3", "v1.0.1"]
-}
 ```
 
 ### From Version 4.x to 5.0.0
@@ -720,40 +805,6 @@ Version 5.0 introduces a cleaner API with breaking changes to parameter naming. 
 # New v5.0 legacy mode
 .\LsiGitCheckout.ps1 -DisableRecursion -DisableTagSorting
 ```
-
-### From Version 4.0.x to 4.1.x
-
-Version 4.1 adds API compatibility modes. Existing configurations continue to work:
-
-1. **Non-breaking changes**: All v4.0.x configurations work in v4.1.x
-2. **New optional field**: "API Compatibility" for mode control
-3. **New parameter**: `-ApiCompatibility` for default mode
-4. **Default behavior**: Permissive mode (more flexible than v4.0.x)
-
-To maintain v4.0.x behavior exactly:
-```powershell
-.\LsiGitCheckout.ps1 -ApiCompatibility Strict
-```
-
-### From Version 3.x to 4.x
-
-Version 4.0 adds recursive dependency support. Existing configurations continue to work:
-
-1. **Non-breaking changes**: All v3.x configurations work in v4.x
-2. **New optional field**: "API Compatible Tags" for recursive mode
-3. **New parameters**: Recursive mode enabled by default
-
-To use recursive features:
-1. Add "API Compatible Tags" to your repository configurations
-2. Place dependencies.json files in your repositories
-3. Run the script (recursive mode is enabled by default)
-
-### From Version 2.x to 3.x/4.x
-
-1. Create `git_credentials.json` with your SSH key mappings
-2. Remove all "SSH Key Path" fields from dependencies.json
-3. Remove all "Submodule Config" sections
-4. Update any scripts to use `-EnableDebug` instead of `-Debug`
 
 ## LsiGitCheckout vs Traditional Package Managers
 
@@ -784,6 +835,8 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
 - Requiring flexible compatibility modes for different environments
 - Managing complex temporal dependencies with automatic intelligent sorting
 - Eliminating manual tag ordering complexity
+- Using different dependency file conventions across projects
+- Supporting custom project structures and naming conventions
 
 ### Key Advantages of LsiGitCheckout
 
@@ -798,6 +851,8 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
 9. **Complete Audit Trail**: Full git history for security reviews
 10. **Intelligent Tag Sorting**: Always-on automatic chronological ordering with performance optimization
 11. **Simplified Maintenance**: No manual tag ordering required
+12. **Custom Dependency Files**: Support for different project structures and naming conventions
+13. **Dependency Isolation**: Proper separation of concerns in nested dependencies
 
 ### Key Advantages of Traditional Package Managers
 
@@ -817,6 +872,7 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
    - Requiring strict security and compliance controls
    - Complex interdependencies between internal projects
    - Need for flexible compatibility policies
+   - Supporting diverse project structures and conventions
 
 2. **Research Organizations**
    - Ensuring long-term reproducibility
@@ -833,6 +889,7 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
    - Applying organization-specific patches
    - Managing architectural transitions
    - Supporting both stable and experimental environments
+   - Handling mixed dependency file conventions
 
 ### Hybrid Approach: Best of Both Worlds
 
@@ -842,6 +899,7 @@ Many successful projects combine both approaches:
 - Maintain clear boundaries between packaged and source dependencies
 - Apply different compatibility modes based on environment (Strict for production, Permissive for development)
 - Leverage always-on intelligent tag sorting for simplified dependency management
+- Support different dependency file conventions across teams and projects
 
 This leverages the convenience of package managers for commodity dependencies while maintaining control over critical internal code.
 
@@ -861,6 +919,8 @@ This leverages the convenience of package managers for commodity dependencies wh
 - Mixed development/production environments with different stability requirements
 - Complex dependency graphs requiring intelligent temporal sorting without manual ordering
 - Teams needing flexible tag ordering without temporal maintenance overhead
+- Organizations with diverse project structures and naming conventions
+- Multi-team environments requiring dependency isolation
 
 ## License
 

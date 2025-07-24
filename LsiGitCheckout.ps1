@@ -36,11 +36,17 @@
     .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug -ApiCompatibility Strict
     .\LsiGitCheckout.ps1 -Verbose
 .NOTES
-    Version: 6.0.0
+    Version: 6.1.0
     Last Modified: 2025-01-24
     
     This script uses PuTTY/plink for SSH authentication. SSH keys must be in PuTTY format (.ppk).
     Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.
+    
+    Changes in 6.1.0:
+    - Added support for custom "Dependency File Path" and "Dependency File Name" per repository
+    - Custom dependency file settings are not propagated to nested repositories (isolation)
+    - Enhanced recursive processing to handle per-repository dependency file configurations
+    - Improved flexibility for managing different dependency file naming conventions
     
     Changes in 6.0.0:
     - BREAKING: Removed -DisableTagSorting parameter - tag temporal sorting is now always enabled
@@ -48,12 +54,6 @@
     - Always uses intelligent tag temporal sorting based on actual git tag dates
     - API Compatible Tags can be listed in any order - automatic chronological sorting
     - Enhanced performance with optimized tag sorting algorithms
-    
-    Changes in 5.0.0:
-    - BREAKING: Changed -Recursive to -DisableRecursion (recursive mode enabled by default)
-    - BREAKING: Changed -EnableTagSorting to -DisableTagSorting (tag sorting enabled by default)
-    - Cleaner API with proper switch parameter naming conventions
-    - Recursive processing and intelligent tag sorting enabled by default
     
     Dependencies JSON Format:
     [
@@ -63,7 +63,9 @@
         "Tag": "v1.0.0",
         "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.1.0"],
         "API Compatibility": "Strict",
-        "Skip LFS": false
+        "Skip LFS": false,
+        "Dependency File Path": "config/deps",
+        "Dependency File Name": "project-deps.json"
       }
     ]
     
@@ -101,7 +103,7 @@ param(
 )
 
 # Script configuration
-$script:Version = "6.0.0"
+$script:Version = "6.1.0"
 $script:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:ErrorFile = Join-Path $ScriptPath "LsiGitCheckout_Errors.txt"
 $script:DebugLogFile = Join-Path $ScriptPath ("debug_log_{0}.txt" -f (Get-Date -Format "yyyyMMddHHmm"))
@@ -113,6 +115,7 @@ $script:CurrentDepth = 0
 $script:ProcessedDependencyFiles = @()
 $script:DefaultApiCompatibility = $ApiCompatibility
 $script:RecursiveMode = -not $DisableRecursion
+$script:DefaultDependencyFileName = ""
 
 # Initialize error file
 if (Test-Path $script:ErrorFile) {
@@ -559,7 +562,8 @@ function Reset-GitRepository {
 function Get-AbsoluteBasePath {
     param(
         [string]$BasePath,
-        [string]$DependencyFilePath
+        [string]$DependencyFilePath,
+        [string]$RepositoryRootPath = $null
     )
     
     if ([System.IO.Path]::IsPathRooted($BasePath)) {
@@ -567,10 +571,22 @@ function Get-AbsoluteBasePath {
         return [System.IO.Path]::GetFullPath($BasePath)
     }
     
-    $dependencyDir = Split-Path -Parent (Resolve-Path $DependencyFilePath)
-    $combinedPath = Join-Path $dependencyDir $BasePath
+    # If we have a repository root path (for nested dependencies), use that as the base
+    # Otherwise, use the dependency file's directory (for root-level dependencies)
+    if (-not [string]::IsNullOrWhiteSpace($RepositoryRootPath)) {
+        $baseDir = $RepositoryRootPath
+        Write-Log "Using repository root path as base: $baseDir" -Level Debug
+    } else {
+        $baseDir = Split-Path -Parent (Resolve-Path $DependencyFilePath)
+        Write-Log "Using dependency file directory as base: $baseDir" -Level Debug
+    }
+    
+    $combinedPath = Join-Path $baseDir $BasePath
     # Normalize the combined path to resolve ".." segments
-    return [System.IO.Path]::GetFullPath($combinedPath)
+    $resolvedPath = [System.IO.Path]::GetFullPath($combinedPath)
+    Write-Log "Resolved relative path '$BasePath' to: $resolvedPath" -Level Debug
+    
+    return $resolvedPath
 }
 
 function Get-TagIntersection {
@@ -623,10 +639,44 @@ function Get-TagUnion {
     return $sortedUnion
 }
 
+function Get-CustomDependencyFilePath {
+    param(
+        [PSCustomObject]$Repository,
+        [string]$RepoAbsolutePath,
+        [string]$DefaultFileName
+    )
+    
+    $dependencyFilePath = $Repository.'Dependency File Path'
+    $dependencyFileName = $Repository.'Dependency File Name'
+    
+    # Start with the repository root path
+    $basePath = $RepoAbsolutePath
+    
+    # Add custom subdirectory if specified
+    if (-not [string]::IsNullOrWhiteSpace($dependencyFilePath)) {
+        $basePath = Join-Path $basePath $dependencyFilePath
+        Write-Log "Using custom dependency file path: $dependencyFilePath" -Level Debug
+    }
+    
+    # Use custom file name if specified, otherwise use default
+    $fileName = if (-not [string]::IsNullOrWhiteSpace($dependencyFileName)) {
+        Write-Log "Using custom dependency file name: $dependencyFileName" -Level Debug
+        $dependencyFileName
+    } else {
+        $DefaultFileName
+    }
+    
+    $fullPath = Join-Path $basePath $fileName
+    Write-Log "Resolved dependency file path: $fullPath" -Level Debug
+    
+    return $fullPath
+}
+
 function Update-RepositoryDictionary {
     param(
         [PSCustomObject]$Repository,
-        [string]$DependencyFilePath
+        [string]$DependencyFilePath,
+        [string]$CallingRepositoryRootPath = $null
     )
     
     $repoUrl = $Repository.'Repository URL'
@@ -635,8 +685,8 @@ function Update-RepositoryDictionary {
     $apiCompatibleTags = $Repository.'API Compatible Tags'
     $apiCompatibility = if ($Repository.'API Compatibility') { $Repository.'API Compatibility' } else { $script:DefaultApiCompatibility }
     
-    # Calculate absolute base path
-    $absoluteBasePath = Get-AbsoluteBasePath -BasePath $basePath -DependencyFilePath $DependencyFilePath
+    # Calculate absolute base path using repository root if available
+    $absoluteBasePath = Get-AbsoluteBasePath -BasePath $basePath -DependencyFilePath $DependencyFilePath -RepositoryRootPath $CallingRepositoryRootPath
     
     if ($script:RepositoryDictionary.ContainsKey($repoUrl)) {
         # Repository already exists, check compatibility
@@ -848,7 +898,10 @@ function Update-RepositoryDictionary {
             }
         }
         
-        # Update dictionary
+        # Update dictionary (preserve existing custom dependency file settings)
+        $existingDependencyFilePath = if ($existingRepo.ContainsKey('DependencyFilePath')) { $existingRepo.DependencyFilePath } else { $null }
+        $existingDependencyFileName = if ($existingRepo.ContainsKey('DependencyFileName')) { $existingRepo.DependencyFileName } else { $null }
+        
         $script:RepositoryDictionary[$repoUrl] = @{
             AbsolutePath = $existingAbsolutePath
             Tag = $newTag
@@ -858,6 +911,8 @@ function Update-RepositoryDictionary {
             NeedCheckout = $needCheckout
             CheckoutFailed = $false
             TagDates = $tagDates  # Preserve existing tag dates
+            DependencyFilePath = $existingDependencyFilePath  # Preserve original settings
+            DependencyFileName = $existingDependencyFileName  # Preserve original settings
         }
         
         Write-Log "Updated repository '$repoUrl' - Tag: $newTag, API Compatible Tags: $($newApiCompatibleTags -join ', '), API Compatibility: $newApiCompatibility" -Level Debug
@@ -870,6 +925,9 @@ function Update-RepositoryDictionary {
         }
     } else {
         # New repository, add to dictionary
+        $customDependencyFilePath = $Repository.'Dependency File Path'
+        $customDependencyFileName = $Repository.'Dependency File Name'
+        
         $script:RepositoryDictionary[$repoUrl] = @{
             AbsolutePath = $absoluteBasePath
             Tag = $newRepositoryTag
@@ -879,9 +937,17 @@ function Update-RepositoryDictionary {
             NeedCheckout = $false
             CheckoutFailed = $false
             TagDates = @{}  # Will be populated after checkout
+            DependencyFilePath = $customDependencyFilePath  # Store custom settings (only for this repo)
+            DependencyFileName = $customDependencyFileName   # Store custom settings (only for this repo)
         }
         
         Write-Log "Added new repository to dictionary: '$repoUrl' with API Compatibility: $apiCompatibility" -Level Debug
+        if (-not [string]::IsNullOrWhiteSpace($customDependencyFilePath)) {
+            Write-Log "Repository '$repoUrl' configured with custom dependency file path: $customDependencyFilePath" -Level Debug
+        }
+        if (-not [string]::IsNullOrWhiteSpace($customDependencyFileName)) {
+            Write-Log "Repository '$repoUrl' configured with custom dependency file name: $customDependencyFileName" -Level Debug
+        }
         
         return $false  # Repository needs to be checked out
     }
@@ -890,7 +956,8 @@ function Update-RepositoryDictionary {
 function Invoke-GitCheckout {
     param(
         [PSCustomObject]$Repository,
-        [string]$DependencyFilePath
+        [string]$DependencyFilePath,
+        [string]$CallingRepositoryRootPath = $null
     )
     
     $repoUrl = $Repository.'Repository URL'
@@ -901,7 +968,7 @@ function Invoke-GitCheckout {
     
     # Check if we should skip this repository (already checked out with compatible API)
     if ($script:RecursiveMode) {
-        $checkoutResult = Update-RepositoryDictionary -Repository $Repository -DependencyFilePath $DependencyFilePath
+        $checkoutResult = Update-RepositoryDictionary -Repository $Repository -DependencyFilePath $DependencyFilePath -CallingRepositoryRootPath $CallingRepositoryRootPath
         if ($checkoutResult -eq $true) {
             Write-Log "Skipping repository '$repoUrl' - already checked out with compatible API" -Level Info
             return $true
@@ -983,6 +1050,16 @@ function Invoke-GitCheckout {
         Write-Log "Skip LFS: Yes" -Level Verbose
     }
     
+    # Log custom dependency file settings if present
+    $customDependencyFilePath = $Repository.'Dependency File Path'
+    $customDependencyFileName = $Repository.'Dependency File Name'
+    if (-not [string]::IsNullOrWhiteSpace($customDependencyFilePath)) {
+        Write-Log "Custom Dependency File Path: $customDependencyFilePath" -Level Verbose
+    }
+    if (-not [string]::IsNullOrWhiteSpace($customDependencyFileName)) {
+        Write-Log "Custom Dependency File Name: $customDependencyFileName" -Level Verbose
+    }
+    
     # Handle SSH key if URL is SSH
     if ($repoUrl -match '^git@|^ssh://') {
         $sshKeyPath = Get-SshKeyForUrl -Url $repoUrl
@@ -996,8 +1073,8 @@ function Invoke-GitCheckout {
         }
     }
     
-    # Convert relative path to absolute
-    $absoluteBasePath = Get-AbsoluteBasePath -BasePath $basePath -DependencyFilePath $DependencyFilePath
+    # Convert relative path to absolute using repository root if available
+    $absoluteBasePath = Get-AbsoluteBasePath -BasePath $basePath -DependencyFilePath $DependencyFilePath -RepositoryRootPath $CallingRepositoryRootPath
     
     # Check if base path exists
     if (Test-Path $absoluteBasePath) {
@@ -1320,7 +1397,8 @@ function Invoke-GitCheckout {
 function Process-DependencyFile {
     param(
         [string]$DependencyFilePath,
-        [int]$Depth
+        [int]$Depth,
+        [string]$CallingRepositoryRootPath = $null
     )
     
     # Check if we've already processed this file (circular dependency)
@@ -1335,6 +1413,9 @@ function Process-DependencyFile {
     }
     
     Write-Log "Processing dependency file: $DependencyFilePath (Depth: $Depth)" -Level Info
+    if (-not [string]::IsNullOrWhiteSpace($CallingRepositoryRootPath)) {
+        Write-Log "Using calling repository root: $CallingRepositoryRootPath" -Level Debug
+    }
     
     if (-not (Test-Path $DependencyFilePath)) {
         Write-Log "Dependency file not found: $DependencyFilePath" -Level Warning
@@ -1378,7 +1459,7 @@ function Process-DependencyFile {
                 }
             }
             
-            if (Invoke-GitCheckout -Repository $repo -DependencyFilePath $DependencyFilePath) {
+            if (Invoke-GitCheckout -Repository $repo -DependencyFilePath $DependencyFilePath -CallingRepositoryRootPath $CallingRepositoryRootPath) {
                 $script:SuccessCount++
                 $checkoutSucceeded = $true
                 
@@ -1413,7 +1494,7 @@ function Process-DependencyFile {
 function Process-RecursiveDependencies {
     param(
         [array]$CheckedOutRepos,
-        [string]$DependencyFileName,
+        [string]$DefaultDependencyFileName,
         [int]$CurrentDepth
     )
     
@@ -1448,23 +1529,30 @@ function Process-RecursiveDependencies {
             continue
         }
         
-        $nestedDependencyFile = Join-Path $repoPath $DependencyFileName
+        # Get custom dependency file path for this repository (if any)
+        # Note: Custom settings are NOT propagated to nested repositories
+        $customDependencyFilePath = Get-CustomDependencyFilePath -Repository $repoInfo.Repository -RepoAbsolutePath $repoPath -DefaultFileName $DefaultDependencyFileName
         
-        if (Test-Path $nestedDependencyFile) {
-            Write-Log "Found nested dependency file: $nestedDependencyFile" -Level Info
+        if (Test-Path $customDependencyFilePath) {
+            Write-Log "Found nested dependency file: $customDependencyFilePath" -Level Info
             $foundDependencies++
-            $newRepos = Process-DependencyFile -DependencyFilePath $nestedDependencyFile -Depth $targetDepth
+            
+            # Process nested dependencies using the DEFAULT dependency file name
+            # Custom dependency file settings are isolated to the current repository only
+            # Pass the repository root path for correct relative path resolution
+            $newRepos = Process-DependencyFile -DependencyFilePath $customDependencyFilePath -Depth $targetDepth -CallingRepositoryRootPath $repoPath
             $newlyCheckedOutRepos += $newRepos
         } else {
-            Write-Log "No dependency file found in: $repoPath" -Level Debug
+            Write-Log "No dependency file found at: $customDependencyFilePath" -Level Debug
         }
     }
     
     Write-Log "Completed depth $targetDepth processing: $processedRepos repositories examined, $foundDependencies dependency files found, $($newlyCheckedOutRepos.Count) new repositories checked out" -Level Info
     
     # Recursively process newly checked out repositories
+    # Use the default dependency file name for all recursive processing
     if ($newlyCheckedOutRepos.Count -gt 0) {
-        Process-RecursiveDependencies -CheckedOutRepos $newlyCheckedOutRepos -DependencyFileName $DependencyFileName -CurrentDepth $targetDepth
+        Process-RecursiveDependencies -CheckedOutRepos $newlyCheckedOutRepos -DefaultDependencyFileName $DefaultDependencyFileName -CurrentDepth $targetDepth
     } else {
         Write-Log "Recursive processing complete - no more nested dependencies found" -Level Info
     }
@@ -1526,6 +1614,22 @@ Failed: $($script:FailureCount)
         $summary += "`nMax Depth: $MaxDepth"
         $summary += "`nDefault API Compatibility: $($script:DefaultApiCompatibility)"
         $summary += "`nTotal Unique Repositories: $($script:RepositoryDictionary.Count)"
+        
+        # Show custom dependency file statistics
+        $reposWithCustomPath = 0
+        $reposWithCustomName = 0
+        foreach ($repo in $script:RepositoryDictionary.Values) {
+            if ($repo.ContainsKey('DependencyFilePath') -and -not [string]::IsNullOrWhiteSpace($repo.DependencyFilePath)) {
+                $reposWithCustomPath++
+            }
+            if ($repo.ContainsKey('DependencyFileName') -and -not [string]::IsNullOrWhiteSpace($repo.DependencyFileName)) {
+                $reposWithCustomName++
+            }
+        }
+        
+        if ($reposWithCustomPath -gt 0 -or $reposWithCustomName -gt 0) {
+            $summary += "`nCustom Dependency Files: $reposWithCustomPath paths, $reposWithCustomName names"
+        }
     }
     
     $summary += "`nTag Temporal Sorting: Always Enabled"
@@ -1602,7 +1706,7 @@ try {
     }
     
     # Store the dependency file name for recursive processing
-    $dependencyFileName = Split-Path -Leaf $InputFile
+    $script:DefaultDependencyFileName = Split-Path -Leaf $InputFile
     
     # Determine credentials file path
     if ([string]::IsNullOrEmpty($CredentialsFile)) {
@@ -1621,14 +1725,14 @@ try {
         exit 1
     }
     
-    # Process the initial dependency file
+    # Process the initial dependency file (no calling repository root for top level)
     Write-Log "Starting dependency processing at depth 0" -Level Info
     $checkedOutRepos = Process-DependencyFile -DependencyFilePath $InputFile -Depth 0
     Write-Log "Completed depth 0 processing: 1 dependency file processed, $($checkedOutRepos.Count) repositories checked out" -Level Info
     
     # If recursive mode is enabled, process nested dependencies
     if ($script:RecursiveMode -and $checkedOutRepos.Count -gt 0) {
-        Process-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DependencyFileName $dependencyFileName -CurrentDepth 0
+        Process-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DefaultDependencyFileName $script:DefaultDependencyFileName -CurrentDepth 0
     }
     
     # Show summary

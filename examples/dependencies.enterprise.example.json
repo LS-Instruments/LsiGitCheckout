@@ -1,0 +1,41 @@
+[
+  {
+    "_comment": "Main application with centralized configuration management",
+    "Repository URL": "git@github.com:enterprise/main-application.git",
+    "Base Path": "applications/main",
+    "Tag": "v5.2.0",
+    "Dependency File Path": "deployment/config",
+    "Dependency File Name": "application-requirements.json",
+    "API Compatibility": "Strict",
+    "_scenario": "Enterprise app with dependencies stored in deployment config directory"
+  },
+  {
+    "_comment": "Microservice using service-specific dependency naming",
+    "Repository URL": "git@github.com:enterprise/auth-service.git",
+    "Base Path": "services/authentication",
+    "Tag": "v3.1.2",
+    "Dependency File Name": "service-dependencies.json",
+    "API Compatible Tags": ["v3.0.0", "v3.1.0", "v3.1.1"],
+    "API Compatibility": "Permissive",
+    "_scenario": "Microservice with custom naming but standard location"
+  },
+  {
+    "_comment": "Legacy system with historical naming conventions",
+    "Repository URL": "git@github.com:enterprise/legacy-system.git",
+    "Base Path": "legacy/core",
+    "Tag": "v2.15.8",
+    "Dependency File Name": "modules.json",
+    "API Compatible Tags": ["v2.15.0", "v2.15.1", "v2.15.2", "v2.15.3", "v2.15.4", "v2.15.5", "v2.15.6", "v2.15.7"],
+    "API Compatibility": "Strict",
+    "_scenario": "Legacy system maintaining historical naming while supporting modern dependency management"
+  },
+  {
+    "_comment": "Build system with complex directory structure",
+    "Repository URL": "git@github.com:enterprise/build-orchestrator.git",
+    "Base Path": "build/orchestrator",
+    "Tag": "v1.4.0",
+    "Dependency File Path": "config/build/dependencies",
+    "Dependency File Name": "build-requirements.json",
+    "_scenario": "Build system with deeply nested configuration structure"
+  }
+]
