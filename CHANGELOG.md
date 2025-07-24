@@ -5,6 +5,53 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] - 2025-01-24
+
+### Breaking Changes
+- **BREAKING**: Removed `-DisableTagSorting` parameter - tag temporal sorting is now always enabled
+- **BREAKING**: Eliminated all legacy manual ordering code paths for API Compatible Tags
+- **BREAKING**: API Compatible Tags can now be listed in any order - automatic chronological sorting is always applied
+
+### Added
+- Always-on intelligent tag temporal sorting using actual git tag dates
+- Enhanced performance with optimized tag sorting algorithms that run only when needed
+- Simplified codebase with single, consistent code paths for tag handling
+- Improved user experience with no configuration required for optimal tag ordering
+
+### Changed
+- **Major Simplification**: Removed 195+ lines of conditional logic and legacy fallback code (26% reduction)
+- API compatibility resolution now always uses chronological tag intelligence
+- Tag selection algorithms simplified to single code paths for both Strict and Permissive modes
+- Documentation streamlined to reflect always-enabled temporal sorting
+- Startup logging simplified with clear indication that tag sorting is always active
+
+### Removed
+- `-DisableTagSorting` parameter and all associated functionality
+- `$script:EnableTagSorting` variable and conditional logic
+- Legacy manual ordering requirements and validation
+- Complex fallback algorithms for manual tag ordering compatibility
+- Conditional warnings for incompatible manually-ordered tag lists
+- All code branches that handled disabled tag sorting
+
+### Performance
+- **Optimized algorithms**: Tag date fetching only occurs when needed for conflict resolution
+- **Reduced complexity**: Single execution path eliminates branching overhead
+- **Cleaner memory usage**: Removed unused variables and conditional state tracking
+- **Faster conflict resolution**: Always uses optimal chronological intelligence
+
+### Migration Notes
+- **Zero configuration changes**: All existing JSON files work without modification
+- **Improved behavior**: Users automatically get optimal tag ordering without any parameter changes
+- **Enhanced reliability**: Eliminates the possibility of manual ordering errors
+- **Better developer experience**: API Compatible Tags can be listed in any order
+
+### Benefits
+- **Cleaner codebase**: 26% reduction in code complexity
+- **Better maintainability**: Single code path for all tag operations
+- **Enhanced user experience**: Always uses intelligent behavior by default
+- **Consistent performance**: Optimized algorithms used in all scenarios
+- **Simplified documentation**: Easier to understand and use
+
 ## [5.0.0] - 2025-01-17
 
 ### Breaking Changes

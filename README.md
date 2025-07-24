@@ -10,7 +10,7 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - [Basic Usage (Non-Recursive)](#basic-usage-non-recursive)
 - [Advanced Usage (Recursive Mode)](#advanced-usage-recursive-mode)
 - [API Compatibility Modes](#api-compatibility-modes)
-- [Tag Temporal Sorting](#tag-temporal-sorting)
+- [Intelligent Tag Temporal Sorting](#intelligent-tag-temporal-sorting)
 - [Security Best Practices](#security-best-practices)
 - [SSH Setup with PuTTY](#ssh-setup-with-putty)
 - [Troubleshooting](#troubleshooting)
@@ -32,7 +32,7 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - **Dry Run Mode**: Preview operations without making changes
 - **Recursive Dependencies**: Discover and process nested repository dependencies with API compatibility checking
 - **Flexible Compatibility Modes**: Choose between Strict and Permissive API compatibility modes
-- **Intelligent Tag Temporal Sorting**: Automatic chronological tag ordering using actual git tag dates with optimized performance
+- **Intelligent Tag Temporal Sorting**: Always-on automatic chronological tag ordering using actual git tag dates with optimized performance
 
 ## Requirements
 
@@ -63,7 +63,7 @@ In non-recursive mode, the script processes only the repositories listed in your
 ### Command Line Usage
 
 ```powershell
-# Use default settings (recursive mode and tag sorting enabled by default)
+# Use default settings (recursive mode and intelligent tag sorting enabled by default)
 .\LsiGitCheckout.ps1
 
 # Specify custom JSON files
@@ -83,9 +83,6 @@ In non-recursive mode, the script processes only the repositories listed in your
 
 # Disable recursive mode (non-recursive mode)
 .\LsiGitCheckout.ps1 -DisableRecursion
-
-# Disable tag temporal sorting (legacy mode)
-.\LsiGitCheckout.ps1 -DisableTagSorting
 ```
 
 ### Parameters
@@ -97,7 +94,6 @@ In non-recursive mode, the script processes only the repositories listed in your
 - `-Verbose`: Show verbose output messages
 - `-ApiCompatibility`: Default API compatibility mode ('Strict' or 'Permissive', default: 'Permissive')
 - `-DisableRecursion`: Disable recursive dependency processing (default: recursive mode enabled)
-- `-DisableTagSorting`: Disable fetching tag dates from repositories and intelligent tag temporal sorting, requiring manual temporal tag ordering in the dependencies input files (default: tag sorting enabled)
 
 ### Configuration Files
 
@@ -122,7 +118,7 @@ Contains repository configurations without any credential information:
 - **Repository URL** (required): Git repository URL (HTTPS or SSH)
 - **Base Path** (required): Local directory path (relative or absolute)
 - **Tag** (required): Git tag to checkout
-- **API Compatible Tags** (optional): List of API-compatible tags
+- **API Compatible Tags** (optional): List of API-compatible tags (can be in any order - automatic chronological sorting)
 - **API Compatibility** (optional): "Strict" or "Permissive" (defaults to script parameter when absent)
 - **Skip LFS** (optional): Skip Git LFS downloads for this repository and all submodules
 
@@ -180,7 +176,7 @@ git_credentials.json:
 }
 ```
 
-## Recursive Mode
+## Advanced Usage (Recursive Mode)
 
 ### Overview
 
@@ -200,9 +196,6 @@ git_credentials.json:
 
 # Use strict compatibility mode
 .\LsiGitCheckout.ps1 -ApiCompatibility Strict
-
-# Disable tag sorting for legacy manual ordering
-.\LsiGitCheckout.ps1 -DisableTagSorting
 ```
 
 ### Recursion and Discovering Common Dependencies
@@ -263,34 +256,19 @@ When a repository conflict is detected, the script executes a compatibility algo
 
 1. **Assesses Compatibility**: Checks if the union of ("Tag" + "API Compatible Tags") from the first caller overlaps with the same set from the new caller. If there's no overlap, the dependencies are incompatible and the script reports an error.
 
-2. **Chooses the Optimal Version**: If the callers are not pointing to the same tag, the script determines which version to checkout based on the "API Compatibility" modes declared by both callers (Strict vs Permissive) and whether intelligent tag sorting is enabled.
+2. **Chooses the Optimal Version**: If the callers are compatible, the script determines which version to checkout based on the "API Compatibility" modes declared by both callers (Strict vs Permissive) and uses intelligent tag temporal sorting based on actual git tag dates.
 
 3. **Updates Repository State**: Once the algorithm completes, it stores the resolved "API Compatibility" mode, "Tag", and "API Compatible Tags" that will apply to the checked-out repository. These resolved values will be used if the same repository becomes a dependency of future callers during continued recursive processing.
 
-The specific rules for version selection and state resolution depend on the compatibility modes declared by the callers and the tag sorting configuration, which are detailed in the following sections.
+The specific rules for version selection and state resolution depend on the compatibility modes declared by the callers, which are detailed in the following sections.
 
 ### API Compatibility - Critical Concepts
 
 The **"API Compatible Tags"** field is the foundation of the recursive dependency resolution system described above. This field, combined with the "Tag", enables intelligent version resolution when multiple projects depend on the same repository with different version requirements.
 
-#### Tag Management Approaches
+#### Simplified Tag Management (v6.0.0+)
 
-**With `-DisableTagSorting` Not Set (Default):**
-- **"API Compatible Tags"**: Can be listed in any order - the script uses actual git tag dates for chronological sorting
-- **"Tag"**: The preferred tag for the current dependency
-- **No manual ordering required**: The script automatically sorts tags by their actual git creation dates
-- **Intelligent conflict resolution**: Prioritizes specified "Tag" values when they're API-compatible
-
-**With `-DisableTagSorting` Set (Legacy):**
-- **"API Compatible Tags"**: Must be listed from **oldest to newest** (left to right)
-- **"Tag"**: Must be the **most recent** tag for the current API version
-- **Manual ordering required**: You must maintain temporal ordering in the JSON files
-- **Combined**: Together they form a temporally ordered list of all compatible versions
-
-#### Version Management Rules
-
-**When `-DisableTagSorting` is Not Set (Default):**
-Adding or updating versions is simplified since ordering is automatic:
+**API Compatible Tags can be listed in any order** - the script automatically uses actual git tag dates for chronological sorting:
 
 ```json
 {
@@ -298,24 +276,17 @@ Adding or updating versions is simplified since ordering is automatic:
   "API Compatible Tags": ["v1.0.1", "v1.0.0", "v1.0.3", "v1.0.2"]
 }
 ```
-The script will automatically sort these chronologically based on git tag dates.
 
-**When `-DisableTagSorting` is Set (Legacy):**
-When updating dependencies, you must maintain manual ordering:
+The script will automatically sort these chronologically based on git tag creation dates, eliminating the need for manual temporal ordering.
+
+#### Version Management Rules
+
+When updating dependencies, simply add or remove versions from the API Compatible Tags array:
 
 1. **Adding a new compatible version** (e.g., v1.0.3 → v1.0.4):
-   - Move the old "Tag" (v1.0.3) to the END of "API Compatible Tags"
-   - Set "Tag" to the new version (v1.0.4)
+   - Add the new version to "API Compatible Tags" or update "Tag"
+   - Order doesn't matter - automatic sorting handles chronology
    
-   Before:
-   ```json
-   {
-     "Tag": "v1.0.3",
-     "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
-   }
-   ```
-   
-   After:
    ```json
    {
      "Tag": "v1.0.4",
@@ -324,18 +295,9 @@ When updating dependencies, you must maintain manual ordering:
    ```
 
 2. **Bumping to an incompatible version** (e.g., v1.0.3 → v2.0.0):
-   - Empty "API Compatible Tags" (if no v2.x versions are compatible with v1.x)
-   - Set "Tag" to the new version
+   - Update "Tag" to the new version
+   - Clear or update "API Compatible Tags" for the new API version
    
-   Before:
-   ```json
-   {
-     "Tag": "v1.0.3",
-     "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
-   }
-   ```
-   
-   After:
    ```json
    {
      "Tag": "v2.0.0",
@@ -347,7 +309,7 @@ When updating dependencies, you must maintain manual ordering:
 
 When multiple projects depend on the same repository with different version requirements, the script:
 1. Calculates the intersection of all compatible versions (in Strict mode) or union (in Permissive mode)
-2. Applies intelligent tag selection based on the compatibility mode and temporal sorting settings
+2. Uses intelligent tag temporal sorting based on actual git tag dates
 3. Automatically checks out the optimal version if different from the current one
 
 This ensures all dependent projects get the best version that satisfies everyone's requirements.
@@ -382,15 +344,11 @@ When the same repository is encountered multiple times with different compatibil
 
 **Strict Mode Algorithm:**
 - **Intersection**: Calculates the intersection of all compatible tag sets
-- **Tag Selection**: 
-  - **With tag sorting enabled (default)**: Prioritizes existing/new "Tag" values if they're in the intersection, otherwise selects the chronologically most recent tag from the intersection
-  - **With `-DisableTagSorting` set**: Selects the most recent (rightmost) tag from the intersection
+- **Tag Selection**: Uses intelligent temporal sorting to prioritize existing/new "Tag" values if they're in the intersection, otherwise selects the chronologically most recent tag from the intersection
 
 **Permissive Mode Algorithm:**
 - **Union**: Calculates the union of all compatible tag sets  
-- **Tag Selection**:
-  - **With tag sorting enabled (default)**: Prioritizes existing/new "Tag" values if they're in the union, otherwise selects the chronologically most recent tag from the union
-  - **With `-DisableTagSorting` set**: Selects the most recent (rightmost) tag from the union
+- **Tag Selection**: Uses intelligent temporal sorting to prioritize existing/new "Tag" values if they're in the union, otherwise selects the chronologically most recent tag from the union
 
 **Mode Combination Rules:**
 1. **Strict + Strict**: Uses intersection algorithm (conservative)
@@ -434,73 +392,33 @@ When the same repository is encountered multiple times with different compatibil
 .\LsiGitCheckout.ps1 -DisableRecursion
 ```
 
-### Important: Permissive Mode Requirements with `-DisableTagSorting` Set
+## Intelligent Tag Temporal Sorting
 
-When `-DisableTagSorting` is set and both repositories have Permissive API compatibility mode, the union algorithm requires:
-
-1. **Temporal ordering**: Both "API Compatible Tags" lists must be ordered oldest to newest
-2. **Common starting tag**: Both lists must start with the same tag
-3. **Subset relationship**: All tags from one list must be contained in the other (one list should be a subset of the other)
-
-If these conditions are not met, the script will issue warnings and fall back to an unordered union, which may not produce optimal results.
-
-**Example of compatible Permissive mode lists:**
-```json
-// Repository A
-{
-  "Tag": "v1.0.4",
-  "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2", "v1.0.3"]
-}
-
-// Repository B  
-{
-  "Tag": "v1.0.2",
-  "API Compatible Tags": ["v1.0.0", "v1.0.1"]  // Subset of Repository A
-}
-```
-
-**Example of incompatible lists (will generate warnings):**
-```json
-// Repository A
-{
-  "Tag": "v1.0.3",
-  "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"]
-}
-
-// Repository B
-{
-  "Tag": "v1.0.3", 
-  "API Compatible Tags": ["v1.1.0", "v1.1.1", "v1.1.2"]  // Different starting tag
-}
-```
-
-## Tag Temporal Sorting
-
-Intelligent automatic tag temporal sorting using actual git tag dates eliminates the need for manual temporal ordering of API Compatible Tags and provides intelligent conflict resolution.
+The script features intelligent automatic tag temporal sorting using actual git tag dates, providing optimal version selection without any manual configuration required.
 
 ### Overview
 
-When `-EnableTagSorting` is enabled, the script:
+The script automatically:
 1. **Fetches tag dates** from each repository after checkout using `git for-each-ref`
 2. **Sorts tags chronologically** during API compatibility resolution using actual git tag creation dates
-3. **Eliminates ordering requirements** - no need for manual temporal ordering in "API Compatible Tags"
-4. **Prioritizes Tag values** - intelligently prefers existing/new "Tag" values over other compatible tags when resolving conflicts
-5. **Optimized performance** - only fetches tag dates and sorts when needed during conflict resolution
+3. **Prioritizes Tag values** - intelligently prefers existing/new "Tag" values over other compatible tags when resolving conflicts
+4. **Optimizes performance** - only fetches tag dates and sorts when needed during conflict resolution
 
 ### Key Benefits
 
-- **Eliminates manual ordering**: No need to maintain temporal order in "API Compatible Tags"
 - **Accurate chronology**: Uses actual git tag dates instead of assumed ordering
 - **Intelligent tag selection**: Prioritizes specified "Tag" values when they're compatible
 - **Minimal performance impact**: Efficient tag date fetching only when conflicts require resolution
 - **Simplified maintenance**: Add tags to "API Compatible Tags" in any order
+- **Optimal behavior**: No configuration required for best performance
+- **Zero maintenance overhead**: No need to maintain temporal order in configuration files
 
-### Enabling Tag Temporal Sorting
+### Usage
 
-**Tag temporal sorting is enabled by default**. To customize or disable:
+Control verbosity and debugging:
 
 ```powershell
-# Default behavior (tag sorting enabled)
+# Default behavior
 .\LsiGitCheckout.ps1
 
 # With verbose output to see tag dates and sorting decisions
@@ -508,9 +426,6 @@ When `-EnableTagSorting` is enabled, the script:
 
 # With debug logging for detailed tag processing
 .\LsiGitCheckout.ps1 -EnableDebug
-
-# Disable tag sorting for legacy manual ordering
-.\LsiGitCheckout.ps1 -DisableTagSorting
 ```
 
 ### Intelligent Tag Selection Algorithm
@@ -522,19 +437,9 @@ When multiple repositories reference the same dependency with different tags, th
 3. **Only new "Tag" is compatible**: Use the new "Tag"
 4. **Neither "Tag" is compatible**: Use the chronologically most recent tag from the compatible set (intersection/union)
 
-### Example with Tag Temporal Sorting
+### Example with Intelligent Tag Temporal Sorting
 
-**Before (Manual Ordering Required):**
-```json
-{
-  "Repository URL": "https://github.com/myorg/lib.git",
-  "Base Path": "libs/mylib",
-  "Tag": "v1.0.4",
-  "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2", "v1.0.3"]
-}
-```
-
-**After (Flexible Ordering with `-EnableTagSorting`):**
+**Flexible Ordering:**
 ```json
 {
   "Repository URL": "https://github.com/myorg/lib.git",
@@ -544,7 +449,7 @@ When multiple repositories reference the same dependency with different tags, th
 }
 ```
 
-With `-DisableTagSorting` not set (default behavior), the script automatically sorts these tags by their actual git creation dates during conflict resolution, removing the burden of manual ordering while providing more intelligent tag selection.
+The script automatically sorts these tags by their actual git creation dates during conflict resolution, providing intelligent tag selection based on chronological order and compatibility requirements.
 
 ### Performance Optimization
 
@@ -552,14 +457,6 @@ With `-DisableTagSorting` not set (default behavior), the script automatically s
 - **Efficient git operations**: Uses `git for-each-ref` instead of multiple `git log` calls
 - **Smart caching**: Tag dates are cached in memory during recursive processing
 - **Minimal server impact**: Only one tag date fetch per repository during initial checkout
-
-### Backward Compatibility
-
-- **New default behavior**: Recursive mode and tag temporal sorting are enabled by default in v5.0.0
-- **Clean API**: Switch parameters use proper naming conventions (`-DisableRecursion`, `-DisableTagSorting`)
-- **Legacy support**: Use `-DisableRecursion` and `-DisableTagSorting` for legacy behavior
-- **No configuration changes**: Existing JSON configurations work without modification
-- **Graceful fallback**: If tag dates cannot be fetched, falls back to original ordering
 
 ### Real-World Example with Test Repositories
 
@@ -592,18 +489,20 @@ LsiCheckOutTestRootA/dependencies.json:
     "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestA.git",
     "Base Path": "../libs/test-a",
     "Tag": "v1.0.3",
-    "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"],
+    "API Compatible Tags": ["v1.0.1", "v1.0.0", "v1.0.2"],
     "API Compatibility": "Strict"
   },
   {
     "Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestB.git",
     "Base Path": "../libs/test-b",
     "Tag": "v1.0.3",
-    "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2"],
+    "API Compatible Tags": ["v1.0.2", "v1.0.0", "v1.0.1"],
     "API Compatibility": "Permissive"
   }
 ]
 ```
+
+Note: API Compatible Tags are listed in mixed order - the script automatically sorts them chronologically based on actual git tag dates.
 
 #### Processing Flow
 
@@ -614,10 +513,10 @@ LsiCheckOutTestRootA/dependencies.json:
 3. **Round 3**: 
    - Processes TestA's dependencies
    - Finds TestB already exists at same path
-   - Applies compatibility rules based on mode settings and tag dates (if enabled)
+   - Applies compatibility rules based on mode settings and chronological tag intelligence
 4. **Round 4**: 
    - Processes TestB's dependencies
-   - Continues applying compatibility rules
+   - Continues applying compatibility rules with automatic tag sorting
 
 **Important**: The script uses the same filename for all recursive processing. If you run `.\LsiGitCheckout.ps1 -InputFile "mydeps.json"`, it will look for "mydeps.json" in each checked-out repository, not "dependencies.json".
 
@@ -629,9 +528,7 @@ When the same repository is referenced multiple times:
 2. **API Compatibility**: 
    - **Strict mode**: Calculates intersection of all compatible versions
    - **Permissive mode**: Calculates union of all compatible versions
-3. **Version Selection**: 
-   - **With `-EnableTagSorting`**: Uses chronological tag selection algorithm
-   - **Without `-EnableTagSorting`**: Uses the most recent version from the calculated set
+3. **Version Selection**: Uses chronological tag selection algorithm with intelligent prioritization
 
 #### Example: Version Conflict Resolution
 
@@ -640,16 +537,12 @@ If TestA requires TestC compatible with [v1.0.0, v1.0.1, v1.0.2, v1.0.3] but Tes
 **Strict Mode (both repositories):**
 - **Algorithm**: Intersection of compatible tag sets
 - **Result**: [v1.0.2, v1.0.3]
-- **Tag Selection**:
-  - **With tag sorting enabled (default)**: TestA or TestB "Tag" if in intersection, otherwise chronologically most recent
-  - **With `-DisableTagSorting` set**: v1.0.3 (most recent in intersection)
+- **Tag Selection**: TestA or TestB "Tag" if in intersection, otherwise chronologically most recent
 
 **Permissive Mode (both repositories):**
 - **Algorithm**: Union of compatible tag sets
 - **Result**: [v1.0.0, v1.0.1, v1.0.2, v1.0.3, v1.0.4]
-- **Tag Selection**:
-  - **With tag sorting enabled (default)**: TestA or TestB "Tag" if in union, otherwise chronologically most recent
-  - **With `-DisableTagSorting` set**: v1.0.4 (most recent in union)
+- **Tag Selection**: TestA or TestB "Tag" if in union, otherwise chronologically most recent
 
 **Mixed Mode (TestA Strict, TestB Permissive):**
 - **Algorithm**: TestA is Strict, so its requirements are preserved
@@ -726,17 +619,15 @@ No common API-compatible tags found.
 
 5. **API Incompatibility errors in recursive mode**
    - Review the "API Compatible Tags" for conflicting repositories
-   - **With `-DisableTagSorting` set**: Ensure temporal ordering is correct
-   - **With tag sorting enabled (default)**: Ordering is automatic, focus on actual API compatibility
-   - Consider if versions truly are API compatible
-   - Check if compatibility modes need adjustment
+   - Check if versions truly are API compatible
+   - Consider if compatibility modes need adjustment
+   - Tags can be listed in any order - automatic chronological sorting handles temporal ordering
 
-6. **Tag temporal sorting issues**
+6. **Tag temporal sorting issues**  
    - Verify git tags exist in repositories
    - Check debug logs for tag date fetching errors
    - Ensure repositories are accessible for tag date queries
    - Review verbose output for tag selection decisions
-   - If needed, disable with `-DisableTagSorting` for manual control
 
 ### Debug Mode
 
@@ -752,10 +643,58 @@ Check the generated debug log file for:
 - SSH key lookup attempts
 - API compatibility calculations
 - Compatibility mode interactions
-- Tag date fetching operations (when tag sorting is enabled)
+- Tag date fetching operations and chronological sorting
 - Detailed Git command execution
 
 ## Migration Guide
+
+### From Version 5.x to 6.0.0
+
+Version 6.0.0 introduces a major simplification by removing the `-DisableTagSorting` parameter and always enabling intelligent tag temporal sorting:
+
+1. **BREAKING**: Removed `-DisableTagSorting` parameter - tag temporal sorting is now always enabled
+2. **Simplified codebase**: 26% reduction in code complexity (195+ lines removed)
+3. **Enhanced user experience**: Always uses optimal tag ordering without configuration
+4. **Zero configuration changes**: All existing JSON files work without modification
+5. **Improved reliability**: Eliminates manual ordering errors and complexity
+6. **Enhanced logging**: Improved visibility into recursive dependency processing with consistent depth tracking
+
+**Migration from v5.x:**
+```powershell
+# Old v5.x syntax
+.\LsiGitCheckout.ps1 -DisableTagSorting  # No longer supported
+
+# New v6.0 behavior (always enabled)
+.\LsiGitCheckout.ps1  # Intelligent tag sorting always active
+```
+
+**Benefits of v6.0:**
+- **Always optimal behavior**: No configuration required for intelligent tag sorting
+- **Simplified maintenance**: API Compatible Tags can be in any order
+- **Better performance**: Optimized algorithms always used
+- **Cleaner codebase**: Single code path for all tag operations
+- **Enhanced reliability**: Eliminates possibility of manual ordering errors
+- **Improved troubleshooting**: Enhanced logging with clear depth boundaries and statistics
+
+**Enhanced Logging in v6.0:**
+- Consistent Info-level start/end messages for all dependency processing depths
+- Detailed completion statistics showing repositories examined and dependency files found
+- Fixed depth numbering (now correctly shows 0 → 1 → 2 → 3 progression)
+- Clear final completion message when recursive processing ends
+- Better visibility into the recursive dependency discovery process
+
+**API Compatible Tags Simplification:**
+```json
+// v5.x: Manual ordering required with -DisableTagSorting
+{
+  "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2", "v1.0.3"]
+}
+
+// v6.0: Any order works - automatic chronological sorting
+{
+  "API Compatible Tags": ["v1.0.2", "v1.0.0", "v1.0.3", "v1.0.1"]
+}
+```
 
 ### From Version 4.x to 5.0.0
 
@@ -782,12 +721,6 @@ Version 5.0 introduces a cleaner API with breaking changes to parameter naming. 
 .\LsiGitCheckout.ps1 -DisableRecursion -DisableTagSorting
 ```
 
-**Benefits of v5.0:**
-- **Clean parameter API**: No more confusing `$true` defaults on switch parameters
-- **Intuitive usage**: Default behavior requires no parameters
-- **Consistent naming**: Disable flags follow PowerShell conventions
-- **Better documentation**: Clear parameter purposes and defaults
-
 ### From Version 4.0.x to 4.1.x
 
 Version 4.1 adds API compatibility modes. Existing configurations continue to work:
@@ -799,7 +732,7 @@ Version 4.1 adds API compatibility modes. Existing configurations continue to wo
 
 To maintain v4.0.x behavior exactly:
 ```powershell
-.\LsiGitCheckout.ps1 -Recursive -ApiCompatibility Strict
+.\LsiGitCheckout.ps1 -ApiCompatibility Strict
 ```
 
 ### From Version 3.x to 4.x
@@ -808,13 +741,12 @@ Version 4.0 adds recursive dependency support. Existing configurations continue 
 
 1. **Non-breaking changes**: All v3.x configurations work in v4.x
 2. **New optional field**: "API Compatible Tags" for recursive mode
-3. **New parameters**: `-Recursive` and `-MaxDepth`
+3. **New parameters**: Recursive mode enabled by default
 
 To use recursive features:
 1. Add "API Compatible Tags" to your repository configurations
-2. Ensure proper temporal ordering (when using `-DisableTagSorting`)
-3. Place dependencies.json files in your repositories
-4. Run the script (recursive mode is enabled by default)
+2. Place dependencies.json files in your repositories
+3. Run the script (recursive mode is enabled by default)
 
 ### From Version 2.x to 3.x/4.x
 
@@ -850,7 +782,8 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
 - Orchestrating complex multi-repository projects
 - Needing immediate patches without waiting for upstream releases
 - Requiring flexible compatibility modes for different environments
-- Managing complex temporal dependencies with automatic sorting
+- Managing complex temporal dependencies with automatic intelligent sorting
+- Eliminating manual tag ordering complexity
 
 ### Key Advantages of LsiGitCheckout
 
@@ -863,7 +796,8 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
 7. **Temporal Versioning**: Explicit control over version selection with API compatibility
 8. **Flexible Compatibility**: Choose between Strict and Permissive modes per repository
 9. **Complete Audit Trail**: Full git history for security reviews
-10. **Intelligent Tag Sorting**: Automatic chronological ordering with performance optimization
+10. **Intelligent Tag Sorting**: Always-on automatic chronological ordering with performance optimization
+11. **Simplified Maintenance**: No manual tag ordering required
 
 ### Key Advantages of Traditional Package Managers
 
@@ -907,7 +841,7 @@ Many successful projects combine both approaches:
 - Use LsiGitCheckout for internal dependencies and actively developed components
 - Maintain clear boundaries between packaged and source dependencies
 - Apply different compatibility modes based on environment (Strict for production, Permissive for development)
-- Leverage intelligent tag sorting for simplified dependency management
+- Leverage always-on intelligent tag sorting for simplified dependency management
 
 This leverages the convenience of package managers for commodity dependencies while maintaining control over critical internal code.
 
@@ -925,7 +859,8 @@ This leverages the convenience of package managers for commodity dependencies wh
 - Research requiring reproducible computational environments
 - Gradual open-sourcing of internal components
 - Mixed development/production environments with different stability requirements
-- Complex dependency graphs requiring intelligent temporal sorting
+- Complex dependency graphs requiring intelligent temporal sorting without manual ordering
+- Teams needing flexible tag ordering without temporal maintenance overhead
 
 ## License
 
