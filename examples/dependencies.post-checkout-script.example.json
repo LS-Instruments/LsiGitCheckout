@@ -1,0 +1,66 @@
+{
+  "_comment": "Example dependency file demonstrating post-checkout script configuration",
+  "_description": "This example shows how to configure post-checkout scripts in the new object format",
+  
+  "Post-Checkout Script File Name": "setup-environment.ps1",
+  "Post-Checkout Script File Path": "scripts/build",
+  
+  "Repositories": [
+    {
+      "_comment": "Node.js project with npm dependencies",
+      "Repository URL": "https://github.com/myorg/web-frontend.git",
+      "Base Path": "projects/frontend",
+      "Tag": "v2.1.0",
+      "API Compatible Tags": ["v2.0.0", "v2.0.1"],
+      "API Compatibility": "Permissive",
+      "_post_checkout_note": "Post-checkout script will run 'npm install' after checkout"
+    },
+    {
+      "_comment": ".NET project with NuGet packages",
+      "Repository URL": "https://github.com/myorg/api-backend.git", 
+      "Base Path": "projects/backend",
+      "Tag": "v1.5.2",
+      "API Compatible Tags": ["v1.5.0", "v1.5.1"],
+      "API Compatibility": "Strict",
+      "_post_checkout_note": "Post-checkout script will run 'dotnet restore' after checkout"
+    },
+    {
+      "_comment": "Python project with pip requirements",
+      "Repository URL": "https://github.com/myorg/data-processor.git",
+      "Base Path": "projects/data",
+      "Tag": "v3.0.1",
+      "Skip LFS": true,
+      "_post_checkout_note": "Post-checkout script will run 'pip install -r requirements.txt' after checkout"
+    },
+    {
+      "_comment": "SSH repository with custom dependency file location",
+      "Repository URL": "git@github.com:myorg/internal-tools.git",
+      "Base Path": "tools/internal",
+      "Tag": "v1.2.0",
+      "Dependency File Path": "config/deps",
+      "Dependency File Name": "tool-dependencies.json",
+      "_post_checkout_note": "Combines custom dependency files with post-checkout scripts"
+    }
+  ],
+  
+  "_script_explanation": {
+    "script_location": "Each repository will look for 'setup-environment.ps1' in the 'scripts/build' subdirectory",
+    "execution_trigger": "Script executes only after successful repository checkouts (new clones or tag changes)",
+    "environment_variables": [
+      "LSIGIT_REPOSITORY_URL - The repository URL that was checked out",
+      "LSIGIT_REPOSITORY_PATH - Absolute path to the repository on disk", 
+      "LSIGIT_TAG - The git tag that was checked out",
+      "LSIGIT_SCRIPT_VERSION - Version of LsiGitCheckout executing the script"
+    ],
+    "common_use_cases": [
+      "npm install for Node.js projects",
+      "dotnet restore for .NET projects", 
+      "pip install for Python projects",
+      "bundle install for Ruby projects",
+      "composer install for PHP projects",
+      "Custom build environment setup",
+      "License and security scanning",
+      "Integration with CI/CD pipelines"
+    ]
+  }
+}

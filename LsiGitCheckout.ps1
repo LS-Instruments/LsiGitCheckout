@@ -13,6 +13,9 @@
     
     The script uses intelligent tag temporal sorting based on actual git tag dates,
     eliminating the need for manual temporal ordering in "API Compatible Tags".
+    
+    Post-checkout PowerShell scripts can be executed after successful repository
+    checkouts to integrate with external dependency management systems.
 .PARAMETER InputFile
     Path to the JSON configuration file. Defaults to 'dependencies.json' in the script directory.
 .PARAMETER CredentialsFile
@@ -29,18 +32,28 @@
     Maximum recursion depth for dependency discovery. Defaults to 5.
 .PARAMETER ApiCompatibility
     Default API compatibility mode when not specified in dependencies. Can be 'Strict' or 'Permissive'. Defaults to 'Permissive'.
+.PARAMETER DisablePostCheckoutScripts
+    Disables execution of post-checkout PowerShell scripts. By default, post-checkout scripts are enabled.
 .EXAMPLE
     .\LsiGitCheckout.ps1
     .\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
     .\LsiGitCheckout.ps1 -DisableRecursion -MaxDepth 10
     .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug -ApiCompatibility Strict
-    .\LsiGitCheckout.ps1 -Verbose
+    .\LsiGitCheckout.ps1 -Verbose -DisablePostCheckoutScripts
 .NOTES
-    Version: 6.1.0
+    Version: 6.2.0
     Last Modified: 2025-01-24
     
     This script uses PuTTY/plink for SSH authentication. SSH keys must be in PuTTY format (.ppk).
     Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.
+    
+    Changes in 6.2.0:
+    - Added support for post-checkout PowerShell script execution
+    - New "Post-Checkout Script File Name" and "Post-Checkout Script File Path" configuration options
+    - Scripts execute only after successful repository checkouts, not when repositories are already up-to-date
+    - Added -DisablePostCheckoutScripts parameter to disable post-checkout script execution
+    - Enhanced logging for post-checkout script execution and error handling
+    - Added comprehensive security considerations for script execution
     
     Changes in 6.1.0:
     - Added support for custom "Dependency File Path" and "Dependency File Name" per repository
@@ -48,14 +61,25 @@
     - Enhanced recursive processing to handle per-repository dependency file configurations
     - Improved flexibility for managing different dependency file naming conventions
     
-    Changes in 6.0.0:
-    - BREAKING: Removed -DisableTagSorting parameter - tag temporal sorting is now always enabled
-    - Simplified codebase by removing all legacy manual ordering code paths
-    - Always uses intelligent tag temporal sorting based on actual git tag dates
-    - API Compatible Tags can be listed in any order - automatic chronological sorting
-    - Enhanced performance with optimized tag sorting algorithms
-    
     Dependencies JSON Format:
+    {
+      "Post-Checkout Script File Name": "setup.ps1",
+      "Post-Checkout Script File Path": "scripts/setup",
+      "Repositories": [
+        {
+          "Repository URL": "https://github.com/user/repo.git",
+          "Base Path": "C:\\Projects\\repo",
+          "Tag": "v1.0.0",
+          "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.1.0"],
+          "API Compatibility": "Strict",
+          "Skip LFS": false,
+          "Dependency File Path": "config/deps",
+          "Dependency File Name": "project-deps.json"
+        }
+      ]
+    }
+    
+    Legacy Array Format (Backward Compatible):
     [
       {
         "Repository URL": "https://github.com/user/repo.git",
@@ -99,16 +123,21 @@ param(
     
     [Parameter()]
     [ValidateSet('Strict', 'Permissive')]
-    [string]$ApiCompatibility = 'Permissive'
+    [string]$ApiCompatibility = 'Permissive',
+    
+    [Parameter()]
+    [switch]$DisablePostCheckoutScripts
 )
 
 # Script configuration
-$script:Version = "6.1.0"
+$script:Version = "6.2.0"
 $script:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:ErrorFile = Join-Path $ScriptPath "LsiGitCheckout_Errors.txt"
 $script:DebugLogFile = Join-Path $ScriptPath ("debug_log_{0}.txt" -f (Get-Date -Format "yyyyMMddHHmm"))
 $script:SuccessCount = 0
 $script:FailureCount = 0
+$script:PostCheckoutScriptExecutions = 0
+$script:PostCheckoutScriptFailures = 0
 $script:SshCredentials = @{}
 $script:RepositoryDictionary = @{}
 $script:CurrentDepth = 0
@@ -116,6 +145,7 @@ $script:ProcessedDependencyFiles = @()
 $script:DefaultApiCompatibility = $ApiCompatibility
 $script:RecursiveMode = -not $DisableRecursion
 $script:DefaultDependencyFileName = ""
+$script:PostCheckoutScriptsEnabled = -not $DisablePostCheckoutScripts
 
 # Initialize error file
 if (Test-Path $script:ErrorFile) {
@@ -672,6 +702,146 @@ function Get-CustomDependencyFilePath {
     return $fullPath
 }
 
+function Invoke-PostCheckoutScript {
+    param(
+        [string]$RepoAbsolutePath,
+        [string]$ScriptFileName,
+        [string]$ScriptFilePath = "",
+        [string]$RepositoryUrl = "",
+        [string]$Tag = ""
+    )
+    
+    if (-not $script:PostCheckoutScriptsEnabled) {
+        Write-Log "Post-checkout scripts are disabled, skipping script execution" -Level Debug
+        return $true
+    }
+    
+    # Determine script location
+    $scriptLocation = $RepoAbsolutePath
+    if (-not [string]::IsNullOrWhiteSpace($ScriptFilePath)) {
+        $scriptLocation = Join-Path $RepoAbsolutePath $ScriptFilePath
+        Write-Log "Using custom post-checkout script path: $ScriptFilePath" -Level Debug
+    }
+    
+    $scriptFullPath = Join-Path $scriptLocation $ScriptFileName
+    Write-Log "Looking for post-checkout script at: $scriptFullPath" -Level Debug
+    
+    if (-not (Test-Path $scriptFullPath)) {
+        Write-Log "Post-checkout script not found: $scriptFullPath" -Level Warning
+        return $false
+    }
+    
+    # Verify it's a PowerShell script
+    if (-not $scriptFullPath.EndsWith('.ps1')) {
+        Write-Log "Post-checkout script is not a PowerShell script (.ps1): $scriptFullPath" -Level Warning
+        return $false
+    }
+    
+    Write-Log "Executing post-checkout script: $scriptFullPath" -Level Info
+    
+    if ($DryRun) {
+        Write-Log "DRY RUN: Would execute post-checkout script: $scriptFullPath" -Level Verbose
+        return $true
+    }
+    
+    try {
+        # Set environment variables for the script
+        $env:LSIGIT_REPOSITORY_URL = $RepositoryUrl
+        $env:LSIGIT_REPOSITORY_PATH = $RepoAbsolutePath
+        $env:LSIGIT_TAG = $Tag
+        $env:LSIGIT_SCRIPT_VERSION = $script:Version
+        
+        # Change to repository directory for script execution
+        Push-Location $RepoAbsolutePath
+        
+        # Execute the script with restricted execution policy
+        $scriptStartTime = Get-Date
+        Write-Log "Starting post-checkout script execution at: $($scriptStartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Debug
+        
+        # Use Start-Process to execute with proper error handling and timeout
+        $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $processInfo.FileName = "powershell.exe"
+        $processInfo.Arguments = "-ExecutionPolicy Bypass -File `"$scriptFullPath`""
+        $processInfo.WorkingDirectory = $RepoAbsolutePath
+        $processInfo.UseShellExecute = $false
+        $processInfo.RedirectStandardOutput = $true
+        $processInfo.RedirectStandardError = $true
+        $processInfo.CreateNoWindow = $true
+        
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $processInfo
+        
+        # Start the process
+        $started = $process.Start()
+        if (-not $started) {
+            throw "Failed to start post-checkout script process"
+        }
+        
+        # Wait for completion with timeout (5 minutes)
+        $timeoutMs = 300000  # 5 minutes
+        $completed = $process.WaitForExit($timeoutMs)
+        
+        if (-not $completed) {
+            Write-Log "Post-checkout script timed out after 5 minutes, terminating process" -Level Error
+            try {
+                $process.Kill()
+                $process.WaitForExit(5000)  # Wait 5 seconds for cleanup
+            } catch {
+                Write-Log "Failed to terminate timed-out process: $_" -Level Warning
+            }
+            throw "Post-checkout script execution timed out after 5 minutes"
+        }
+        
+        # Get output and error streams
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        $exitCode = $process.ExitCode
+        
+        $scriptEndTime = Get-Date
+        $executionDuration = $scriptEndTime - $scriptStartTime
+        Write-Log "Post-checkout script completed in $($executionDuration.TotalSeconds) seconds with exit code: $exitCode" -Level Debug
+        
+        # Log script output
+        if (-not [string]::IsNullOrWhiteSpace($stdout)) {
+            Write-Log "Post-checkout script output: $stdout" -Level Debug
+        }
+        
+        if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+            Write-Log "Post-checkout script errors: $stderr" -Level Warning
+        }
+        
+        if ($exitCode -ne 0) {
+            throw "Post-checkout script failed with exit code: $exitCode"
+        }
+        
+        Pop-Location
+        
+        # Clean up environment variables
+        Remove-Item Env:\LSIGIT_REPOSITORY_URL -ErrorAction SilentlyContinue
+        Remove-Item Env:\LSIGIT_REPOSITORY_PATH -ErrorAction SilentlyContinue
+        Remove-Item Env:\LSIGIT_TAG -ErrorAction SilentlyContinue
+        Remove-Item Env:\LSIGIT_SCRIPT_VERSION -ErrorAction SilentlyContinue
+        
+        $script:PostCheckoutScriptExecutions++
+        Write-Log "Successfully executed post-checkout script: $scriptFullPath" -Level Info
+        return $true
+    }
+    catch {
+        Pop-Location -ErrorAction SilentlyContinue
+        
+        # Clean up environment variables
+        Remove-Item Env:\LSIGIT_REPOSITORY_URL -ErrorAction SilentlyContinue
+        Remove-Item Env:\LSIGIT_REPOSITORY_PATH -ErrorAction SilentlyContinue
+        Remove-Item Env:\LSIGIT_TAG -ErrorAction SilentlyContinue
+        Remove-Item Env:\LSIGIT_SCRIPT_VERSION -ErrorAction SilentlyContinue
+        
+        $script:PostCheckoutScriptFailures++
+        $errorMessage = "Failed to execute post-checkout script '$scriptFullPath': $_"
+        Write-Log $errorMessage -Level Error
+        return $false
+    }
+}
+
 function Update-RepositoryDictionary {
     param(
         [PSCustomObject]$Repository,
@@ -965,6 +1135,7 @@ function Invoke-GitCheckout {
     $tag = $Repository.Tag
     $skipLfs = if ($null -eq $Repository.'Skip LFS') { $false } else { $Repository.'Skip LFS' }
     $wasNewClone = $false
+    $wasActualCheckout = $false
     
     # Check if we should skip this repository (already checked out with compatible API)
     if ($script:RecursiveMode) {
@@ -1016,6 +1187,7 @@ function Invoke-GitCheckout {
                             throw "Checkout failed with exit code $LASTEXITCODE (no error details available)"
                         }
                     }
+                    $wasActualCheckout = $true
                 }
                 
                 Pop-Location
@@ -1171,9 +1343,12 @@ function Invoke-GitCheckout {
                     if ($LASTEXITCODE -ne 0) {
                         throw "Clone failed: $($gitOutput -join "`n")"
                     }
+                    $wasActualCheckout = $true
                 } finally {
                     Pop-Location
                 }
+            } else {
+                $wasActualCheckout = $true  # For dry run, assume checkout would happen
             }
         }
         else {
@@ -1222,6 +1397,9 @@ function Invoke-GitCheckout {
                         throw "Checkout failed with exit code $LASTEXITCODE (no error details available)"
                     }
                 }
+                $wasActualCheckout = $true
+            } else {
+                $wasActualCheckout = $true  # For dry run, assume checkout would happen
             }
         }
         
@@ -1431,14 +1609,88 @@ function Process-DependencyFile {
             $jsonContent -split "`n" | ForEach-Object { Write-Log "  $_" -Level Debug }
         }
         
-        $repositories = $jsonContent | ConvertFrom-Json
+        $jsonObject = $jsonContent | ConvertFrom-Json
+        
+        # Handle both new object format and legacy array format
+        $repositories = $null
+        $postCheckoutScriptFileName = ""
+        $postCheckoutScriptFilePath = ""
+        
+        if ($jsonObject -is [Array]) {
+            # Legacy array format - repositories only
+            $repositories = $jsonObject
+            Write-Log "Processing legacy array format dependency file" -Level Debug
+        } else {
+            # New object format - may have post-checkout script configuration
+            if ($jsonObject.PSObject.Properties['Repositories']) {
+                $repositories = $jsonObject.Repositories
+                Write-Log "Processing new object format dependency file" -Level Debug
+            } elseif ($jsonObject.PSObject.Properties['repositories']) {
+                # Support lowercase for backward compatibility during transition
+                $repositories = $jsonObject.repositories
+                Write-Log "Processing new object format dependency file (lowercase repositories field)" -Level Debug
+            } else {
+                # Fallback: treat the object as if it were the repositories array
+                $repositories = @($jsonObject)
+                Write-Log "Processing single repository object format" -Level Debug
+            }
+            
+            # Extract post-checkout script configuration
+            if ($jsonObject.PSObject.Properties['Post-Checkout Script File Name']) {
+                $postCheckoutScriptFileName = $jsonObject.'Post-Checkout Script File Name'
+                Write-Log "Found post-checkout script file name: $postCheckoutScriptFileName" -Level Debug
+            }
+            
+            if ($jsonObject.PSObject.Properties['Post-Checkout Script File Path']) {
+                $postCheckoutScriptFilePath = $jsonObject.'Post-Checkout Script File Path'
+                Write-Log "Found post-checkout script file path: $postCheckoutScriptFilePath" -Level Debug
+            }
+        }
         
         if (-not $repositories) {
             Write-Log "No repositories found in dependency file: $DependencyFilePath" -Level Warning
             return @()
         }
         
+        # Ensure repositories is an array
+        if ($repositories -isnot [Array]) {
+            $repositories = @($repositories)
+        }
+        
         Write-Log "Found $($repositories.Count) repositories in $DependencyFilePath" -Level Debug
+        if (-not [string]::IsNullOrWhiteSpace($postCheckoutScriptFileName)) {
+            Write-Log "Post-checkout script configured: $postCheckoutScriptFileName" -Level Info
+        }
+        
+        # Execute post-checkout script for the repository that contains this dependency file
+        # This should happen BEFORE processing the repositories listed in the dependency file
+        if (-not [string]::IsNullOrWhiteSpace($postCheckoutScriptFileName) -and 
+            -not [string]::IsNullOrWhiteSpace($CallingRepositoryRootPath) -and
+            $Depth -gt 0) {
+            
+            # Get the repository URL for the calling repository (the one containing the dependency file)
+            $callingRepositoryUrl = ""
+            $callingRepositoryTag = ""
+            
+            # Find the calling repository in our dictionary by matching the path
+            foreach ($repoEntry in $script:RepositoryDictionary.GetEnumerator()) {
+                if ($repoEntry.Value.AbsolutePath -eq $CallingRepositoryRootPath) {
+                    $callingRepositoryUrl = $repoEntry.Key
+                    $callingRepositoryTag = $repoEntry.Value.Tag
+                    break
+                }
+            }
+            
+            if (-not [string]::IsNullOrWhiteSpace($callingRepositoryUrl)) {
+                Write-Log "Executing post-checkout script for repository containing dependency file: $callingRepositoryUrl" -Level Info
+                $scriptResult = Invoke-PostCheckoutScript -RepoAbsolutePath $CallingRepositoryRootPath -ScriptFileName $postCheckoutScriptFileName -ScriptFilePath $postCheckoutScriptFilePath -RepositoryUrl $callingRepositoryUrl -Tag $callingRepositoryTag
+                if (-not $scriptResult) {
+                    Write-Log "Post-checkout script failed for repository '$callingRepositoryUrl', but continuing with dependency processing" -Level Warning
+                }
+            } else {
+                Write-Log "Could not determine repository URL for calling repository at path: $CallingRepositoryRootPath" -Level Warning
+            }
+        }
         
         $checkedOutRepos = @()
         
@@ -1459,6 +1711,7 @@ function Process-DependencyFile {
                 }
             }
             
+            # No longer pass post-checkout script parameters to individual repository checkouts
             if (Invoke-GitCheckout -Repository $repo -DependencyFilePath $DependencyFilePath -CallingRepositoryRootPath $CallingRepositoryRootPath) {
                 $script:SuccessCount++
                 $checkoutSucceeded = $true
@@ -1634,6 +1887,17 @@ Failed: $($script:FailureCount)
     
     $summary += "`nTag Temporal Sorting: Always Enabled"
     
+    # Show post-checkout script statistics
+    if ($script:PostCheckoutScriptsEnabled) {
+        $summary += "`nPost-Checkout Scripts: Enabled"
+        $summary += "`nScript Executions: $($script:PostCheckoutScriptExecutions)"
+        if ($script:PostCheckoutScriptFailures -gt 0) {
+            $summary += "`nScript Failures: $($script:PostCheckoutScriptFailures)"
+        }
+    } else {
+        $summary += "`nPost-Checkout Scripts: Disabled"
+    }
+    
     # Show tag statistics in debug mode
     if ($EnableDebug -and $script:RepositoryDictionary.Count -gt 0) {
         $totalTags = 0
@@ -1673,6 +1937,12 @@ try {
         Write-Log "Recursive mode: ENABLED (default) with max depth: $MaxDepth" -Level Info
     } else {
         Write-Log "Recursive mode: DISABLED" -Level Info
+    }
+    
+    if ($script:PostCheckoutScriptsEnabled) {
+        Write-Log "Post-checkout scripts: ENABLED (default)" -Level Info
+    } else {
+        Write-Log "Post-checkout scripts: DISABLED" -Level Info
     }
     
     # Calculate and log script hash in debug mode

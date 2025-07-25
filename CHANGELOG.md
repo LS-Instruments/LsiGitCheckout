@@ -5,6 +5,109 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.0] - 2025-01-24
+
+### Added
+- **Post-Checkout Script Execution**: Added support for executing PowerShell scripts after successful repository checkouts
+- **New JSON Object Format**: Enhanced dependency file format with top-level configuration options while maintaining full backward compatibility with legacy array format
+- **Post-Checkout Script File Name**: Optional field to specify PowerShell script name for execution after checkout
+- **Post-Checkout Script File Path**: Optional field to specify subdirectory within repository where post-checkout script is located
+- **Script Execution Context**: Environment variables provided to scripts (`LSIGIT_REPOSITORY_URL`, `LSIGIT_REPOSITORY_PATH`, `LSIGIT_TAG`, `LSIGIT_SCRIPT_VERSION`)
+- **-DisablePostCheckoutScripts Parameter**: Command line option to disable post-checkout script execution
+- **Script Timeout Protection**: Automatic termination of scripts that exceed 5-minute execution limit
+- **Comprehensive Script Logging**: Detailed logging of script discovery, execution, and results
+- **Script Execution Statistics**: Summary reporting of script executions and failures
+- **External Integration Support**: Enable integration with npm, NuGet, pip, and other dependency management systems via post-checkout scripts
+
+### Changed
+- **Enhanced JSON Format Support**: Now supports both new object format (`{"Repositories": [...]}`) and legacy array format (`[...]`)
+- **Improved Repository Processing**: Post-checkout scripts execute for the repository containing the dependency file configuration, not for individual repositories listed in the dependency file
+- **Extended Summary Reporting**: Added post-checkout script execution statistics to summary output
+- **Enhanced Debug Logging**: More detailed logging for script discovery, execution timing, and error handling
+- **Refined Execution Context**: Scripts execute with repository root as working directory and receive rich context via environment variables
+
+### Fixed
+- **Script Execution Isolation**: Each post-checkout script runs in its own PowerShell process with proper environment cleanup
+- **Error Handling Robustness**: Script failures are logged but don't affect repository checkout success status
+- **Working Directory Management**: Ensures scripts always execute from the correct repository root directory
+
+### Benefits
+- **Multi-System Integration**: Seamlessly integrate LsiGitCheckout with existing package managers and build systems
+- **Automated Setup**: Automatically configure development environments after repository checkout
+- **Flexible Extensibility**: Support for custom post-checkout workflows via PowerShell scripting
+- **Zero Breaking Changes**: All existing dependency files continue to work without modification
+- **Enhanced Observability**: Comprehensive logging and statistics for script execution monitoring
+- **Security Controls**: Scripts can be disabled entirely via command line parameter for untrusted environments
+
+### Configuration Examples
+
+#### New Object Format with Post-Checkout Scripts
+```json
+{
+  "Post-Checkout Script File Name": "setup-environment.ps1",
+  "Post-Checkout Script File Path": "scripts/build",
+  "Repositories": [
+    {
+      "Repository URL": "https://github.com/myorg/project.git",
+      "Base Path": "repos/project",
+      "Tag": "v1.0.0"
+    }
+  ]
+}
+```
+
+#### Legacy Array Format (Fully Compatible)
+```json
+[
+  {
+    "Repository URL": "https://github.com/myorg/project.git",
+    "Base Path": "repos/project",
+    "Tag": "v1.0.0"
+  }
+]
+```
+
+#### Example Post-Checkout Script
+```powershell
+# setup-environment.ps1
+Write-Host "Setting up environment for $env:LSIGIT_REPOSITORY_URL at tag $env:LSIGIT_TAG"
+
+# Install npm dependencies
+if (Test-Path "package.json") {
+    npm install
+}
+
+# Restore NuGet packages
+if (Test-Path "*.csproj") {
+    dotnet restore
+}
+
+Write-Host "Environment setup completed for $env:LSIGIT_REPOSITORY_PATH"
+```
+
+### Technical Implementation
+- Post-checkout script configuration applies to all repositories in a dependency file
+- Scripts execute only after successful repository checkouts (clone or tag change)
+- Environment variables provide script context about the checkout operation
+- Scripts run with 5-minute timeout protection and comprehensive error handling
+- Script execution is fully optional and can be disabled via command line parameter
+- Legacy array format maintains 100% backward compatibility
+- Enhanced JSON parsing supports both object and array root formats
+
+### Migration Notes
+- **Zero configuration changes required**: All existing dependency files work without modification
+- **Optional enhancement**: Convert to object format to add post-checkout scripts
+- **Gradual adoption**: Add post-checkout scripts to repositories as needed
+- **Full compatibility**: Legacy array format support preserved indefinitely
+- **Enhanced integration**: Use post-checkout scripts to integrate with existing build and dependency management systems
+
+### Use Cases
+- **Package Manager Integration**: Automatically run `npm install`, `dotnet restore`, `pip install`, etc.
+- **Build Environment Setup**: Configure development environments after checkout
+- **License and Security Scanning**: Run automated compliance checks on checked-out code
+- **Custom Initialization**: Execute project-specific setup procedures
+- **Multi-System Orchestration**: Coordinate between LsiGitCheckout and other tools
+
 ## [6.1.0] - 2025-01-24
 
 ### Added
