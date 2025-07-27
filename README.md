@@ -14,11 +14,11 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - [Custom Dependency Files](#custom-dependency-files)
 - [Post-Checkout Scripts](#post-checkout-scripts)
 - [Migrating Existing Dependency Trees to LsiGitCheckout](#migrating-existing-dependency-trees-to-lsigitcheckout)
-- [LsiGitCheckout vs Google's Repo Tool](#lsigitcheckout-vs-googles-repo-tool)
 - [Security Best Practices](#security-best-practices)
 - [SSH Setup with PuTTY](#ssh-setup-with-putty)
 - [Troubleshooting](#troubleshooting)
 - [Migration Guide](#migration-guide)
+- [LsiGitCheckout vs Google's Repo Tool](#lsigitcheckout-vs-googles-repo-tool)
 - [LsiGitCheckout vs Traditional Package Managers](#lsigitcheckout-vs-traditional-package-managers)
 - [License](#license)
 - [Contributing](#contributing)
@@ -38,7 +38,7 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - **Flexible Compatibility Modes**: Choose between Strict and Permissive API compatibility modes
 - **Intelligent Tag Temporal Sorting**: Always-on automatic chronological tag ordering using actual git tag dates with optimized performance
 - **Custom Dependency Files**: Per-repository custom dependency file paths and names with proper isolation
-- **Post-Checkout Scripts**: Execute PowerShell scripts after successful repository checkouts for integration with external dependency management systems
+- **Post-Checkout Scripts**: Execute PowerShell scripts after successful repository checkouts for integration with external dependency management systems, including support for root-level execution
 
 ## Requirements
 
@@ -131,7 +131,7 @@ Contains repository configurations without any credential information:
 }
 ```
 
-**Legacy Array Format (Backward Compatible):**
+**Simple Array Format (without Post-Checkout Scripts):**
 ```json
 [
   {
@@ -152,7 +152,7 @@ Contains repository configurations without any credential information:
 - **Post-Checkout Script File Path** (optional): Subdirectory within repository where post-checkout script is located (default: repository root)
 - **Repositories** (required in object format): Array of repository configurations
 - **Repository URL** (required): Git repository URL (HTTPS or SSH)
-- **Base Path** (required): Local directory path (relative or absolute)
+- **Base Path** (required): Local directory checkout path (relative or absolute)
 - **Tag** (required): Git tag to checkout
 - **API Compatible Tags** (optional): List of API-compatible tags (can be in any order - automatic chronological sorting)
 - **API Compatibility** (optional): "Strict" or "Permissive" (defaults to script parameter when absent)
@@ -223,7 +223,7 @@ git_credentials.json:
 
 ### Overview
 
-**When Recursive Mode is enabled (Default)** the script automatically discovers and processes nested dependencies. After checking out each repository, it looks for a dependency file within that repository and processes it recursively, with intelligent handling of shared dependencies.
+**When Recursive Mode is enabled (Default)** the script automatically discovers and processes nested dependencies. After checking out each repository, it looks for a dependency file (dependencies.json if not specified differently upon script execution) within the root folder of that repository and processes it recursively, with intelligent handling of shared dependencies.
 
 ### Controlling Recursive Mode
 
@@ -362,7 +362,7 @@ This ensures all dependent projects get the best version that satisfies everyone
 
 ## API Compatibility Modes
 
-Version 4.1.0 introduces flexible API compatibility modes that control how version conflicts are resolved when multiple projects depend on the same repository.
+API compatibility modes control how version conflicts are resolved when multiple projects depend on the same repository.
 
 ### Strict Mode
 
@@ -506,7 +506,7 @@ The script automatically sorts these tags by their actual git creation dates dur
 
 ## Custom Dependency Files
 
-Version 6.1.0 introduces support for per-repository custom dependency file paths and names, providing flexibility for different project structures and naming conventions while maintaining proper dependency isolation.
+Per-repository custom dependency file paths and names provide flexibility for different project structures and naming conventions while maintaining proper dependency isolation.
 
 ### Overview
 
@@ -685,11 +685,9 @@ When using `-Verbose`, the script shows custom dependency file configurations:
 
 ## Post-Checkout Scripts
 
-Version 6.2.0 introduces support for executing PowerShell scripts after successful repository checkouts. This feature enables integration with external dependency management systems and custom setup procedures.
-
 ### Overview
 
-Post-checkout scripts are PowerShell scripts (.ps1) that execute automatically after a repository is successfully checked out to a specific tag. These scripts run only when an actual checkout occurs - they are skipped when repositories are already up-to-date with the correct tag.
+Post-checkout scripts are PowerShell scripts (.ps1) that execute automatically after a repository is successfully checked out to a specific tag. These scripts run only when an actual checkout occurs - they are skipped when repositories are already up-to-date with the correct tag. Post-checkout scripts enable integration with external dependency management systems and custom setup procedures.
 
 **Key Characteristics:**
 - **Execution Trigger**: Only after successful repository checkouts (clone or tag change)
@@ -698,10 +696,11 @@ Post-checkout scripts are PowerShell scripts (.ps1) that execute automatically a
 - **Timeout Protection**: Scripts are terminated if they exceed 5 minutes execution time
 - **Error Handling**: Script failures are logged but don't prevent repository checkout success
 - **Security**: Scripts run with `-ExecutionPolicy Bypass` for maximum compatibility
+- **Root-Level Support**: Scripts can execute at depth 0 (root level) for global setup tasks
 
 ### Configuration
 
-Post-checkout scripts are configured at the dependency file level and execute for the repository that contains the dependency file:
+Post-checkout scripts are configured at the dependency file level and can execute at any depth:
 
 #### New Object Format
 
@@ -735,22 +734,50 @@ When a post-checkout script executes, it receives the following environment vari
 
 ### Execution Rules
 
-1. **Trigger Conditions**: Scripts execute for the repository containing the dependency file when:
-   - The repository containing the dependency file was successfully checked out
-   - The dependency file specifies a post-checkout script configuration
-   - Only executed during recursive processing (depth > 0) when processing nested dependency files
-
-2. **Repository Context**: The script executes for the repository that **contains** the dependency file, not for the individual repositories listed in the dependency file
-
+1. **Depth 0 (Root Level)**: Scripts execute before processing repositories when configured in the main input dependency file
+2. **Depth > 0 (Nested)**: Scripts execute for the repository containing the dependency file when processing nested dependencies
 3. **Skip Conditions**: Scripts are skipped when:
    - Post-checkout scripts are disabled via `-DisablePostCheckoutScripts` parameter
    - Script file is not found or is not a .ps1 file
-   - Processing the root-level dependency file (depth 0)
 
-4. **Error Handling**: Script failures:
-   - Are logged as warnings
-   - Don't affect dependency processing success status
-   - Increment the script failure counter in the summary
+### Root-Level Post-Checkout Scripts
+
+#### Path Construction at Depth 0
+
+When post-checkout scripts are configured in the input dependency file (depth 0), the script path construction works as follows:
+
+- **Base Path**: Directory containing the input dependency file
+- **Script Location**: `<input_file_directory>/<Post-Checkout Script File Path>/<Post-Checkout Script File Name>`
+- **Working Directory**: Input dependency file directory
+
+#### Environment Variables at Depth 0
+
+For root-level execution, environment variables are provided as follows:
+- **`$env:LSIGIT_REPOSITORY_URL`**: Empty string (no specific repository)
+- **`$env:LSIGIT_REPOSITORY_PATH`**: Input dependency file directory path
+- **`$env:LSIGIT_TAG`**: Empty string (no specific tag)
+- **`$env:LSIGIT_SCRIPT_VERSION`**: Current LsiGitCheckout version
+
+#### Example Root-Level Configuration
+
+```json
+{
+  "Post-Checkout Script File Name": "global-setup.ps1",
+  "Post-Checkout Script File Path": "scripts",
+  "Repositories": [
+    {
+      "Repository URL": "https://github.com/myorg/project.git",
+      "Base Path": "repos/project",
+      "Tag": "v1.0.0"
+    }
+  ]
+}
+```
+
+**Script Path Resolution:**
+- If input file is `C:\workspace\dependencies.json`
+- Script will be looked for at: `C:\workspace\scripts\global-setup.ps1`
+- Working directory: `C:\workspace`
 
 ### Command Line Control
 
@@ -770,10 +797,35 @@ When a post-checkout script executes, it receives the following environment vari
 
 ### Example Use Cases
 
-#### 1. Package Manager Integration
+#### 1. Root-Level Global Setup
 
 ```powershell
-# setup-dependencies.ps1
+# global-setup.ps1 (executed at depth 0)
+Write-Host "=== Global Environment Setup ==="
+Write-Host "LsiGitCheckout Version: $env:LSIGIT_SCRIPT_VERSION"
+Write-Host "Working Directory: $env:LSIGIT_REPOSITORY_PATH"
+
+# Validate system requirements
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Error "Git is not installed or not in PATH"
+    exit 1
+}
+
+# Create global directory structure
+New-Item -ItemType Directory -Path "logs" -Force
+New-Item -ItemType Directory -Path "temp" -Force
+
+# Set up global environment variables
+$env:PROJECT_ROOT = $env:LSIGIT_REPOSITORY_PATH
+$env:BUILD_TIMESTAMP = Get-Date -Format "yyyyMMdd-HHmmss"
+
+Write-Host "Global setup completed successfully"
+```
+
+#### 2. Package Manager Integration
+
+```powershell
+# setup-dependencies.ps1 (executed for specific repositories)
 Write-Host "Setting up dependencies for $env:LSIGIT_REPOSITORY_URL at tag $env:LSIGIT_TAG"
 
 # Install npm dependencies if package.json exists
@@ -797,7 +849,7 @@ if (Test-Path "requirements.txt") {
 Write-Host "Dependency setup completed for $env:LSIGIT_REPOSITORY_PATH"
 ```
 
-#### 2. Build Environment Setup
+#### 3. Build Environment Setup
 
 ```powershell
 # configure-build.ps1
@@ -827,50 +879,22 @@ $metadata | ConvertTo-Json | Out-File "build-metadata.json"
 Write-Host "Build metadata saved to build-metadata.json"
 ```
 
-#### 3. License and Security Scanning
-
-```powershell
-# security-scan.ps1
-Write-Host "Running security scan for $env:LSIGIT_REPOSITORY_URL"
-
-# Scan for known vulnerabilities in dependencies
-if (Test-Path "package.json") {
-    Write-Host "Scanning npm dependencies..."
-    npm audit --audit-level=moderate
-}
-
-# Check for license compatibility
-if (Test-Path "LICENSE") {
-    $license = Get-Content "LICENSE" -First 5
-    Write-Host "License information found: $($license -join ' ')"
-}
-
-# Log security scan completion
-Write-Host "Security scan completed for tag $env:LSIGIT_TAG"
-```
-
 ### Logging and Debugging
 
 Post-checkout script execution is extensively logged:
 
 **Standard Output:**
 ```
-[2025-01-24 15:30:20] [Info] Executing post-checkout script after successful checkout
-[2025-01-24 15:30:22] [Info] Successfully executed post-checkout script: C:\repos\project\scripts\setup.ps1
+[2025-01-27 15:30:20] [Info] Executing post-checkout script at depth 0 (root level)
+[2025-01-27 15:30:20] [Debug] Using input dependency file directory as base path for depth 0: C:\workspace
+[2025-01-27 15:30:22] [Info] Successfully executed post-checkout script: C:\workspace\scripts\global-setup.ps1
 ```
 
 **Debug Output:**
 ```
-[2025-01-24 15:30:19] [Debug] Looking for post-checkout script at: C:\repos\project\scripts\setup.ps1
-[2025-01-24 15:30:19] [Debug] Using custom post-checkout script path: scripts
-[2025-01-24 15:30:20] [Debug] Starting post-checkout script execution at: 2025-01-24 15:30:20
-[2025-01-24 15:30:22] [Debug] Post-checkout script completed in 2.3 seconds with exit code: 0
-```
-
-**Error Logging:**
-```
-[2025-01-24 15:30:25] [Warning] Post-checkout script errors: npm: command not found
-[2025-01-24 15:30:25] [Error] Failed to execute post-checkout script 'setup.ps1': Script failed with exit code: 1
+[2025-01-27 15:30:19] [Debug] Looking for post-checkout script at: C:\workspace\scripts\global-setup.ps1
+[2025-01-27 15:30:20] [Debug] Starting post-checkout script execution at: 2025-01-27 15:30:20
+[2025-01-27 15:30:22] [Debug] Post-checkout script completed in 2.3 seconds with exit code: 0
 ```
 
 ### Security Considerations
@@ -895,23 +919,22 @@ Post-checkout script execution statistics are included in the execution summary:
 ========================================
 LsiGitCheckout Execution Summary
 ========================================
-Script Version: 6.2.0
+Script Version: 6.2.1
 Successful: 3
 Failed: 0
 Recursive Mode: Enabled
 Max Depth: 5
 Default API Compatibility: Permissive
 Total Unique Repositories: 3
-Tag Temporal Sorting: Always Enabled
 Post-Checkout Scripts: Enabled
-Script Executions: 2
+Script Executions: 3
 Script Failures: 0
 ========================================
 ```
 
 ### Backward Compatibility
 
-- **Legacy Array Format**: Fully supported - existing dependency files continue to work without changes
+- **Simple Array Format**: Fully supported - existing dependency files continue to work without changes
 - **No Scripts**: Repositories without post-checkout scripts work exactly as before
 - **Gradual Adoption**: Post-checkout scripts can be added incrementally to dependency files
 
@@ -1304,6 +1327,269 @@ Once your dependency tree is migrated:
 
 The bottom-up migration approach ensures that your entire dependency tree becomes manageable through LsiGitCheckout while maintaining the ability to resolve version conflicts intelligently as your project evolves.
 
+## Security Best Practices
+
+1. **Never commit `git_credentials.json` to version control**
+   - Add it to your `.gitignore` file
+   - Use `git_credentials.example.json` as a template
+
+2. **Protect your SSH key files**
+   - Store keys in a secure location
+   - Use appropriate file permissions
+   - Use passphrases on your keys
+
+3. **Use separate keys for different services**
+   - Don't reuse the same SSH key across multiple services
+   - Use deployment-specific keys with limited permissions
+
+4. **Post-Checkout Script Security**
+   - Review post-checkout scripts before execution
+   - Ensure scripts are version controlled within repositories
+   - Use `-DisablePostCheckoutScripts` in untrusted environments
+   - Monitor script execution logs for security events
+
+## SSH Setup with PuTTY
+
+1. **Convert OpenSSH keys to PuTTY format**:
+   - Open PuTTYgen
+   - Load your OpenSSH private key
+   - Save private key as .ppk file
+
+2. **Configure Pageant**:
+   - Start Pageant (will appear in system tray)
+   - Right-click Pageant icon → Add Key
+   - Browse to your .ppk file
+   - Enter passphrase when prompted
+
+3. **Test SSH connection**:
+   ```cmd
+   plink -i "C:\path\to\key.ppk" git@github.com
+   ```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **"Plink.exe not found"**
+   - Install PuTTY suite
+   - Add PuTTY installation directory to PATH
+
+2. **"SSH key is not in PuTTY format"**
+   - Use PuTTYgen to convert OpenSSH keys to .ppk format
+
+3. **"No SSH key configured for repository"**
+   - Check that hostname is correctly specified in git_credentials.json
+   - Verify the hostname matches the repository URL
+
+4. **Git LFS errors**
+   - Install Git LFS: `git lfs install`
+   - Or set `"Skip LFS": true` in configuration
+
+5. **API Incompatibility errors in recursive mode**
+   - Review the "API Compatible Tags" for conflicting repositories
+   - Check if versions truly are API compatible
+   - Consider if compatibility modes need adjustment
+   - Tags can be listed in any order - automatic chronological sorting handles temporal ordering
+
+6. **Tag temporal sorting issues**  
+   - Verify git tags exist in repositories
+   - Check debug logs for tag date fetching errors
+   - Ensure repositories are accessible for tag date queries
+   - Review verbose output for tag selection decisions
+
+7. **Custom dependency file not found**
+   - Verify the custom path and filename are correct
+   - Check that the dependency file exists in the specified location
+   - Remember that paths are relative to repository root
+   - Use debug logging to see resolved paths
+
+8. **Repository path conflicts**
+   - Ensure the same repository isn't referenced with different relative paths
+   - Check that custom dependency file paths don't create conflicting layouts
+   - Verify relative paths resolve correctly from repository roots
+
+9. **Post-checkout script issues**
+   - Verify script file exists at the specified location
+   - Ensure script has .ps1 extension
+   - Check script execution permissions
+   - Review debug logs for script execution details
+   - Use `-DisablePostCheckoutScripts` to bypass script execution
+   - Verify script doesn't exceed 5-minute timeout
+
+### Debug Mode
+
+Enable detailed logging to troubleshoot issues:
+
+```powershell
+.\LsiGitCheckout.ps1 -EnableDebug -Verbose
+```
+
+Check the generated debug log file for:
+- JSON content of all processed dependency files
+- Hostname extraction from URLs
+- SSH key lookup attempts
+- API compatibility calculations
+- Compatibility mode interactions
+- Tag date fetching operations and chronological sorting
+- Custom dependency file path resolution
+- Repository root path usage for relative path resolution
+- Post-checkout script discovery and execution details
+- Detailed Git command execution
+
+## Migration Guide
+
+### From Version 6.2.0 to 6.2.1
+
+Version 6.2.1 enhances post-checkout script support by enabling root-level execution:
+
+1. **Non-breaking changes**: All v6.2.0 configurations work in v6.2.1
+2. **New capability**: Post-checkout scripts can now execute at depth 0 (root level)
+3. **Enhanced flexibility**: Scripts can perform global setup before repository processing
+
+**New Features Available:**
+- Root-level post-checkout script execution when configured in the input dependency file
+- Environment variables at depth 0 with empty strings (except LSIGIT_SCRIPT_VERSION)
+- Script path construction using input dependency file location as base path
+- Global setup capabilities before any repository processing
+
+**Migration Steps:**
+1. **Immediate**: All existing repositories continue to work without changes
+2. **Optional**: Add root-level post-checkout scripts for global setup tasks
+3. **Enhanced workflows**: Use depth 0 scripts for environment preparation and validation
+
+**Root-Level Configuration Example:**
+
+**Previous limitation (v6.2.0):**
+```json
+{
+  "_comment": "Post-checkout scripts could only execute for nested repositories (depth > 0)",
+  "Post-Checkout Script File Name": "setup.ps1",
+  "Repositories": [...]
+}
+```
+
+**New capability (v6.2.1):**
+```json
+{
+  "_comment": "Post-checkout scripts now execute at depth 0 AND for nested repositories",
+  "Post-Checkout Script File Name": "global-setup.ps1",
+  "Post-Checkout Script File Path": "scripts",
+  "Repositories": [...]
+}
+```
+
+### From Version 6.1.x to 6.2.0
+
+Version 6.2.0 introduces post-checkout script support with complete backward compatibility:
+
+1. **Non-breaking changes**: All v6.1.x configurations work in v6.2.0
+2. **New optional fields**: "Post-Checkout Script File Name" and "Post-Checkout Script File Path"
+3. **New object format**: Enhanced JSON structure while maintaining legacy array compatibility
+4. **Enhanced integration**: Support for external dependency management systems
+
+**New Features Available:**
+- Post-checkout PowerShell script execution after successful repository checkouts
+- Environment variables providing checkout context to scripts
+- Timeout protection and comprehensive error handling
+- Script execution statistics in summary reports
+
+**Migration Steps:**
+1. **Immediate**: All existing repositories continue to work without changes
+2. **Optional**: Convert to new object format to add post-checkout scripts
+3. **Gradual**: Add post-checkout scripts to repositories as needed
+
+**Format Migration Examples:**
+
+**Simple Array Format:**
+```json
+[
+  {
+    "Repository URL": "https://github.com/user/repo.git",
+    "Base Path": "repos/repo",
+    "Tag": "v1.0.0"
+  }
+]
+```
+
+**New Object Format:**
+```json
+{
+  "Post-Checkout Script File Name": "setup.ps1",
+  "Repositories": [
+    {
+      "Repository URL": "https://github.com/user/repo.git",
+      "Base Path": "repos/repo",
+      "Tag": "v1.0.0"
+    }
+  ]
+}
+```
+
+### From Version 6.0.x to 6.1.0
+
+Version 6.1.0 introduces custom dependency file support with complete backward compatibility:
+
+1. **Non-breaking changes**: All v6.0.x configurations work in v6.1.0
+2. **New optional fields**: "Dependency File Path" and "Dependency File Name"
+3. **Enhanced path resolution**: Relative paths now properly resolve from repository roots
+4. **Dependency isolation**: Custom settings don't propagate to nested repositories
+
+**New Features Available:**
+- Per-repository custom dependency file paths and names
+- Flexible support for different project structures
+- Proper isolation of custom settings
+- Enhanced logging for custom configurations
+
+**Migration Steps:**
+1. **Immediate**: All existing repositories continue to work without changes
+2. **Optional**: Add custom dependency file settings to repositories as needed
+3. **Gradual**: Migrate to different naming conventions at your own pace
+
+### From Version 5.x to 6.0.0
+
+Version 6.0.0 introduces a major simplification by removing the `-DisableTagSorting` parameter and always enabling intelligent tag temporal sorting:
+
+1. **BREAKING**: Removed `-DisableTagSorting` parameter - tag temporal sorting is now always enabled
+2. **Simplified codebase**: 26% reduction in code complexity (195+ lines removed)
+3. **Enhanced user experience**: Always uses optimal tag ordering without configuration
+4. **Zero configuration changes**: All existing JSON files work without modification
+5. **Improved reliability**: Eliminates manual ordering errors and complexity
+6. **Enhanced logging**: Improved visibility into recursive dependency processing with consistent depth tracking
+
+**Migration from v5.x:**
+```powershell
+# Old v5.x syntax
+.\LsiGitCheckout.ps1 -DisableTagSorting  # No longer supported
+
+# New v6.0 behavior (always enabled)
+.\LsiGitCheckout.ps1  # Intelligent tag sorting always active
+```
+
+### From Version 4.x to 5.0.0
+
+Version 5.0 introduces a cleaner API with breaking changes to parameter naming. Functionality remains the same with improved usability:
+
+1. **BREAKING**: Changed `-Recursive` to `-DisableRecursion` (recursive mode enabled by default)
+2. **BREAKING**: Changed `-EnableTagSorting` to `-DisableTagSorting` (tag sorting enabled by default)
+3. **Cleaner API**: Switch parameters follow proper naming conventions
+4. **Same functionality**: All features work identically with better parameter names
+5. **Zero configuration**: Optimal behavior out-of-the-box without any parameters
+
+**Migration from v4.x:**
+```powershell
+# Old v4.x syntax
+.\LsiGitCheckout.ps1 -Recursive -EnableTagSorting
+
+# New v5.0 syntax (default behavior)
+.\LsiGitCheckout.ps1
+
+# Old v4.x legacy mode
+.\LsiGitCheckout.ps1 -Recursive:$false -EnableTagSorting:$false
+
+# New v5.0 legacy mode
+.\LsiGitCheckout.ps1 -DisableRecursion -DisableTagSorting
+```
+
 ## LsiGitCheckout vs Google's Repo Tool
 
 Both LsiGitCheckout and Google's repo tool address the challenge of managing multiple Git repositories, but they take different approaches and serve different use cases. This comparison helps you choose the right tool for your project needs.
@@ -1426,229 +1712,6 @@ The choice depends on your specific requirements:
 
 Consider hybrid approaches where both tools might serve different aspects of a complex development ecosystem.
 
-## Security Best Practices
-
-1. **Never commit `git_credentials.json` to version control**
-   - Add it to your `.gitignore` file
-   - Use `git_credentials.example.json` as a template
-
-2. **Protect your SSH key files**
-   - Store keys in a secure location
-   - Use appropriate file permissions
-   - Use passphrases on your keys
-
-3. **Use separate keys for different services**
-   - Don't reuse the same SSH key across multiple services
-   - Use deployment-specific keys with limited permissions
-
-4. **Post-Checkout Script Security**
-   - Review post-checkout scripts before execution
-   - Ensure scripts are version controlled within repositories
-   - Use `-DisablePostCheckoutScripts` in untrusted environments
-   - Monitor script execution logs for security events
-
-## SSH Setup with PuTTY
-
-1. **Convert OpenSSH keys to PuTTY format**:
-   - Open PuTTYgen
-   - Load your OpenSSH private key
-   - Save private key as .ppk file
-
-2. **Configure Pageant**:
-   - Start Pageant (will appear in system tray)
-   - Right-click Pageant icon → Add Key
-   - Browse to your .ppk file
-   - Enter passphrase when prompted
-
-3. **Test SSH connection**:
-   ```cmd
-   plink -i "C:\path\to\key.ppk" git@github.com
-   ```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"Plink.exe not found"**
-   - Install PuTTY suite
-   - Add PuTTY installation directory to PATH
-
-2. **"SSH key is not in PuTTY format"**
-   - Use PuTTYgen to convert OpenSSH keys to .ppk format
-
-3. **"No SSH key configured for repository"**
-   - Check that hostname is correctly specified in git_credentials.json
-   - Verify the hostname matches the repository URL
-
-4. **Git LFS errors**
-   - Install Git LFS: `git lfs install`
-   - Or set `"Skip LFS": true` in configuration
-
-5. **API Incompatibility errors in recursive mode**
-   - Review the "API Compatible Tags" for conflicting repositories
-   - Check if versions truly are API compatible
-   - Consider if compatibility modes need adjustment
-   - Tags can be listed in any order - automatic chronological sorting handles temporal ordering
-
-6. **Tag temporal sorting issues**  
-   - Verify git tags exist in repositories
-   - Check debug logs for tag date fetching errors
-   - Ensure repositories are accessible for tag date queries
-   - Review verbose output for tag selection decisions
-
-7. **Custom dependency file not found**
-   - Verify the custom path and filename are correct
-   - Check that the dependency file exists in the specified location
-   - Remember that paths are relative to repository root
-   - Use debug logging to see resolved paths
-
-8. **Repository path conflicts**
-   - Ensure the same repository isn't referenced with different relative paths
-   - Check that custom dependency file paths don't create conflicting layouts
-   - Verify relative paths resolve correctly from repository roots
-
-9. **Post-checkout script issues**
-   - Verify script file exists at the specified location
-   - Ensure script has .ps1 extension
-   - Check script execution permissions
-   - Review debug logs for script execution details
-   - Use `-DisablePostCheckoutScripts` to bypass script execution
-   - Verify script doesn't exceed 5-minute timeout
-
-### Debug Mode
-
-Enable detailed logging to troubleshoot issues:
-
-```powershell
-.\LsiGitCheckout.ps1 -EnableDebug -Verbose
-```
-
-Check the generated debug log file for:
-- JSON content of all processed dependency files
-- Hostname extraction from URLs
-- SSH key lookup attempts
-- API compatibility calculations
-- Compatibility mode interactions
-- Tag date fetching operations and chronological sorting
-- Custom dependency file path resolution
-- Repository root path usage for relative path resolution
-- Post-checkout script discovery and execution details
-- Detailed Git command execution
-
-## Migration Guide
-
-### From Version 6.1.x to 6.2.0
-
-Version 6.2.0 introduces post-checkout script support with complete backward compatibility:
-
-1. **Non-breaking changes**: All v6.1.x configurations work in v6.2.0
-2. **New optional fields**: "Post-Checkout Script File Name" and "Post-Checkout Script File Path"
-3. **New object format**: Enhanced JSON structure while maintaining legacy array compatibility
-4. **Enhanced integration**: Support for external dependency management systems
-
-**New Features Available:**
-- Post-checkout PowerShell script execution after successful repository checkouts
-- Environment variables providing checkout context to scripts
-- Timeout protection and comprehensive error handling
-- Script execution statistics in summary reports
-
-**Migration Steps:**
-1. **Immediate**: All existing repositories continue to work without changes
-2. **Optional**: Convert to new object format to add post-checkout scripts
-3. **Gradual**: Add post-checkout scripts to repositories as needed
-
-**Format Migration Examples:**
-
-**Legacy Array Format:**
-```json
-[
-  {
-    "Repository URL": "https://github.com/user/repo.git",
-    "Base Path": "repos/repo",
-    "Tag": "v1.0.0"
-  }
-]
-```
-
-**New Object Format:**
-```json
-{
-  "Post-Checkout Script File Name": "setup.ps1",
-  "Repositories": [
-    {
-      "Repository URL": "https://github.com/user/repo.git",
-      "Base Path": "repos/repo",
-      "Tag": "v1.0.0"
-    }
-  ]
-}
-```
-
-### From Version 6.0.x to 6.1.0
-
-Version 6.1.0 introduces custom dependency file support with complete backward compatibility:
-
-1. **Non-breaking changes**: All v6.0.x configurations work in v6.1.0
-2. **New optional fields**: "Dependency File Path" and "Dependency File Name"
-3. **Enhanced path resolution**: Relative paths now properly resolve from repository roots
-4. **Dependency isolation**: Custom settings don't propagate to nested repositories
-
-**New Features Available:**
-- Per-repository custom dependency file paths and names
-- Flexible support for different project structures
-- Proper isolation of custom settings
-- Enhanced logging for custom configurations
-
-**Migration Steps:**
-1. **Immediate**: All existing repositories continue to work without changes
-2. **Optional**: Add custom dependency file settings to repositories as needed
-3. **Gradual**: Migrate to different naming conventions at your own pace
-
-### From Version 5.x to 6.0.0
-
-Version 6.0.0 introduces a major simplification by removing the `-DisableTagSorting` parameter and always enabling intelligent tag temporal sorting:
-
-1. **BREAKING**: Removed `-DisableTagSorting` parameter - tag temporal sorting is now always enabled
-2. **Simplified codebase**: 26% reduction in code complexity (195+ lines removed)
-3. **Enhanced user experience**: Always uses optimal tag ordering without configuration
-4. **Zero configuration changes**: All existing JSON files work without modification
-5. **Improved reliability**: Eliminates manual ordering errors and complexity
-6. **Enhanced logging**: Improved visibility into recursive dependency processing with consistent depth tracking
-
-**Migration from v5.x:**
-```powershell
-# Old v5.x syntax
-.\LsiGitCheckout.ps1 -DisableTagSorting  # No longer supported
-
-# New v6.0 behavior (always enabled)
-.\LsiGitCheckout.ps1  # Intelligent tag sorting always active
-```
-
-### From Version 4.x to 5.0.0
-
-Version 5.0 introduces a cleaner API with breaking changes to parameter naming. Functionality remains the same with improved usability:
-
-1. **BREAKING**: Changed `-Recursive` to `-DisableRecursion` (recursive mode enabled by default)
-2. **BREAKING**: Changed `-EnableTagSorting` to `-DisableTagSorting` (tag sorting enabled by default)
-3. **Cleaner API**: Switch parameters follow proper naming conventions
-4. **Same functionality**: All features work identically with better parameter names
-5. **Zero configuration**: Optimal behavior out-of-the-box without any parameters
-
-**Migration from v4.x:**
-```powershell
-# Old v4.x syntax
-.\LsiGitCheckout.ps1 -Recursive -EnableTagSorting
-
-# New v5.0 syntax (default behavior)
-.\LsiGitCheckout.ps1
-
-# Old v4.x legacy mode
-.\LsiGitCheckout.ps1 -Recursive:$false -EnableTagSorting:$false
-
-# New v5.0 legacy mode
-.\LsiGitCheckout.ps1 -DisableRecursion -DisableTagSorting
-```
-
 ## LsiGitCheckout vs Traditional Package Managers
 
 ### Understanding the Fundamental Difference
@@ -1698,6 +1761,7 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
 12. **Custom Dependency Files**: Support for different project structures and naming conventions
 13. **Dependency Isolation**: Proper separation of concerns in nested dependencies
 14. **Multi-System Integration**: Post-checkout scripts enable seamless integration with npm, NuGet, pip, and other package managers
+15. **Root-Level Setup**: Global environment configuration before any repository processing
 
 ### Key Advantages of Traditional Package Managers
 
@@ -1805,6 +1869,31 @@ if (Test-Path "package.json") { npm install }
 if (Test-Path "requirements.txt") { pip install -r requirements.txt }
 if (Test-Path "*.csproj") { dotnet restore }
 if (Test-Path "Gemfile") { bundle install }
+```
+
+**Root-Level Global Setup (v6.2.1):**
+```powershell
+# global-setup.ps1 - executed at depth 0 before any repository processing
+Write-Host "=== Global Environment Setup ==="
+
+# Validate system requirements
+$requiredTools = @("git", "node", "dotnet", "python")
+foreach ($tool in $requiredTools) {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+        Write-Warning "$tool is not installed or not in PATH"
+    } else {
+        Write-Host "✓ $tool is available"
+    }
+}
+
+# Set up global environment variables
+$env:PROJECT_ROOT = $env:LSIGIT_REPOSITORY_PATH
+$env:BUILD_TIMESTAMP = Get-Date -Format "yyyyMMdd-HHmmss"
+
+# Create global directory structure
+New-Item -ItemType Directory -Path "logs", "temp", "artifacts" -Force
+
+Write-Host "Global setup completed - ready for repository processing"
 ```
 
 ## License

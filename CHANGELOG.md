@@ -5,6 +5,79 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.1] - 2025-01-27
+
+### Added
+- **Root-Level Post-Checkout Scripts**: Added support for executing post-checkout scripts at depth 0 (root level) when configured in the input dependency file
+- **Enhanced Script Path Construction**: Post-checkout scripts at depth 0 use the input dependency file location as the base path for script resolution
+- **Depth 0 Environment Variables**: Environment variables at depth 0 are provided as empty strings (except `LSIGIT_SCRIPT_VERSION`) for consistent script interface
+
+### Changed
+- **Post-Checkout Script Execution**: Scripts can now execute before processing repositories when configured in the main input dependency file
+- **Improved Depth Handling**: Post-checkout scripts execute at any depth level, including depth 0 (root level)
+- **Enhanced Logging**: Added specific logging for depth 0 post-checkout script execution with base path information
+
+### Fixed
+- **Root-Level Limitation Removed**: Previously post-checkout scripts could only be configured for depths > 0; now supports depth 0 execution
+- **Environment Variable Consistency**: Provides consistent environment variable interface across all depth levels
+
+### Benefits
+- **Complete Coverage**: Post-checkout scripts can now be executed at every level of dependency processing
+- **Enhanced Integration**: Root-level scripts enable pre-repository setup tasks and global configuration
+- **Consistent Interface**: Uniform environment variable handling across all depth levels
+- **Flexible Setup**: Scripts can perform root-level initialization before any repository processing begins
+
+### Configuration Examples
+
+#### Root-Level Post-Checkout Script Configuration
+```json
+{
+  "Post-Checkout Script File Name": "root-setup.ps1",
+  "Post-Checkout Script File Path": "scripts",
+  "Repositories": [
+    {
+      "Repository URL": "https://github.com/myorg/project.git",
+      "Base Path": "repos/project",
+      "Tag": "v1.0.0"
+    }
+  ]
+}
+```
+
+#### Script Execution at Depth 0
+
+**Environment Variables Provided:**
+- `LSIGIT_REPOSITORY_URL`: Empty string
+- `LSIGIT_REPOSITORY_PATH`: Input dependency file directory path
+- `LSIGIT_TAG`: Empty string  
+- `LSIGIT_SCRIPT_VERSION`: Current LsiGitCheckout version
+
+**Working Directory:** Input dependency file directory
+
+**Script Path Resolution:** 
+- Base path: Directory containing the input dependency file
+- Script location: `<input_file_directory>/<Post-Checkout Script File Path>/<Post-Checkout Script File Name>`
+
+### Use Cases for Root-Level Scripts
+- **Global Environment Setup**: Configure development environment before any repository checkout
+- **Credential Validation**: Verify SSH keys and authentication before processing
+- **Workspace Preparation**: Create directory structures and set permissions
+- **Pre-Flight Checks**: Validate system requirements and dependencies
+- **Logging Initialization**: Set up centralized logging for the entire checkout process
+
+### Migration Notes
+- **Zero Breaking Changes**: All existing v6.2.0 configurations work without modification
+- **Optional Enhancement**: Root-level scripts are completely optional
+- **Backward Compatibility**: Maintains full compatibility with nested post-checkout scripts
+- **Enhanced Capability**: Extends post-checkout script functionality to cover all depth levels
+
+### Technical Implementation
+- Post-checkout scripts at depth 0 execute before processing the repositories listed in the input dependency file
+- Script path resolution uses the input dependency file directory as the base path
+- Environment variables follow the same pattern as nested scripts but with empty strings for repository-specific values
+- Logging clearly indicates depth 0 execution context for debugging and monitoring
+- Error handling ensures root-level script failures don't prevent repository processing
+
 ## [6.2.0] - 2025-01-24
 
 ### Added

@@ -15,7 +15,8 @@
     eliminating the need for manual temporal ordering in "API Compatible Tags".
     
     Post-checkout PowerShell scripts can be executed after successful repository
-    checkouts to integrate with external dependency management systems.
+    checkouts to integrate with external dependency management systems. Scripts
+    can be configured at any depth level, including depth 0 (root level).
 .PARAMETER InputFile
     Path to the JSON configuration file. Defaults to 'dependencies.json' in the script directory.
 .PARAMETER CredentialsFile
@@ -41,11 +42,17 @@
     .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug -ApiCompatibility Strict
     .\LsiGitCheckout.ps1 -Verbose -DisablePostCheckoutScripts
 .NOTES
-    Version: 6.2.0
-    Last Modified: 2025-01-24
+    Version: 6.2.1
+    Last Modified: 2025-01-27
     
     This script uses PuTTY/plink for SSH authentication. SSH keys must be in PuTTY format (.ppk).
     Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.
+    
+    Changes in 6.2.1:
+    - Added support for post-checkout scripts at depth 0 (root level) when configured in the input dependency file
+    - Post-checkout scripts can now be configured in the main input dependency file and execute before processing repositories
+    - At depth 0, environment variables are provided as empty strings (except LSIGIT_SCRIPT_VERSION)
+    - Script path construction at depth 0 uses the input dependency file location as the base path
     
     Changes in 6.2.0:
     - Added support for post-checkout PowerShell script execution
@@ -130,7 +137,7 @@ param(
 )
 
 # Script configuration
-$script:Version = "6.2.0"
+$script:Version = "6.2.1"
 $script:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:ErrorFile = Join-Path $ScriptPath "LsiGitCheckout_Errors.txt"
 $script:DebugLogFile = Join-Path $ScriptPath ("debug_log_{0}.txt" -f (Get-Date -Format "yyyyMMddHHmm"))
@@ -1662,33 +1669,47 @@ function Process-DependencyFile {
             Write-Log "Post-checkout script configured: $postCheckoutScriptFileName" -Level Info
         }
         
-        # Execute post-checkout script for the repository that contains this dependency file
-        # This should happen BEFORE processing the repositories listed in the dependency file
-        if (-not [string]::IsNullOrWhiteSpace($postCheckoutScriptFileName) -and 
-            -not [string]::IsNullOrWhiteSpace($CallingRepositoryRootPath) -and
-            $Depth -gt 0) {
-            
-            # Get the repository URL for the calling repository (the one containing the dependency file)
-            $callingRepositoryUrl = ""
-            $callingRepositoryTag = ""
-            
-            # Find the calling repository in our dictionary by matching the path
-            foreach ($repoEntry in $script:RepositoryDictionary.GetEnumerator()) {
-                if ($repoEntry.Value.AbsolutePath -eq $CallingRepositoryRootPath) {
-                    $callingRepositoryUrl = $repoEntry.Key
-                    $callingRepositoryTag = $repoEntry.Value.Tag
-                    break
-                }
-            }
-            
-            if (-not [string]::IsNullOrWhiteSpace($callingRepositoryUrl)) {
-                Write-Log "Executing post-checkout script for repository containing dependency file: $callingRepositoryUrl" -Level Info
-                $scriptResult = Invoke-PostCheckoutScript -RepoAbsolutePath $CallingRepositoryRootPath -ScriptFileName $postCheckoutScriptFileName -ScriptFilePath $postCheckoutScriptFilePath -RepositoryUrl $callingRepositoryUrl -Tag $callingRepositoryTag
+        # Execute post-checkout script for depth 0 (root level) or when processing nested dependencies
+        if (-not [string]::IsNullOrWhiteSpace($postCheckoutScriptFileName)) {
+            if ($Depth -eq 0) {
+                # Depth 0: Execute from input dependency file location with empty environment variables
+                Write-Log "Executing post-checkout script at depth 0 (root level)" -Level Info
+                
+                # For depth 0, use the directory containing the input dependency file as the base path
+                $inputFileDirectory = Split-Path -Parent (Resolve-Path $DependencyFilePath)
+                Write-Log "Using input dependency file directory as base path for depth 0: $inputFileDirectory" -Level Debug
+                
+                # Execute script with empty environment variables (except LSIGIT_SCRIPT_VERSION)
+                $scriptResult = Invoke-PostCheckoutScript -RepoAbsolutePath $inputFileDirectory -ScriptFileName $postCheckoutScriptFileName -ScriptFilePath $postCheckoutScriptFilePath -RepositoryUrl "" -Tag ""
                 if (-not $scriptResult) {
-                    Write-Log "Post-checkout script failed for repository '$callingRepositoryUrl', but continuing with dependency processing" -Level Warning
+                    Write-Log "Post-checkout script failed at depth 0, but continuing with repository processing" -Level Warning
                 }
-            } else {
-                Write-Log "Could not determine repository URL for calling repository at path: $CallingRepositoryRootPath" -Level Warning
+            } elseif ($Depth -gt 0 -and -not [string]::IsNullOrWhiteSpace($CallingRepositoryRootPath)) {
+                # Depth > 0: Execute for the repository containing the dependency file
+                Write-Log "Executing post-checkout script for repository containing dependency file at depth $Depth" -Level Info
+                
+                # Get the repository URL for the calling repository (the one containing the dependency file)
+                $callingRepositoryUrl = ""
+                $callingRepositoryTag = ""
+                
+                # Find the calling repository in our dictionary by matching the path
+                foreach ($repoEntry in $script:RepositoryDictionary.GetEnumerator()) {
+                    if ($repoEntry.Value.AbsolutePath -eq $CallingRepositoryRootPath) {
+                        $callingRepositoryUrl = $repoEntry.Key
+                        $callingRepositoryTag = $repoEntry.Value.Tag
+                        break
+                    }
+                }
+                
+                if (-not [string]::IsNullOrWhiteSpace($callingRepositoryUrl)) {
+                    Write-Log "Executing post-checkout script for repository containing dependency file: $callingRepositoryUrl" -Level Info
+                    $scriptResult = Invoke-PostCheckoutScript -RepoAbsolutePath $CallingRepositoryRootPath -ScriptFileName $postCheckoutScriptFileName -ScriptFilePath $postCheckoutScriptFilePath -RepositoryUrl $callingRepositoryUrl -Tag $callingRepositoryTag
+                    if (-not $scriptResult) {
+                        Write-Log "Post-checkout script failed for repository '$callingRepositoryUrl', but continuing with dependency processing" -Level Warning
+                    }
+                } else {
+                    Write-Log "Could not determine repository URL for calling repository at path: $CallingRepositoryRootPath" -Level Warning
+                }
             }
         }
         
@@ -1884,8 +1905,6 @@ Failed: $($script:FailureCount)
             $summary += "`nCustom Dependency Files: $reposWithCustomPath paths, $reposWithCustomName names"
         }
     }
-    
-    $summary += "`nTag Temporal Sorting: Always Enabled"
     
     # Show post-checkout script statistics
     if ($script:PostCheckoutScriptsEnabled) {
