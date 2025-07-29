@@ -10,10 +10,11 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - [Basic Usage (Non-Recursive)](#basic-usage-non-recursive)
 - [Advanced Usage (Recursive Mode)](#advanced-usage-recursive-mode)
 - [API Compatibility Modes](#api-compatibility-modes)
-- [Intelligent Tag Temporal Sorting](#intelligent-tag-temporal-sorting)
+- [Checkout Tag Selection Algorithm](#checkout-tag-selection-algorithm)
 - [Custom Dependency Files](#custom-dependency-files)
 - [Post-Checkout Scripts](#post-checkout-scripts)
 - [Migrating Existing Dependency Trees to LsiGitCheckout](#migrating-existing-dependency-trees-to-lsigitcheckout)
+- [Handling Shared Dependencies Version Changes](#handling-shared-dependencies-version-changes)
 - [Security Best Practices](#security-best-practices)
 - [SSH Setup with PuTTY](#ssh-setup-with-putty)
 - [Troubleshooting](#troubleshooting)
@@ -438,9 +439,9 @@ When the same repository is encountered multiple times with different compatibil
 .\LsiGitCheckout.ps1 -DisableRecursion
 ```
 
-## Intelligent Tag Temporal Sorting
+## Checkout Tag Selection Algorithm
 
-The script features intelligent automatic tag temporal sorting using actual git tag dates, providing optimal version selection without any manual configuration required.
+The script features an intelligent automatic tag selection algorithm using actual git tag dates, providing optimal version selection without any manual configuration required.
 
 ### Overview
 
@@ -459,22 +460,7 @@ The script automatically:
 - **Optimal behavior**: No configuration required for best performance
 - **Zero maintenance overhead**: No need to maintain temporal order in configuration files
 
-### Usage
-
-Control verbosity and debugging:
-
-```powershell
-# Default behavior
-.\LsiGitCheckout.ps1
-
-# With verbose output to see tag dates and sorting decisions
-.\LsiGitCheckout.ps1 -Verbose
-
-# With debug logging for detailed tag processing
-.\LsiGitCheckout.ps1 -EnableDebug
-```
-
-### Intelligent Tag Selection Algorithm
+### Tag Selection Algorithm
 
 When multiple repositories reference the same dependency with different tags, the algorithm prioritizes in this order:
 
@@ -482,20 +468,6 @@ When multiple repositories reference the same dependency with different tags, th
 2. **Only existing "Tag" is compatible**: Use the existing "Tag" 
 3. **Only new "Tag" is compatible**: Use the new "Tag"
 4. **Neither "Tag" is compatible**: Use the chronologically most recent tag from the compatible set (intersection/union)
-
-### Example with Intelligent Tag Temporal Sorting
-
-**Flexible Ordering:**
-```json
-{
-  "Repository URL": "https://github.com/myorg/lib.git",
-  "Base Path": "libs/mylib", 
-  "Tag": "v1.0.4",
-  "API Compatible Tags": ["v1.0.2", "v1.0.0", "v1.0.3", "v1.0.1"]
-}
-```
-
-The script automatically sorts these tags by their actual git creation dates during conflict resolution, providing intelligent tag selection based on chronological order and compatibility requirements.
 
 ### Performance Optimization
 
@@ -1232,14 +1204,6 @@ Here's the dependency tree showing both **old tags** (existing) and **new tags**
                          (unchanged)
 ```
 
-**Summary of Version Changes:**
-- **DatabaseUtils**: `v1.2.0` (no change - leaf dependency)
-- **DataAccess**: `v2.2.5` → `v2.3.0` (minor bump - API compatible)
-- **CommonControls**: `v3.0.8` → `v3.1.0` (minor bump - API compatible)
-- **UserInterface**: `v4.1.3` → `v4.2.0` (minor bump - API compatible)
-- **BusinessLogic**: `v4.5.1` → `v4.6.0` (minor bump - API compatible, **not** v5.0.0!)
-- **MyApplication**: `v0.9.2` → `v1.0.0` (major bump - significant architectural change)
-
 ### Step 5: Test Your Migration
 
 Now test that the migration worked correctly:
@@ -1326,6 +1290,517 @@ Once your dependency tree is migrated:
 - Consider adding [Post-Checkout Scripts](#post-checkout-scripts) for automated dependency installation
 
 The bottom-up migration approach ensures that your entire dependency tree becomes manageable through LsiGitCheckout while maintaining the ability to resolve version conflicts intelligently as your project evolves.
+
+## Handling Shared Dependencies Version Changes
+
+Once you have successfully migrated your dependency tree to LsiGitCheckout, you'll need to manage version changes in shared dependencies over time. This section demonstrates how to handle both API-compatible updates and API-breaking changes using the dependency tree from the migration example.
+
+### Starting Point: Post-Migration Dependency Tree
+
+After completing the migration example, we have this dependency tree with LsiGitCheckout support:
+
+```
+                    MyApplication
+                      v1.0.0
+                         │
+           ┌─────────────┴─────────────┐
+           │                           │
+     UserInterface              BusinessLogic
+        v4.2.0                      v4.6.0
+           │                           │
+           │                   ┌───────┴──────┐
+           │                   │              │
+     CommonControls            │          DataAccess
+        v3.1.0 ────────────────┘            v2.3.0
+           │                                  │
+           └──────────────────────────────────┘
+                               │
+                          DatabaseUtils
+                            v1.2.0
+```
+
+All repositories except DatabaseUtils contain `dependencies.json` files with LsiGitCheckout configuration.
+
+### Scenario 1: API-Compatible Update (v1.2.0 → v1.2.1)
+
+Let's assume DatabaseUtils releases a bug-fix version v1.2.1 that is fully API-compatible with v1.2.0. This is a straightforward update that requires minimal changes.
+
+#### Step 1: Update Direct Dependencies
+
+We need to update the repositories that directly depend on DatabaseUtils: **DataAccess** and **CommonControls**.
+
+##### Update DataAccess
+
+Since v1.2.1 is API-compatible with v1.2.0, we can add the old version to the "API Compatible Tags" array:
+
+```powershell
+Set-Location DataAccess
+```
+
+Update `dependencies.json`:
+```json
+[
+  {
+    "Repository URL": "https://github.com/yourorg/DatabaseUtils.git",
+    "Base Path": "../shared/database-utils",
+    "Tag": "v1.2.1",
+    "API Compatible Tags": ["v1.2.0"]
+  }
+]
+```
+
+Commit and create a new tag:
+```powershell
+git add dependencies.json
+git commit -m "Update DatabaseUtils to v1.2.1 (API compatible bug fix)"
+git tag v2.3.1  # Minor version bump for compatible dependency update
+git push origin v2.3.1
+```
+
+##### Update CommonControls
+
+```powershell
+Set-Location ..\CommonControls
+```
+
+Update `dependencies.json`:
+```json
+[
+  {
+    "Repository URL": "https://github.com/yourorg/DatabaseUtils.git",
+    "Base Path": "../shared/database-utils",
+    "Tag": "v1.2.1",
+    "API Compatible Tags": ["v1.2.0"]
+  }
+]
+```
+
+Commit and tag:
+```powershell
+git add dependencies.json
+git commit -m "Update DatabaseUtils to v1.2.1 (API compatible bug fix)"
+git tag v3.1.1  # Minor version bump for compatible dependency update
+git push origin v3.1.1
+```
+
+#### Step 2: Update Indirect Dependencies
+
+Now we update the repositories that depend on DataAccess and CommonControls.
+
+##### Update UserInterface
+
+```powershell
+Set-Location ..\UserInterface
+```
+
+Update `dependencies.json`:
+```json
+[
+  {
+    "Repository URL": "https://github.com/yourorg/CommonControls.git",
+    "Base Path": "../shared/common-controls",
+    "Tag": "v3.1.1",
+    "API Compatible Tags": ["v3.1.0"]
+  }
+]
+```
+
+Commit and tag:
+```powershell
+git add dependencies.json
+git commit -m "Update CommonControls to v3.1.1 (includes DatabaseUtils v1.2.1 bug fix)"
+git tag v4.2.1  # Minor version bump for transitive dependency update
+git push origin v4.2.1
+```
+
+##### Update BusinessLogic
+
+```powershell
+Set-Location ..\BusinessLogic
+```
+
+Update `dependencies.json`:
+```json
+[
+  {
+    "Repository URL": "https://github.com/yourorg/DataAccess.git",
+    "Base Path": "libs/data-access",
+    "Tag": "v2.3.1",
+    "API Compatible Tags": ["v2.3.0"]
+  },
+  {
+    "Repository URL": "https://github.com/yourorg/CommonControls.git",
+    "Base Path": "../shared/common-controls",
+    "Tag": "v3.1.1",
+    "API Compatible Tags": ["v3.1.0"]
+  }
+]
+```
+
+Commit and tag:
+```powershell
+git add dependencies.json
+git commit -m "Update dependencies for DatabaseUtils v1.2.1 bug fix"
+git tag v4.6.1  # Minor version bump for transitive dependency update
+git push origin v4.6.1
+```
+
+#### Step 3: Update Root Application
+
+```powershell
+Set-Location ..\MyApplication
+```
+
+Update `dependencies.json`:
+```json
+[
+  {
+    "Repository URL": "https://github.com/yourorg/UserInterface.git",
+    "Base Path": "modules/user-interface",
+    "Tag": "v4.2.1",
+    "API Compatible Tags": ["v4.2.0"]
+  },
+  {
+    "Repository URL": "https://github.com/yourorg/BusinessLogic.git", 
+    "Base Path": "modules/business-logic",
+    "Tag": "v4.6.1",
+    "API Compatible Tags": ["v4.6.0"]
+  }
+]
+```
+
+Commit and tag:
+```powershell
+git add dependencies.json
+git commit -m "Update to get DatabaseUtils v1.2.1 bug fix throughout dependency tree"
+git tag v1.0.1  # Patch version bump for bug fix propagation
+git push origin v1.0.1
+```
+
+#### Result: Updated Dependency Tree (API-Compatible)
+
+```
+                    MyApplication
+                   v1.0.0 → v1.0.1
+                         │
+           ┌─────────────┴─────────────┐
+           │                           │
+     UserInterface              BusinessLogic
+    v4.2.0 → v4.2.1            v4.6.0 → v4.6.1
+           │                           │
+           │                     ┌─────┴──────┐
+           │                     │            │
+     CommonControls              │        DataAccess
+    v3.1.0 → v3.1.1 ─────────────┘       v2.3.0 → v2.3.1
+           │                                  │
+           └──────────────────────────────────┘
+                                 │
+                         DatabaseUtils
+                       v1.2.0 → v1.2.1
+```
+
+**Key Benefits of This Approach:**
+- All new tags are API-compatible with their predecessors
+- LsiGitCheckout will intelligently resolve to the latest compatible versions
+- Gradual rollout is possible by updating dependencies incrementally
+- Rollback is easy due to preserved API compatibility
+
+### Scenario 2: API-Breaking Update (v1.2.1 → v2.0.0)
+
+Now let's assume DatabaseUtils releases v2.0.0 with breaking API changes that provide enhanced capabilities. This requires more careful handling, but the version bumps depend on whether each repository's own API changes.
+
+#### Step 1: Analyze Impact and Plan Migration
+
+Before making changes, analyze which parts of your codebase will be affected:
+
+1. **Review DatabaseUtils v2.0.0 changes** to understand the breaking changes and new capabilities
+2. **Test compatibility** with DataAccess and CommonControls
+3. **Determine API impact** - which repositories need to change their own APIs vs. just internal implementation
+
+For this example, let's assume:
+- **DatabaseUtils v2.0.0** provides enhanced capabilities with breaking API changes
+- **DataAccess** can leverage the new capabilities without changing its own API
+- **CommonControls** can use enhanced logging features without changing its own API
+- **Higher-level repositories** don't change their APIs but benefit from the enhanced capabilities
+
+#### Step 2: Update Direct Dependencies (Internal Changes Only)
+
+##### Update DataAccess (No API Changes)
+
+```powershell
+Set-Location DataAccess
+```
+
+Make internal implementation changes to use DatabaseUtils v2.0.0 enhanced capabilities, but keep DataAccess API unchanged:
+
+```json
+[
+  {
+    "Repository URL": "https://github.com/yourorg/DatabaseUtils.git",
+    "Base Path": "../shared/database-utils",
+    "Tag": "v2.0.0",
+    "API Compatible Tags": []
+  }
+]
+```
+
+**Important Note:** The "API Compatible Tags" array is empty because DatabaseUtils v2.0.0 is not compatible with any v1.x versions.
+
+Commit and tag with **minor version bump** (API unchanged):
+```powershell
+git add .  # Add all code changes + dependencies.json
+git commit -m "Update to DatabaseUtils v2.0.0 with enhanced capabilities
+
+- Updated internal database connection handling for new API
+- Leveraged improved query performance features
+- Enhanced error handling with new exception types
+- Public API remains unchanged - internal improvements only"
+git tag v2.4.0  # Minor version bump - API unchanged, enhanced capabilities
+git push origin v2.4.0
+```
+
+##### Update CommonControls (No API Changes)
+
+```powershell
+Set-Location ..\CommonControls
+```
+
+Make internal changes to leverage enhanced DatabaseUtils features:
+
+```json
+[
+  {
+    "Repository URL": "https://github.com/yourorg/DatabaseUtils.git",
+    "Base Path": "../shared/database-utils",
+    "Tag": "v2.0.0",
+    "API Compatible Tags": []
+  }
+]
+```
+
+Commit and tag with **minor version bump**:
+```powershell
+git add .
+git commit -m "Update to DatabaseUtils v2.0.0 for enhanced logging
+
+- Improved internal logging using new DatabaseUtils capabilities
+- Enhanced configuration loading performance
+- Public API remains unchanged - internal improvements only"
+git tag v3.2.0  # Minor version bump - API unchanged, enhanced capabilities  
+git push origin v3.2.0
+```
+
+#### Step 3: Update Indirect Dependencies (No API Changes)
+
+##### Update UserInterface (No API Changes)
+
+```powershell
+Set-Location ..\UserInterface
+```
+
+Update dependency reference (no code changes needed):
+
+```json
+[
+  {
+    "Repository URL": "https://github.com/yourorg/CommonControls.git",
+    "Base Path": "../shared/common-controls",
+    "Tag": "v3.2.0",
+    "API Compatible Tags": ["v3.1.0", "v3.1.1"]
+  }
+]
+```
+
+**Note:** UserInterface benefits from enhanced CommonControls capabilities without changing its own API.
+
+Commit and tag with **minor version bump**:
+```powershell
+git add dependencies.json
+git commit -m "Update to CommonControls v3.2.0 for enhanced capabilities
+
+- Benefits from improved logging and performance in CommonControls
+- Transitively benefits from DatabaseUtils v2.0.0 enhancements
+- Public API remains unchanged"
+git tag v4.3.0  # Minor version bump - API unchanged, enhanced capabilities
+git push origin v4.3.0
+```
+
+##### Update BusinessLogic (No API Changes)
+
+
+```powershell
+Set-Location ..\BusinessLogic
+```
+
+Update both dependencies:
+
+```json
+[
+  {
+    "Repository URL": "https://github.com/yourorg/DataAccess.git",
+    "Base Path": "libs/data-access",
+    "Tag": "v2.4.0",
+    "API Compatible Tags": ["v2.3.0", "v2.3.1"]
+  },
+  {
+    "Repository URL": "https://github.com/yourorg/CommonControls.git",
+    "Base Path": "../shared/common-controls",
+    "Tag": "v3.2.0", 
+    "API Compatible Tags": ["v3.1.0", "v3.1.1"]
+  }
+]
+```
+
+Commit and tag with **minor version bump**:
+```powershell
+git add dependencies.json
+git commit -m "Update dependencies for DatabaseUtils v2.0.0 enhanced capabilities
+
+- Benefits from improved DataAccess v2.4.0 performance
+- Leverages enhanced CommonControls v3.2.0 features
+- Transitively benefits from DatabaseUtils v2.0.0 enhancements
+- Public API remains unchanged"
+git tag v4.7.0  # Minor version bump - API unchanged, enhanced capabilities
+git push origin v4.7.0
+```
+
+#### Step 4: Update Root Application (No API Changes)
+
+```powershell
+Set-Location ..\MyApplication
+```
+
+Update `dependencies.json`:
+
+```json
+[
+  {
+    "Repository URL": "https://github.com/yourorg/UserInterface.git",
+    "Base Path": "modules/user-interface",
+    "Tag": "v4.3.0",
+    "API Compatible Tags": ["v4.2.0", "v4.2.1"]
+  },
+  {
+    "Repository URL": "https://github.com/yourorg/BusinessLogic.git", 
+    "Base Path": "modules/business-logic",
+    "Tag": "v4.7.0",
+    "API Compatible Tags": ["v4.6.0", "v4.6.1"]
+  }
+]
+```
+
+Commit and tag with **minor version bump**:
+```powershell
+git add dependencies.json
+git commit -m "Update to get DatabaseUtils v2.0.0 enhanced capabilities throughout tree
+
+- Benefits from enhanced UserInterface v4.3.0 performance
+- Leverages improved BusinessLogic v4.7.0 features  
+- Complete migration to DatabaseUtils v2.0.0 enhanced capabilities
+- Application API remains unchanged"
+git tag v1.1.0  # Minor version bump - API unchanged, enhanced capabilities
+git push origin v1.1.0
+```
+
+#### Result: Updated Dependency Tree (Enhanced Capabilities, APIs Unchanged)
+
+```
+                    MyApplication
+                   v1.0.1 → v1.1.0
+                         │
+           ┌─────────────┴─────────────┐
+           │                           │
+     UserInterface              BusinessLogic
+    v4.2.1 → v4.3.0            v4.6.1 → v4.7.0
+           │                           │
+           │                     ┌─────┴──────┐
+           │                     │            │
+     CommonControls              │        DataAccess
+    v3.1.1 → v3.2.0 ─────────────┘       v2.3.1 → v2.4.0
+           │                                  │
+           └──────────────────────────────────┘
+                                 │
+                         DatabaseUtils
+                       v1.2.1 → v2.0.0
+```
+
+#### Alternative: When APIs Do Change
+
+If some repositories needed to expose new capabilities or change their APIs, they would get **major version bumps**:
+
+```
+Example if DataAccess exposed new API features:
+DataAccess: v2.3.1 → v3.0.0 (major - new API features)
+BusinessLogic: v4.6.1 → v5.0.0 (major - uses new DataAccess API)
+MyApplication: v1.0.1 → v2.0.0 (major - uses new BusinessLogic API)
+
+Example if only internal enhancements (as shown above):
+DataAccess: v2.3.1 → v2.4.0 (minor - internal improvements only)
+BusinessLogic: v4.6.1 → v4.7.0 (minor - benefits from improvements)
+MyApplication: v1.0.1 → v1.1.0 (minor - benefits from improvements)
+```
+
+### Key Differences Between Compatible and Breaking Updates
+
+#### API-Compatible Updates (v1.2.0 → v1.2.1)
+- **Version Bumps**: Minor/patch versions throughout the tree
+- **API Compatible Tags**: Previous versions included in compatibility arrays
+- **Rollback**: Easy due to preserved backward compatibility
+- **Deployment**: Can be done incrementally
+- **LsiGitCheckout Behavior**: Automatically resolves to latest compatible versions
+
+#### Dependency Breaking Updates with Enhanced Capabilities (v1.2.1 → v2.0.0)
+- **Version Bumps**: Minor versions when APIs don't change, major versions only when APIs change
+- **API Compatible Tags**: Empty for the breaking dependency, but preserved for non-breaking dependents
+- **Rollback**: Requires coordinated rollback, but easier than full API breaks
+- **Deployment**: Can be coordinated but less risky than full API breaking changes
+- **LsiGitCheckout Behavior**: Mix of automatic resolution (for API-compatible dependents) and explicit choices (for breaking dependency)
+
+### Best Practices for Shared Dependency Updates
+
+#### For API-Compatible Updates
+1. **Start from the bottom** (leaf dependencies) and work upward
+2. **Include previous versions** in API Compatible Tags
+3. **Use minor/patch version bumps** for dependent repositories
+4. **Test thoroughly** even for "compatible" changes
+5. **Document changes** in commit messages
+6. **Consider gradual rollout** across environments
+
+#### For Dependency Breaking Updates (Enhanced Capabilities)
+1. **Distinguish API changes from implementation changes** - only bump major versions when your repository's API actually changes
+2. **Use minor version bumps** when benefiting from enhanced capabilities without changing your own API
+3. **Preserve API Compatible Tags** for repositories that don't break their own APIs
+4. **Document enhancement benefits** in commit messages
+5. **Test thoroughly** to ensure enhanced capabilities work as expected
+6. **Consider gradual rollout** to validate improvements
+
+#### Version Numbering Strategy
+
+**For Direct API Changes:**
+- **Major bump** (1.0.0 → 2.0.0): When your repository's own API has breaking changes
+- **Minor bump** (1.0.0 → 1.1.0): When your repository's own API gains new features
+- **Patch bump** (1.0.0 → 1.0.1): When your repository's own API has bug fixes
+
+**For Dependency Updates:**
+- **Major bump**: Only when your repository's API must change due to dependency changes
+- **Minor bump**: When updating to dependencies with enhanced capabilities but your API stays the same
+- **Patch bump**: When updating to dependency bug fixes with no functional changes
+
+**API Compatible Tags Guidelines:**
+- **Include compatible versions**: Add older versions that your API can work with
+- **Preserve for minor bumps**: Keep compatibility when your API doesn't change
+- **Clear only for API breaks**: Empty the array only when your repository's API breaks compatibility
+- **Test compatibility thoroughly**: Don't assume semantic versioning guarantees
+
+#### Testing Strategy
+
+1. **Unit test all changes** in each repository
+2. **Integration test the complete tree** after updates
+3. **Verify LsiGitCheckout resolution** works as expected
+4. **Test rollback scenarios** for both compatible and breaking changes
+5. **Validate in staging environments** before production deployment
+
+This systematic approach ensures that shared dependency updates are managed safely and predictably, whether they're simple bug fixes or major API overhauls.
 
 ## Security Best Practices
 
@@ -1771,6 +2246,64 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
 4. **Fast Installation**: Downloading pre-built packages is quick
 5. **Mature Ecosystem**: Extensive tooling, security scanning, license checking
 6. **Registry Features**: Search, statistics, vulnerability databases
+
+### Major Limitation: Manual Version Management Overhead
+
+One of the most significant disadvantages of LsiGitCheckout becomes apparent when managing shared dependencies that require updates, as illustrated in the [Handling Shared Dependencies Version Changes](#handling-shared-dependencies-version-changes) section.
+
+#### The Update Propagation Challenge
+
+When a shared dependency (like DatabaseUtils in our example) releases a new version, updating the dependency tree requires:
+
+1. **Manual identification** of all repositories that depend on the updated component
+2. **Explicit modification** of each dependency file to reference the new version
+3. **Creation of new tags** for each modified repository
+4. **Careful propagation** of these changes up the entire dependency tree
+
+This process is inherently tedious because:
+
+- **No future version prediction**: The API Compatibility algorithm can only work with existing tags - it cannot predict or automatically accept future releases
+- **Explicit version listing**: Every compatible version must be explicitly listed in the "API Compatible Tags" array
+- **Manual dependency tracking**: There's no automated way to identify which repositories need updating
+
+#### Contrast with Traditional Package Managers
+
+Traditional package managers solve this through **semantic versioning ranges**:
+
+- **NuGet**: `<PackageReference Include="MyLibrary" Version="1.1.*" />` automatically accepts 1.1.1, 1.1.2, etc.
+- **npm**: `"my-library": "^1.1.0"` accepts any compatible version >= 1.1.0 and < 2.0.0
+- **Maven**: `<version>[1.0,2.0)</version>` accepts any version from 1.0 up to (but not including) 2.0
+
+These version specifications:
+- **Automatically accept** compatible future releases without configuration changes
+- **Reduce manual updates** by trusting semantic versioning conventions
+- **Propagate updates** automatically through the dependency tree
+
+#### When This Becomes Problematic
+
+The manual update overhead becomes particularly cumbersome when:
+
+- **Deep dependency trees**: Updates must be manually propagated through many levels
+- **Frequent updates**: Active development with regular releases multiplies the manual work
+- **Wide dependency graphs**: Popular shared libraries used by many projects require many manual updates
+- **Cross-team dependencies**: Coordination overhead increases with organizational complexity
+
+#### Conclusion
+
+While LsiGitCheckout offers significant advantages (no central infrastructure, source-level debugging, precise version control), its approach to dependency resolution becomes increasingly burdensome as:
+
+- The dependency tree grows deeper
+- The number of shared dependencies increases
+- The frequency of updates accelerates
+- The development team size expands
+
+This makes LsiGitCheckout most suitable for:
+- Projects with **shallow dependency trees**
+- Organizations that value **precise version control** over update convenience
+- Scenarios where **source-level access** outweighs update automation
+- Teams that can afford the **manual coordination overhead**
+
+For projects with deep, frequently-updated dependency trees, traditional package managers may provide a better balance between control and automation.
 
 ### Target Users and Organizations
 
