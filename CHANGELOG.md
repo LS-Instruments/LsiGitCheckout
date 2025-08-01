@@ -5,6 +5,43 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0] - 2025-01-27
+
+### Added
+- **Semantic Versioning (SemVer) Support** - New dependency resolution mode based on SemVer 2.0.0 rules
+  - Automatic version compatibility resolution without explicit API Compatible Tags lists
+  - `"Dependency Resolution"` field to specify resolution mode (`"Agnostic"` or `"SemVer"`)
+  - `"Version"` field for specifying SemVer requirements (e.g., `"2.1.0"`)
+  - `"Version Regex"` field for custom version tag patterns (optional)
+  - Intelligent version selection (chooses lowest compatible version)
+  - Comprehensive conflict detection and reporting across the dependency tree
+  - Support for 0.x.y version handling per SemVer 2.0.0 specification
+
+- **Mixed Mode Support** - Ability to use both Agnostic and SemVer repositories in the same dependency tree
+  - Each repository's resolution mode is immutable once established
+  - Seamless integration between different resolution strategies
+
+- **Enhanced Version Parsing**
+  - One-time tag parsing with caching for performance
+  - Support for custom version tag formats via regex patterns
+  - Built-in validation for regex patterns (requires 3 capture groups)
+
+- **Improved Conflict Reporting**
+  - Detailed conflict messages showing all requestors and their requirements
+  - Clear indication of which versions would satisfy each requirement
+  - Enhanced error context with full stack traces for debugging
+
+### Changed
+- Repository dictionary now tracks dependency resolution mode for each repository
+- Version information stored separately from tag information for SemVer repositories
+- Error handling enhanced to provide better context for SemVer conflicts
+
+### Technical Details
+- New functions: `Test-SemVerCompatibility`, `Parse-RepositoryVersions`, `Get-CompatibleSemVersions`, `Get-SemVersionIntersection`, `Format-SemVersion`, `Update-SemVerRepository`
+- Modified `Update-RepositoryDictionary` to handle both Agnostic and SemVer modes
+- Extended repository dictionary structure to include SemVer-specific fields
+- Maintained backward compatibility with existing Agnostic mode configurations
+
 ## [6.2.1] - 2025-01-27
 
 ### Added

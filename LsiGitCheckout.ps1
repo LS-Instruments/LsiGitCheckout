@@ -35,18 +35,41 @@
     Default API compatibility mode when not specified in dependencies. Can be 'Strict' or 'Permissive'. Defaults to 'Permissive'.
 .PARAMETER DisablePostCheckoutScripts
     Disables execution of post-checkout PowerShell scripts. By default, post-checkout scripts are enabled.
+.PARAMETER EnableErrorContext
+    Enables detailed error context output including stack traces and line numbers.
+    By default, only simple error messages are shown. Use this for advanced debugging.
 .EXAMPLE
     .\LsiGitCheckout.ps1
     .\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
     .\LsiGitCheckout.ps1 -DisableRecursion -MaxDepth 10
     .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug -ApiCompatibility Strict
     .\LsiGitCheckout.ps1 -Verbose -DisablePostCheckoutScripts
+    .\LsiGitCheckout.ps1 -EnableDebug -EnableErrorContext
 .NOTES
-    Version: 6.2.1
+    Version: 7.0.0
     Last Modified: 2025-01-27
-    
+
     This script uses PuTTY/plink for SSH authentication. SSH keys must be in PuTTY format (.ppk).
-    Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.
+    Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.    
+    
+    Changes in 7.0.0:
+    - Added Semantic Versioning (SemVer) support with "Dependency Resolution" field
+    - New "SemVer" mode automatically resolves compatible versions based on SemVer rules
+    - Added "Version" field for specifying SemVer requirements (x.y.z format)
+    - Added optional "Version Regex" field for custom version extraction patterns
+    - Immutable configuration: Dependency Resolution mode and Version Regex cannot change
+    - Mixed mode support: Can use both Agnostic and SemVer repositories in same tree
+    
+    SemVer Mode Configuration:
+    {
+      "Repository URL": "https://github.com/myorg/library.git",
+      "Base Path": "libs/library",
+      "Dependency Resolution": "SemVer",
+      "Version": "2.1.0",
+      "Version Regex": "^v(\d+)\.(\d+)\.(\d+)$"  // Optional, has sensible default
+    }
+    
+
     
     Changes in 6.2.1:
     - Added support for post-checkout scripts at depth 0 (root level) when configured in the input dependency file
@@ -133,11 +156,14 @@ param(
     [string]$ApiCompatibility = 'Permissive',
     
     [Parameter()]
-    [switch]$DisablePostCheckoutScripts
+    [switch]$DisablePostCheckoutScripts,
+
+    [Parameter()]
+    [switch]$EnableErrorContext
 )
 
 # Script configuration
-$script:Version = "6.2.1"
+$script:Version = "7.0.0"
 $script:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:ErrorFile = Join-Path $ScriptPath "LsiGitCheckout_Errors.txt"
 $script:DebugLogFile = Join-Path $ScriptPath ("debug_log_{0}.txt" -f (Get-Date -Format "yyyyMMddHHmm"))
@@ -153,10 +179,98 @@ $script:DefaultApiCompatibility = $ApiCompatibility
 $script:RecursiveMode = -not $DisableRecursion
 $script:DefaultDependencyFileName = ""
 $script:PostCheckoutScriptsEnabled = -not $DisablePostCheckoutScripts
+$script:ErrorContextEnabled = $EnableErrorContext
 
 # Initialize error file
 if (Test-Path $script:ErrorFile) {
     Remove-Item $script:ErrorFile -Force
+}
+
+function Write-ErrorWithContext {
+    <#
+    .SYNOPSIS
+        Writes an error with full context including line numbers and stack trace
+    .DESCRIPTION
+        Captures the error context including the exact line where the error occurred,
+        the function name, and the full stack trace for debugging
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        $ErrorRecord,
+        
+        [string]$AdditionalMessage = ""
+    )
+    
+    # If error context is not enabled, just write a simple error message
+    if (-not $script:ErrorContextEnabled) {
+        $simpleMessage = $ErrorRecord.Exception.Message
+        if ($AdditionalMessage) {
+            $simpleMessage = "$AdditionalMessage : $simpleMessage"
+        }
+        Write-Log $simpleMessage -Level Error
+        return
+    }
+    
+    # Get error details
+    $errorLine = $ErrorRecord.InvocationInfo.ScriptLineNumber
+    $errorColumn = $ErrorRecord.InvocationInfo.OffsetInLine
+    $errorScript = $ErrorRecord.InvocationInfo.ScriptName
+    $errorCommand = $ErrorRecord.InvocationInfo.Line.Trim()
+    $errorFunction = $ErrorRecord.InvocationInfo.MyCommand.Name
+    $errorException = $ErrorRecord.Exception.Message
+    
+    # Build detailed error message
+    $errorDetails = @"
+========================================
+ERROR DETAILS
+========================================
+Exception: $errorException
+Location: Line $errorLine, Column $errorColumn
+Script: $errorScript
+Function: $errorFunction
+Command: $errorCommand
+"@
+
+    if ($AdditionalMessage) {
+        $errorDetails += "`nAdditional Info: $AdditionalMessage"
+    }
+    
+    # Add stack trace
+    if ($ErrorRecord.ScriptStackTrace) {
+        $errorDetails += @"
+
+Stack Trace:
+----------------------------------------
+$($ErrorRecord.ScriptStackTrace)
+========================================
+"@
+    }
+    
+    Write-Log $errorDetails -Level Error
+    
+    # Also write a condensed version for quick reference
+    Write-Log "ERROR at line $errorLine in $errorFunction : $errorException" -Level Error
+}
+
+function Invoke-WithErrorContext {
+    <#
+    .SYNOPSIS
+        Executes a script block with enhanced error context reporting
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        [ScriptBlock]$ScriptBlock,
+        
+        [string]$Context = ""
+    )
+    
+    try {
+        & $ScriptBlock
+    }
+    catch {
+        Write-ErrorWithContext -ErrorRecord $_ -AdditionalMessage $Context
+        throw
+    }
 }
 
 function Write-Log {
@@ -195,6 +309,250 @@ function Write-Log {
     
     if ($EnableDebug -and $Level -ne 'Debug') {
         Add-Content -Path $script:DebugLogFile -Value $logMessage
+    }
+}
+
+function Test-SemVerCompatibility {
+    <#
+    .SYNOPSIS
+        Tests if an available version is compatible with a requested version according to SemVer rules
+    .DESCRIPTION
+        Implements SemVer 2.0.0 compatibility rules:
+        - For 0.x.y versions: Minor version acts as major (breaking changes)
+        - For >=1.0.0 versions: Standard SemVer (same major, >= minor.patch)
+    #>
+    param(
+        [Version]$Available,
+        [Version]$Requested
+    )
+    
+    # Special handling for 0.x.y versions
+    if ($Requested.Major -eq 0) {
+        return $Available.Major -eq 0 -and 
+               $Available.Minor -eq $Requested.Minor -and 
+               $Available.Build -ge $Requested.Build  # Build = Patch in Version object
+    }
+    
+    # Standard SemVer: compatible if same major and >= requested minor.patch
+    if ($Available.Major -ne $Requested.Major) {
+        return $false
+    }
+    
+    return $Available -ge $Requested
+}
+
+function Parse-RepositoryVersions {
+    <#
+    .SYNOPSIS
+        Parses all repository tags using the specified regex pattern to extract SemVer versions
+    .DESCRIPTION
+        One-time parsing of all tags in a repository to build a cache of tag->version mappings
+    #>
+    param(
+        [string]$RepoPath,
+        [string]$VersionRegex = "^v?(\d+)\.(\d+)\.(\d+)$"
+    )
+    
+    Write-Log "Parsing SemVer versions from repository at: $RepoPath" -Level Debug
+    Write-Log "Using version regex: $VersionRegex" -Level Debug
+    
+    # Validate regex has at least 3 capture groups
+    try {
+        $compiledRegex = [regex]::new($VersionRegex)
+        $testMatch = $compiledRegex.Match("v1.2.3")
+        if ($compiledRegex.GetGroupNumbers().Count -lt 4) {  # 0 + 3 groups
+            throw "Version regex must have at least 3 capture groups for major.minor.patch"
+        }
+    }
+    catch {
+        throw "Invalid version regex '$VersionRegex': $_"
+    }
+    
+    $parsedVersions = @{}
+    $parseErrors = @()
+    
+    # Get all tags from repository
+    try {
+        Push-Location $RepoPath
+        
+        # Get all tags
+        $gitCommand = "git tag -l"
+        Write-Log "Executing: $gitCommand" -Level Debug
+        
+        $tags = Invoke-Expression $gitCommand 2>&1
+        
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to get tags: $tags"
+        }
+        
+        Pop-Location
+        
+        foreach ($tag in $tags) {
+            if ([string]::IsNullOrWhiteSpace($tag)) { continue }
+            
+            $tag = $tag.Trim()
+            $match = $compiledRegex.Match($tag)
+            
+            if ($match.Success -and $match.Groups.Count -ge 4) {
+                try {
+                    $major = [int]$match.Groups[1].Value
+                    $minor = [int]$match.Groups[2].Value
+                    $patch = [int]$match.Groups[3].Value
+                    
+                    # Version constructor expects Major.Minor.Build.Revision
+                    # We use Build for Patch and leave Revision as -1
+                    $version = [Version]::new($major, $minor, $patch)
+                    $parsedVersions[$tag] = $version
+                    
+                    Write-Log "Parsed tag '$tag' as version $($major).$($minor).$($patch)" -Level Debug
+                }
+                catch {
+                    $parseErrors += "Failed to parse version from tag '$tag': $_"
+                    Write-Log "Failed to parse version from tag '$tag': $_" -Level Warning
+                }
+            }
+        }
+        
+        if ($parsedVersions.Count -eq 0) {
+            $errorMsg = "No tags matching SemVer pattern '$VersionRegex' found in repository.`n"
+            $errorMsg += "Found tags: $($tags -join ', ')"
+            if ($parseErrors.Count -gt 0) {
+                $errorMsg += "`nParse errors:`n" + ($parseErrors -join "`n")
+            }
+            throw $errorMsg
+        }
+        
+        Write-Log "Successfully parsed $($parsedVersions.Count) SemVer tags" -Level Info
+        return @{
+            ParsedVersions = $parsedVersions
+            CompiledRegex = $compiledRegex
+        }
+    }
+    catch {
+        Pop-Location -ErrorAction SilentlyContinue
+        throw
+    }
+}
+
+function Get-CompatibleSemVersions {
+    <#
+    .SYNOPSIS
+        Gets all versions from ParsedVersions that are compatible with the requested version
+    #>
+    param(
+        [hashtable]$ParsedVersions,  # tag -> Version mapping
+        [Version]$RequestedVersion
+    )
+    
+    $compatible = @()
+    
+    foreach ($entry in $ParsedVersions.GetEnumerator()) {
+        if (Test-SemVerCompatibility -Available $entry.Value -Requested $RequestedVersion) {
+            $compatible += [PSCustomObject]@{
+                Tag = $entry.Key
+                Version = $entry.Value
+            }
+        }
+    }
+    
+    if ($compatible.Count -eq 0) {
+        # Format available versions for error message
+        $availableFormatted = $ParsedVersions.GetEnumerator() | 
+            Sort-Object { $_.Value } | 
+            ForEach-Object { "$($_.Key) ($($_.Value.Major).$($_.Value.Minor).$($_.Value.Build))" }
+        
+        throw "No compatible version found for $($RequestedVersion.Major).$($RequestedVersion.Minor).$($RequestedVersion.Build). " +
+              "Available versions: $($availableFormatted -join ', ')"
+    }
+    
+    # Sort by version to ensure consistent ordering
+    $compatible = $compatible | Sort-Object { $_.Version }
+    
+    Write-Log "Found $($compatible.Count) compatible versions for $($RequestedVersion.Major).$($RequestedVersion.Minor).$($RequestedVersion.Build)" -Level Debug
+    
+    return $compatible
+}
+
+function Get-SemVersionIntersection {
+    <#
+    .SYNOPSIS
+        Gets the intersection of two sets of version objects
+    #>
+    param(
+        [array]$Set1,  # Array of PSCustomObject with Tag and Version properties
+        [array]$Set2
+    )
+    
+    $intersection = @()
+    
+    foreach ($v1 in $Set1) {
+        foreach ($v2 in $Set2) {
+            if ($v1.Tag -eq $v2.Tag) {
+                $intersection += $v1
+                break
+            }
+        }
+    }
+    
+    return $intersection
+}
+
+function Format-SemVersion {
+    <#
+    .SYNOPSIS
+        Formats a Version object as a SemVer string
+    #>
+    param(
+        [Version]$Version
+    )
+    
+    return "$($Version.Major).$($Version.Minor).$($Version.Build)"
+}
+
+function Validate-DependencyConfiguration {
+    <#
+    .SYNOPSIS
+        Validates that repository configuration hasn't changed in incompatible ways
+    #>
+    param(
+        [PSCustomObject]$NewRepo,
+        [hashtable]$ExistingRepo
+    )
+    
+    $repoUrl = $NewRepo.'Repository URL'
+    
+    # Determine dependency resolution mode
+    $newMode = if ($NewRepo.PSObject.Properties['Dependency Resolution']) { 
+        $NewRepo.'Dependency Resolution' 
+    } else { 
+        "Agnostic" 
+    }
+    
+    # Rule 1: Dependency Resolution mode cannot change
+    if ($ExistingRepo.ContainsKey('DependencyResolution') -and 
+        $ExistingRepo.DependencyResolution -ne $newMode) {
+        $errorMessage = "Repository '$repoUrl' configuration conflict:`n" +
+                       "Previously discovered with Dependency Resolution: $($ExistingRepo.DependencyResolution)`n" +
+                       "Now attempting to use Dependency Resolution: $newMode`n" +
+                       "Dependency Resolution mode cannot change once established."
+        throw $errorMessage
+    }
+    
+    # Rule 2: Version Regex cannot change (for SemVer mode)
+    if ($newMode -eq "SemVer" -and $ExistingRepo.ContainsKey('VersionRegex')) {
+        $newRegex = if ($NewRepo.PSObject.Properties['Version Regex']) { 
+            $NewRepo.'Version Regex' 
+        } else { 
+            "^v?(\d+)\.(\d+)\.(\d+)$" 
+        }
+        
+        if ($ExistingRepo.VersionRegex -ne $newRegex) {
+            $errorMessage = "Repository '$repoUrl' configuration conflict:`n" +
+                           "Previously discovered with Version Regex: $($ExistingRepo.VersionRegex)`n" +
+                           "Now attempting to use Version Regex: $newRegex`n" +
+                           "Version Regex cannot change once established."
+            throw $errorMessage
+        }
     }
 }
 
@@ -856,18 +1214,224 @@ function Update-RepositoryDictionary {
         [string]$CallingRepositoryRootPath = $null
     )
     
+    try {
+        $repoUrl = $Repository.'Repository URL'
+        
+        # Determine dependency resolution mode
+        $dependencyMode = if ($Repository.PSObject.Properties['Dependency Resolution']) { 
+            $Repository.'Dependency Resolution' 
+        } else { 
+            "Agnostic" 
+        }
+        
+        # If repository exists, validate configuration hasn't changed
+        if ($script:RepositoryDictionary.ContainsKey($repoUrl)) {
+            Invoke-WithErrorContext -Context "Validating configuration for existing repository: $repoUrl" -ScriptBlock {
+                Validate-DependencyConfiguration -NewRepo $Repository -ExistingRepo $script:RepositoryDictionary[$repoUrl]
+            }
+        }
+        
+        Write-Log "Processing repository '$repoUrl' with Dependency Resolution: $dependencyMode" -Level Debug
+        
+        if ($dependencyMode -eq "SemVer") {
+            # Check if Update-SemVerRepository function exists
+            $funcExists = Get-Command -Name Update-SemVerRepository -ErrorAction SilentlyContinue
+            if (-not $funcExists) {
+                throw "Update-SemVerRepository function is not defined. Ensure all SemVer functions are added to the script."
+            }
+            
+            # Delegate to SemVer-specific logic with error context
+            return Invoke-WithErrorContext -Context "Updating SemVer repository: $repoUrl" -ScriptBlock {
+                Update-SemVerRepository -Repository $Repository `
+                                       -DependencyFilePath $DependencyFilePath `
+                                       -CallingRepositoryRootPath $CallingRepositoryRootPath
+            }
+        } else {
+            # Agnostic mode logic
+            $basePath = $Repository.'Base Path'
+            $tag = $Repository.Tag
+            $apiCompatibleTags = $Repository.'API Compatible Tags'
+            $apiCompatibility = if ($Repository.PSObject.Properties['API Compatibility']) { 
+                $Repository.'API Compatibility' 
+            } else { 
+                $script:DefaultApiCompatibility 
+            }
+            
+            # Calculate absolute base path
+            $absoluteBasePath = Get-AbsoluteBasePath -BasePath $basePath -DependencyFilePath $DependencyFilePath -RepositoryRootPath $CallingRepositoryRootPath
+            
+            if ($script:RepositoryDictionary.ContainsKey($repoUrl)) {
+                # Repository already exists
+                Write-Log "Repository already exists in dictionary, checking compatibility..." -Level Info
+                
+                $existingRepo = $script:RepositoryDictionary[$repoUrl]
+                $existingTag = $existingRepo.Tag
+                $existingApiCompatibleTags = $existingRepo.ApiCompatibleTags
+                $existingAbsolutePath = $existingRepo.AbsolutePath
+                
+                # Check if paths match
+                if ($existingAbsolutePath -ne $absoluteBasePath) {
+                    $errorMessage = "Repository path conflict for '$repoUrl':`nExisting path: $existingAbsolutePath`nNew path: $absoluteBasePath"
+                    Write-Log $errorMessage -Level Error
+                    Show-ErrorDialog -Message $errorMessage
+                    throw $errorMessage
+                }
+                
+                # Get tag dates if available
+                $tagDates = if ($existingRepo.ContainsKey('TagDates')) { $existingRepo.TagDates } else { @{} }
+                
+                # Check API compatibility
+                if ($apiCompatibility -eq 'Strict') {
+                    # Strict mode: tags must match exactly
+                    if ($tag -ne $existingTag) {
+                        $errorMessage = "Tag conflict for repository '$repoUrl' in Strict mode:`nExisting tag: $existingTag`nRequired tag: $tag"
+                        Write-Log $errorMessage -Level Error
+                        Show-ErrorDialog -Message $errorMessage
+                        throw $errorMessage
+                    }
+                    Write-Log "Repository '$repoUrl' already checked out with matching tag (Strict mode)" -Level Debug
+                    return $true
+                } else {
+                    # Permissive mode: check if current tag is compatible
+                    $allCompatibleTags = if ($existingApiCompatibleTags) {
+                        # Merge and sort API compatible tags using temporal sorting
+                        $union = Get-TagUnion -Tags1 $existingApiCompatibleTags -Tags2 @($tag) -TagDates $tagDates -RepositoryUrl $repoUrl
+                        
+                        # If new repository has API compatible tags, merge those too
+                        if ($apiCompatibleTags) {
+                            $union = Get-TagUnion -Tags1 $union -Tags2 $apiCompatibleTags -TagDates $tagDates -RepositoryUrl $repoUrl
+                        }
+                        
+                        $union
+                    } elseif ($apiCompatibleTags) {
+                        # Use temporal sorting for API compatible tags
+                        $sorted = Sort-TagsByDate -Tags $apiCompatibleTags -TagDates $tagDates -RepositoryUrl $repoUrl
+                        $sorted
+                    } else {
+                        @($existingTag, $tag) | Select-Object -Unique
+                    }
+                    
+                    # Check if existing tag is compatible with new requirement
+                    if ($existingTag -eq $tag -or ($apiCompatibleTags -and $existingTag -in $apiCompatibleTags)) {
+                        Write-Log "Repository '$repoUrl' already checked out with compatible tag: $existingTag" -Level Debug
+                        
+                        # Update API compatible tags in dictionary
+                        $existingRepo.ApiCompatibleTags = $allCompatibleTags
+                        
+                        return $true
+                    } else {
+                        # Need to checkout a different tag
+                        Write-Log "Repository '$repoUrl' needs different tag. Current: $existingTag, Required: $tag" -Level Info
+                        
+                        # Update repository info
+                        $existingRepo.Tag = $tag
+                        $existingRepo.ApiCompatibleTags = $allCompatibleTags
+                        $existingRepo.NeedCheckout = $true
+                        
+                        return "NeedCheckout"
+                    }
+                }
+            } else {
+                # New repository - add to dictionary
+                Write-Log "First discovery of repository: $repoUrl" -Level Info
+                
+                $script:RepositoryDictionary[$repoUrl] = @{
+                    AbsolutePath = $absoluteBasePath
+                    Tag = $tag
+                    ApiCompatibleTags = $apiCompatibleTags
+                    ApiCompatibility = $apiCompatibility
+                    AlreadyCheckedOut = $false
+                    NeedCheckout = $false
+                    CheckoutFailed = $false
+                    DependencyResolution = "Agnostic"
+                    DependencyFilePath = $Repository.'Dependency File Path'
+                    DependencyFileName = $Repository.'Dependency File Name'
+                }
+                
+                Write-Log "Added new repository to dictionary: '$repoUrl' with tag: $tag" -Level Debug
+                
+                return $false  # Repository needs to be checked out
+            }
+        }
+    }
+    catch {
+        Write-ErrorWithContext -ErrorRecord $_ -AdditionalMessage "Repository: $($Repository.'Repository URL')"
+        throw
+    }
+}
+
+function Update-SemVerRepository {
+    <#
+    .SYNOPSIS
+        Updates repository dictionary for SemVer mode repositories
+    #>
+    param(
+        [PSCustomObject]$Repository,
+        [string]$DependencyFilePath,
+        [string]$CallingRepositoryRootPath = $null
+    )
+    
     $repoUrl = $Repository.'Repository URL'
     $basePath = $Repository.'Base Path'
-    $newRepositoryTag = $Repository.Tag
-    $apiCompatibleTags = $Repository.'API Compatible Tags'
-    $apiCompatibility = if ($Repository.'API Compatibility') { $Repository.'API Compatibility' } else { $script:DefaultApiCompatibility }
     
-    # Calculate absolute base path using repository root if available
+    # Parse requested version
+    $requestedVersionStr = $Repository.Version
+    if (-not $requestedVersionStr) {
+        throw "Repository '$repoUrl' uses SemVer mode but no 'Version' field specified"
+    }
+    
+    try {
+        # Parse as Major.Minor.Patch
+        if ($requestedVersionStr -match '^(\d+)\.(\d+)\.(\d+)$') {
+            $major = [int]$Matches[1]
+            $minor = [int]$Matches[2]
+            $patch = [int]$Matches[3]
+            
+            # Debug logging to see what we're parsing
+            Write-Log "Parsing version string '$requestedVersionStr': Major=$major, Minor=$minor, Patch=$patch" -Level Debug
+            
+           $requestedVersion = [Version]::new($major, $minor, $patch)
+            
+            Write-Log "Successfully parsed version: $($requestedVersion.ToString())" -Level Debug
+        } else {
+            throw "Version string '$requestedVersionStr' does not match expected format x.y.z"
+        }
+    }
+    catch {
+        # More specific error handling
+        if ($_.Exception.Message -like "*does not match expected format*") {
+            throw "Repository '$repoUrl' has invalid Version format '$requestedVersionStr'. Expected format: x.y.z (e.g., 2.1.0)"
+        } else {
+            # Log the actual error for debugging
+            Write-Log "Error creating Version object: $($_.Exception.Message)" -Level Debug
+            throw "Repository '$repoUrl' failed to parse version '$requestedVersionStr': $($_.Exception.Message)"
+        }
+    }
+    
+    # Get version regex
+    $versionRegex = if ($Repository.PSObject.Properties['Version Regex']) { 
+        $Repository.'Version Regex' 
+    } else { 
+        "^v?(\d+)\.(\d+)\.(\d+)$" 
+    }
+    
+    # Calculate absolute base path
     $absoluteBasePath = Get-AbsoluteBasePath -BasePath $basePath -DependencyFilePath $DependencyFilePath -RepositoryRootPath $CallingRepositoryRootPath
     
+    # Determine calling repository URL for tracking
+    $callerUrl = if ($CallingRepositoryRootPath) {
+        # Find the calling repository URL by matching the path
+        $caller = $script:RepositoryDictionary.GetEnumerator() | 
+            Where-Object { $_.Value.AbsolutePath -eq $CallingRepositoryRootPath } | 
+            Select-Object -First 1
+        if ($caller) { $caller.Key } else { "unknown-caller" }
+    } else {
+        "root-dependency-file"
+    }
+    
     if ($script:RepositoryDictionary.ContainsKey($repoUrl)) {
-        # Repository already exists, check compatibility
-        Write-Log "Repository already exists in dictionary, performing API compatibility check..." -Level Info
+        # Existing repository
+        Write-Log "SemVer repository already exists in dictionary, checking version compatibility..." -Level Info
         
         $existingRepo = $script:RepositoryDictionary[$repoUrl]
         $existingAbsolutePath = $existingRepo.AbsolutePath
@@ -880,251 +1444,85 @@ function Update-RepositoryDictionary {
             throw $errorMessage
         }
         
-        # Get tag dates from the repository dictionary
-        $tagDates = if ($existingRepo.ContainsKey('TagDates')) { $existingRepo.TagDates } else { @{} }
-        
-        # Create ordered tag lists (API Compatible Tags + Tag at the end)
-        $existingOrderedTags = @()
-        if ($existingRepo.ApiCompatibleTags) {
-            $existingOrderedTags += $existingRepo.ApiCompatibleTags
+        # Add new caller's requested version
+        if (-not $existingRepo.ContainsKey('RequestedVersions')) {
+            $existingRepo.RequestedVersions = @{}
         }
-        $existingOrderedTags += $existingRepo.Tag
+        $existingRepo.RequestedVersions[$callerUrl] = $requestedVersion
         
-        $newOrderedTags = @()
-        if ($apiCompatibleTags) {
-            $newOrderedTags += $apiCompatibleTags
-        }
-        $newOrderedTags += $newRepositoryTag
+        Write-Log "Caller '$callerUrl' requests version $(Format-SemVersion $requestedVersion)" -Level Debug
         
-        Write-Log "Existing tags (ordered): $($existingOrderedTags -join ', ')" -Level Debug
-        Write-Log "New tags (ordered): $($newOrderedTags -join ', ')" -Level Debug
-        Write-Log "Existing API Compatibility: $($existingRepo.ApiCompatibility)" -Level Debug
-        Write-Log "New API Compatibility: $apiCompatibility" -Level Debug
+        # Get compatible versions for new request
+        $newCompatible = Get-CompatibleSemVersions -ParsedVersions $existingRepo.ParsedVersions `
+                                                  -RequestedVersion $requestedVersion
         
-        # Calculate intersection for compatibility check (always performed)
-        $intersection = @()
-        foreach ($tag in $existingOrderedTags) {
-            if ($tag -in $newOrderedTags) {
-                $intersection += $tag
-            }
-        }
+        # Intersect with existing compatible versions
+        $intersection = Get-SemVersionIntersection -Set1 $existingRepo.CompatibleVersions `
+                                                  -Set2 $newCompatible
         
         if ($intersection.Count -eq 0) {
-            $errorMessage = "API incompatibility for repository '$repoUrl':`nExisting tags: $($existingOrderedTags -join ', ')`nNew tags: $($newOrderedTags -join ', ')`nNo common API-compatible tags found."
+            # Build detailed error message
+            $callerDetails = @()
+            foreach ($caller in $existingRepo.RequestedVersions.GetEnumerator()) {
+                $version = Format-SemVersion $caller.Value
+                $compatible = Get-CompatibleSemVersions -ParsedVersions $existingRepo.ParsedVersions `
+                                                       -RequestedVersion $caller.Value
+                $compatibleStr = ($compatible | ForEach-Object { $_.Tag }) -join ', '
+                $callerDetails += "- $($caller.Key) requests: $version (compatible: $compatibleStr)"
+            }
+            
+            $errorMessage = "SemVer conflict for repository '$repoUrl':`n" +
+                           "No version satisfies all requirements:`n" +
+                           ($callerDetails -join "`n")
+            
             Write-Log $errorMessage -Level Error
             Show-ErrorDialog -Message $errorMessage
             throw $errorMessage
         }
         
-        Write-Log "API compatibility check passed for '$repoUrl'. Intersection: $($intersection -join ', ')" -Level Debug
+        # Select lowest version from intersection
+        $selected = $intersection | Sort-Object { $_.Version } | Select-Object -First 1
         
-        # Apply API Compatibility rules
-        $oldTag = $existingRepo.Tag
-        $newTag = $oldTag
-        $newApiCompatibleTags = @()
-        $newApiCompatibility = $existingRepo.ApiCompatibility
-        $needCheckout = $false
-        $finalOrderedTags = @()
+        $oldTag = $existingRepo.SelectedTag
+        $newTag = $selected.Tag
         
-        if ($existingRepo.ApiCompatibility -eq 'Strict') {
-            if ($apiCompatibility -eq 'Strict') {
-                # Both Strict: Use intersection algorithm
-                Write-Log "Both repositories are Strict mode, using intersection algorithm" -Level Debug
-                
-                # Sort intersection using tag dates
-                $finalOrderedTags = Sort-TagsByDate -Tags $intersection -TagDates $tagDates -RepositoryUrl $repoUrl -Context "intersection"
-                Write-Log "Intersection after temporal sorting: $($finalOrderedTags -join ', ')" -Level Debug
-                
-                # Enhanced logic: Check if existing or new Tag are in the compatible list
-                if ($finalOrderedTags.Count -gt 0) {
-                    $existingTagInList = $existingRepo.Tag -in $finalOrderedTags
-                    $newTagInList = $newRepositoryTag -in $finalOrderedTags
-                    
-                    Write-Log "Existing tag '$($existingRepo.Tag)' in compatible list: $existingTagInList" -Level Debug
-                    Write-Log "New tag '$newRepositoryTag' in compatible list: $newTagInList" -Level Debug
-                    
-                    if ($existingTagInList -and $newTagInList) {
-                        # Both tags are compatible, choose the chronologically most recent
-                        $existingTagDate = $tagDates[$existingRepo.Tag]
-                        $newTagDate = $tagDates[$newRepositoryTag]
-                        
-                        if ($newTagDate -gt $existingTagDate) {
-                            $selectedTag = $newRepositoryTag
-                            Write-Log "Selected new tag '$newRepositoryTag' (newer: $($newTagDate.ToString('yyyy-MM-dd HH:mm:ss')) vs $($existingTagDate.ToString('yyyy-MM-dd HH:mm:ss')))" -Level Debug
-                        } else {
-                            $selectedTag = $existingRepo.Tag
-                            Write-Log "Selected existing tag '$($existingRepo.Tag)' (newer: $($existingTagDate.ToString('yyyy-MM-dd HH:mm:ss')) vs $($newTagDate.ToString('yyyy-MM-dd HH:mm:ss')))" -Level Debug
-                        }
-                    } elseif ($existingTagInList) {
-                        # Only existing tag is compatible
-                        $selectedTag = $existingRepo.Tag
-                        Write-Log "Selected existing tag '$($existingRepo.Tag)' (only existing tag is compatible)" -Level Debug
-                    } elseif ($newTagInList) {
-                        # Only new tag is compatible
-                        $selectedTag = $newRepositoryTag
-                        Write-Log "Selected new tag '$newRepositoryTag' (only new tag is compatible)" -Level Debug
-                    } else {
-                        # Neither tag is in the compatible list, choose chronologically most recent from list
-                        $mostRecentTag = $null
-                        $mostRecentDate = [DateTime]::MinValue
-                        
-                        foreach ($compatibleTag in $finalOrderedTags) {
-                            if ($tagDates.ContainsKey($compatibleTag) -and $tagDates[$compatibleTag] -gt $mostRecentDate) {
-                                $mostRecentDate = $tagDates[$compatibleTag]
-                                $mostRecentTag = $compatibleTag
-                            }
-                        }
-                        
-                        $selectedTag = if ($mostRecentTag) { $mostRecentTag } else { $finalOrderedTags[-1] }
-                        Write-Log "Neither existing nor new tag compatible, selected most recent from list: '$selectedTag'" -Level Debug
-                    }
-                    
-                    $newTag = $selectedTag
-                    $newApiCompatibleTags = @($finalOrderedTags | Where-Object { $_ -ne $selectedTag })
-                    
-                    if ($newTag -ne $oldTag) {
-                        $needCheckout = $true
-                        Write-Log "Updating tag from '$oldTag' to '$newTag' for repository '$repoUrl' (intersection result)" -Level Info
-                    } else {
-                        Write-Log "Keeping existing tag '$oldTag' for repository '$repoUrl'" -Level Debug
-                    }
-                }
-            } else {
-                # Existing Strict, new Permissive: Leave unchanged
-                Write-Log "Existing repository is Strict, new is Permissive - leaving tags unchanged" -Level Debug
-                $newTag = $existingRepo.Tag
-                $newApiCompatibleTags = $existingRepo.ApiCompatibleTags
-            }
-        } else {
-            # Existing Permissive
-            if ($apiCompatibility -eq 'Permissive') {
-                # Both Permissive: Use union
-                Write-Log "Both repositories are Permissive mode, using union algorithm" -Level Debug
-                
-                $union = Get-TagUnion -Tags1 $existingOrderedTags -Tags2 $newOrderedTags -TagDates $tagDates -RepositoryUrl $repoUrl
-                Write-Log "Union of tags: $($union -join ', ')" -Level Debug
-                
-                # Enhanced logic: Check if existing or new Tag are in the union
-                if ($union.Count -gt 0) {
-                    $existingTagInList = $existingRepo.Tag -in $union
-                    $newTagInList = $newRepositoryTag -in $union
-                    
-                    Write-Log "Existing tag '$($existingRepo.Tag)' in union: $existingTagInList" -Level Debug
-                    Write-Log "New tag '$newRepositoryTag' in union: $newTagInList" -Level Debug
-                    
-                    if ($existingTagInList -and $newTagInList) {
-                        # Both tags are in union, choose the chronologically most recent
-                        $existingTagDate = $tagDates[$existingRepo.Tag]
-                        $newTagDate = $tagDates[$newRepositoryTag]
-                        
-                        if ($newTagDate -gt $existingTagDate) {
-                            $selectedTag = $newRepositoryTag
-                            Write-Log "Selected new tag '$newRepositoryTag' (newer: $($newTagDate.ToString('yyyy-MM-dd HH:mm:ss')) vs $($existingTagDate.ToString('yyyy-MM-dd HH:mm:ss')))" -Level Debug
-                        } else {
-                            $selectedTag = $existingRepo.Tag
-                            Write-Log "Selected existing tag '$($existingRepo.Tag)' (newer: $($existingTagDate.ToString('yyyy-MM-dd HH:mm:ss')) vs $($newTagDate.ToString('yyyy-MM-dd HH:mm:ss')))" -Level Debug
-                        }
-                    } elseif ($existingTagInList) {
-                        # Only existing tag is in union
-                        $selectedTag = $existingRepo.Tag
-                        Write-Log "Selected existing tag '$($existingRepo.Tag)' (only existing tag in union)" -Level Debug
-                    } elseif ($newTagInList) {
-                        # Only new tag is in union
-                        $selectedTag = $newRepositoryTag
-                        Write-Log "Selected new tag '$newRepositoryTag' (only new tag in union)" -Level Debug
-                    } else {
-                        # Neither tag is in union, choose chronologically most recent from union
-                        $mostRecentTag = $null
-                        $mostRecentDate = [DateTime]::MinValue
-                        
-                        foreach ($unionTag in $union) {
-                            if ($tagDates.ContainsKey($unionTag) -and $tagDates[$unionTag] -gt $mostRecentDate) {
-                                $mostRecentDate = $tagDates[$unionTag]
-                                $mostRecentTag = $unionTag
-                            }
-                        }
-                        
-                        $selectedTag = if ($mostRecentTag) { $mostRecentTag } else { $union[-1] }
-                        Write-Log "Neither existing nor new tag in union, selected most recent from union: '$selectedTag'" -Level Debug
-                    }
-                    
-                    $newTag = $selectedTag
-                    $newApiCompatibleTags = @($union | Where-Object { $_ -ne $selectedTag })
-                    
-                    if ($newTag -ne $oldTag) {
-                        $needCheckout = $true
-                        Write-Log "Updating tag from '$oldTag' to '$newTag' for repository '$repoUrl' (union result)" -Level Info
-                    } else {
-                        Write-Log "Keeping existing tag '$oldTag' for repository '$repoUrl' (already optimal)" -Level Debug
-                    }
-                }
-            } else {
-                # Existing Permissive, new Strict: Copy from new and set to Strict
-                Write-Log "Existing repository is Permissive, new is Strict - adopting Strict mode" -Level Debug
-                
-                # When switching to Strict mode, use the new repository's settings
-                $newTag = $newRepositoryTag
-                $newApiCompatibleTags = $apiCompatibleTags
-                $newApiCompatibility = 'Strict'
-                Write-Log "Adopting Strict mode with new tag: '$newRepositoryTag'" -Level Debug
-                
-                if ($newTag -ne $oldTag) {
-                    $needCheckout = $true
-                    Write-Log "Updating tag from '$oldTag' to '$newTag' for repository '$repoUrl' (switching to Strict mode)" -Level Info
-                }
-            }
-        }
+        Write-Log "SemVer resolution: Selected version $(Format-SemVersion $selected.Version) (tag: $newTag)" -Level Info
         
-        # Update dictionary (preserve existing custom dependency file settings)
-        $existingDependencyFilePath = if ($existingRepo.ContainsKey('DependencyFilePath')) { $existingRepo.DependencyFilePath } else { $null }
-        $existingDependencyFileName = if ($existingRepo.ContainsKey('DependencyFileName')) { $existingRepo.DependencyFileName } else { $null }
+        # Update repository state
+        $existingRepo.CompatibleVersions = $intersection
+        $existingRepo.SelectedVersion = $selected.Version
+        $existingRepo.SelectedTag = $selected.Tag
         
-        $script:RepositoryDictionary[$repoUrl] = @{
-            AbsolutePath = $existingAbsolutePath
-            Tag = $newTag
-            ApiCompatibleTags = $newApiCompatibleTags
-            ApiCompatibility = $newApiCompatibility
-            AlreadyCheckedOut = $true
-            NeedCheckout = $needCheckout
-            CheckoutFailed = $false
-            TagDates = $tagDates  # Preserve existing tag dates
-            DependencyFilePath = $existingDependencyFilePath  # Preserve original settings
-            DependencyFileName = $existingDependencyFileName  # Preserve original settings
-        }
-        
-        Write-Log "Updated repository '$repoUrl' - Tag: $newTag, API Compatible Tags: $($newApiCompatibleTags -join ', '), API Compatibility: $newApiCompatibility" -Level Debug
-        
-        # Return special value to indicate need for checkout
-        if ($needCheckout) {
+        # Check if we need to checkout a different version
+        if ($oldTag -ne $newTag) {
+            $existingRepo.NeedCheckout = $true
+            Write-Log "Repository '$repoUrl' needs checkout from tag '$oldTag' to '$newTag'" -Level Info
             return "NeedCheckout"
         } else {
-            return $true  # Repository already checked out with correct tag
+            Write-Log "Repository '$repoUrl' already at correct tag '$oldTag'" -Level Debug
+            return $true
         }
-    } else {
-        # New repository, add to dictionary
-        $customDependencyFilePath = $Repository.'Dependency File Path'
-        $customDependencyFileName = $Repository.'Dependency File Name'
         
+    } else {
+        # New repository
+        Write-Log "First discovery of SemVer repository: $repoUrl" -Level Info
+        Write-Log "Requested version: $(Format-SemVersion $requestedVersion)" -Level Debug
+        
+        # For new repositories, we need to mark that versions need to be parsed after clone
         $script:RepositoryDictionary[$repoUrl] = @{
             AbsolutePath = $absoluteBasePath
-            Tag = $newRepositoryTag
-            ApiCompatibleTags = $apiCompatibleTags  # Store as-is from JSON
-            ApiCompatibility = $apiCompatibility
+            DependencyResolution = "SemVer"
+            VersionRegex = $versionRegex
+            RequestedVersions = @{ $callerUrl = $requestedVersion }
+            NeedVersionParsing = $true  # Flag to parse versions after clone
             AlreadyCheckedOut = $false
             NeedCheckout = $false
             CheckoutFailed = $false
-            TagDates = @{}  # Will be populated after checkout
-            DependencyFilePath = $customDependencyFilePath  # Store custom settings (only for this repo)
-            DependencyFileName = $customDependencyFileName   # Store custom settings (only for this repo)
+            DependencyFilePath = $Repository.'Dependency File Path'
+            DependencyFileName = $Repository.'Dependency File Name'
         }
         
-        Write-Log "Added new repository to dictionary: '$repoUrl' with API Compatibility: $apiCompatibility" -Level Debug
-        if (-not [string]::IsNullOrWhiteSpace($customDependencyFilePath)) {
-            Write-Log "Repository '$repoUrl' configured with custom dependency file path: $customDependencyFilePath" -Level Debug
-        }
-        if (-not [string]::IsNullOrWhiteSpace($customDependencyFileName)) {
-            Write-Log "Repository '$repoUrl' configured with custom dependency file name: $customDependencyFileName" -Level Debug
-        }
+        Write-Log "Added new SemVer repository to dictionary: '$repoUrl'" -Level Debug
         
         return $false  # Repository needs to be checked out
     }
@@ -1156,6 +1554,11 @@ function Invoke-GitCheckout {
             $repoInfo = $script:RepositoryDictionary[$repoUrl]
             $newTag = $repoInfo.Tag
             $absoluteBasePath = $repoInfo.AbsolutePath
+            
+            # For SemVer repositories, use SelectedTag
+            if ($repoInfo.ContainsKey('DependencyResolution') -and $repoInfo.DependencyResolution -eq "SemVer") {
+                $newTag = $repoInfo.SelectedTag
+            }
             
             Write-Log "Repository '$repoUrl' already exists but needs checkout to tag: $newTag" -Level Info
             
@@ -1376,6 +1779,76 @@ function Invoke-GitCheckout {
             Pop-Location
         }
         
+        # Handle SemVer version parsing for new repositories
+        if ($script:RecursiveMode -and 
+            $script:RepositoryDictionary.ContainsKey($repoUrl) -and
+            $script:RepositoryDictionary[$repoUrl].ContainsKey('NeedVersionParsing') -and
+            $script:RepositoryDictionary[$repoUrl].NeedVersionParsing) {
+            
+            Write-Log "Parsing SemVer versions for newly cloned repository" -Level Info
+            
+            Push-Location $absoluteBasePath
+            try {
+                $repoDict = $script:RepositoryDictionary[$repoUrl]
+                
+                # Parse all versions from tags
+                $parseResult = Parse-RepositoryVersions -RepoPath $absoluteBasePath `
+                                                       -VersionRegex $repoDict.VersionRegex
+                
+                $repoDict.ParsedVersions = $parseResult.ParsedVersions
+                $repoDict.CompiledRegex = $parseResult.CompiledRegex
+                
+                # Get all requested versions and find compatible ones
+                $allCompatible = $null
+                foreach ($request in $repoDict.RequestedVersions.GetEnumerator()) {
+                    $compatible = Get-CompatibleSemVersions -ParsedVersions $repoDict.ParsedVersions `
+                                                           -RequestedVersion $request.Value
+                    
+                    if ($null -eq $allCompatible) {
+                        $allCompatible = $compatible
+                    } else {
+                        # Intersect with previous compatible versions
+                        $allCompatible = Get-SemVersionIntersection -Set1 $allCompatible -Set2 $compatible
+                    }
+                }
+                
+                if ($allCompatible.Count -eq 0) {
+                    throw "No compatible SemVer version found after parsing repository"
+                }
+                
+                # Select lowest version
+                $selected = $allCompatible | Sort-Object { $_.Version } | Select-Object -First 1
+                
+                $repoDict.CompatibleVersions = $allCompatible
+                $repoDict.SelectedVersion = $selected.Version
+                $repoDict.SelectedTag = $selected.Tag
+                $repoDict.Remove('NeedVersionParsing')
+                
+                # Update the tag variable for checkout
+                $tag = $selected.Tag
+                
+                Write-Log "SemVer: Selected version $(Format-SemVersion $selected.Version) (tag: $tag) for checkout" -Level Info
+                
+            }
+            catch {
+                Pop-Location -ErrorAction SilentlyContinue
+                throw "Failed to parse SemVer versions: $_"
+            }
+            Pop-Location
+        }
+        
+        # For SemVer repositories that need checkout to different version
+        if ($script:RecursiveMode -and 
+            $script:RepositoryDictionary.ContainsKey($repoUrl) -and
+            $script:RepositoryDictionary[$repoUrl].ContainsKey('DependencyResolution') -and
+            $script:RepositoryDictionary[$repoUrl].DependencyResolution -eq "SemVer") {
+            
+            # Use the selected tag for SemVer repositories
+            if ($script:RepositoryDictionary[$repoUrl].ContainsKey('SelectedTag')) {
+                $tag = $script:RepositoryDictionary[$repoUrl].SelectedTag
+            }
+        }
+        
         # Checkout tag
         Push-Location $absoluteBasePath
         
@@ -1410,8 +1883,12 @@ function Invoke-GitCheckout {
             }
         }
         
-        # Fetch tag dates for recursive mode
-        if ($script:RecursiveMode) {
+        # Fetch tag dates for recursive mode (only for Agnostic mode)
+        if ($script:RecursiveMode -and 
+            (!$script:RepositoryDictionary.ContainsKey($repoUrl) -or 
+             !$script:RepositoryDictionary[$repoUrl].ContainsKey('DependencyResolution') -or 
+             $script:RepositoryDictionary[$repoUrl].DependencyResolution -ne "SemVer")) {
+            
             Write-Log "Fetching tag dates for repository: $repoUrl" -Level Info
             $tagDates = Get-GitTagDates -RepoPath $absoluteBasePath
             
@@ -1716,52 +2193,83 @@ function Process-DependencyFile {
         $checkedOutRepos = @()
         
         foreach ($repo in $repositories) {
-            $wasNewCheckout = $false
-            $checkoutSucceeded = $false
-            
-            # Track if this repository exists before processing
-            if ($script:RecursiveMode) {
-                $repoUrl = $repo.'Repository URL'
-                $wasNewCheckout = -not $script:RepositoryDictionary.ContainsKey($repoUrl)
+            try {
+                $checkoutSucceeded = $false
+                $existedBefore = $false
                 
-                # Log repository processing status
-                if (-not $wasNewCheckout) {
-                    Write-Log "Processing repository: $repoUrl (already in dictionary)" -Level Info
-                } else {
-                    Write-Log "Processing repository: $repoUrl (new repository)" -Level Info
+                # Track if this repository exists before processing
+                if ($script:RecursiveMode) {
+                    $repoUrl = $repo.'Repository URL'
+                    
+                    # Check if repository was in dictionary BEFORE Update-RepositoryDictionary
+                    # For SemVer repos, they get added to dictionary before actual checkout
+                    $existedBefore = $script:RepositoryDictionary.ContainsKey($repoUrl) -and 
+                                    $script:RepositoryDictionary[$repoUrl].AlreadyCheckedOut
+                    
+                    # Log repository processing status
+                    if ($existedBefore) {
+                        Write-Log "Processing repository: $repoUrl (already in dictionary and checked out)" -Level Info
+                    } else {
+                        Write-Log "Processing repository: $repoUrl (new repository or needs checkout)" -Level Info
+                    }
                 }
-            }
-            
-            # No longer pass post-checkout script parameters to individual repository checkouts
-            if (Invoke-GitCheckout -Repository $repo -DependencyFilePath $DependencyFilePath -CallingRepositoryRootPath $CallingRepositoryRootPath) {
-                $script:SuccessCount++
-                $checkoutSucceeded = $true
                 
-                # Add to checked out repos list for recursive processing
-                if ($script:RecursiveMode -and $Depth -lt $MaxDepth -and $checkoutSucceeded) {
-                    # Only process if this was a new checkout or required a tag update
-                    if ($wasNewCheckout) {
-                        $repoInfo = $script:RepositoryDictionary[$repo.'Repository URL']
-                        # Skip if checkout failed
-                        if (-not $repoInfo.CheckoutFailed) {
-                            $checkedOutRepos += @{
-                                Repository = $repo
-                                AbsolutePath = $repoInfo.AbsolutePath
+                # Use enhanced error context for the actual checkout
+                $repoToAdd = Invoke-WithErrorContext -Context "Processing repository: $($repo.'Repository URL')" -ScriptBlock {
+                    if (Invoke-GitCheckout -Repository $repo -DependencyFilePath $DependencyFilePath -CallingRepositoryRootPath $CallingRepositoryRootPath) {
+                        $script:SuccessCount++
+                        $checkoutSucceeded = $true
+                        
+                        # Add to checked out repos list for recursive processing
+                        if ($script:RecursiveMode -and $Depth -lt $MaxDepth -and $checkoutSucceeded) {
+                            # Determine if this was actually a new checkout or update
+                            $wasActuallyProcessed = -not $existedBefore
+                            
+                            if ($wasActuallyProcessed) {
+                                $repoInfo = $script:RepositoryDictionary[$repo.'Repository URL']
+                                # Skip if checkout failed
+                                if (-not $repoInfo.CheckoutFailed) {
+                                    # Return the repo info to be added to the array
+                                    return @{
+                                        Repository = $repo
+                                        AbsolutePath = $repoInfo.AbsolutePath
+                                    }
+                                }
                             }
                         }
                     }
+                    else {
+                        $script:FailureCount++
+                    }
+                    return $null
+                }
+                
+                # Add the repository if it was returned from the script block
+                if ($null -ne $repoToAdd) {
+                    $checkedOutRepos += $repoToAdd
+                    Write-Log "Adding repository for recursive processing: $($repo.'Repository URL')" -Level Debug
+                    Write-Log "Current checkedOutRepos count: $($checkedOutRepos.Count)" -Level Debug
                 }
             }
-            else {
+            catch {
+                Write-ErrorWithContext -ErrorRecord $_ -AdditionalMessage "Failed processing repository: $($repo.'Repository URL')"
                 $script:FailureCount++
+                # Continue with next repository instead of failing entire file
+                continue
             }
         }
         
-        return $checkedOutRepos
+        # Ensure we return a proper array, not null
+        if ($null -eq $checkedOutRepos) {
+            $checkedOutRepos = @()
+        }
+        
+        Write-Log "Process-DependencyFile returning $($checkedOutRepos.Count) repositories for recursive processing" -Level Debug
+        return ,$checkedOutRepos  # The comma ensures we return an array
     }
     catch {
-        Write-Log "Failed to parse dependency file '$DependencyFilePath': $_" -Level Error
-        return @()
+        Write-ErrorWithContext -ErrorRecord $_ -AdditionalMessage "Failed to parse dependency file: $DependencyFilePath"
+        return ,@()  # Return empty array with comma operator
     }
 }
 
@@ -1889,6 +2397,25 @@ Failed: $($script:FailureCount)
         $summary += "`nDefault API Compatibility: $($script:DefaultApiCompatibility)"
         $summary += "`nTotal Unique Repositories: $($script:RepositoryDictionary.Count)"
         
+        # Count SemVer vs Agnostic repositories
+        $semVerRepos = 0
+        $agnosticRepos = 0
+        foreach ($repo in $script:RepositoryDictionary.Values) {
+            if ($repo.ContainsKey('DependencyResolution')) {
+                if ($repo.DependencyResolution -eq 'SemVer') {
+                    $semVerRepos++
+                } else {
+                    $agnosticRepos++
+                }
+            } else {
+                $agnosticRepos++
+            }
+        }
+        
+        if ($semVerRepos -gt 0) {
+            $summary += "`nDependency Resolution Modes: $agnosticRepos Agnostic, $semVerRepos SemVer"
+        }
+        
         # Show custom dependency file statistics
         $reposWithCustomPath = 0
         $reposWithCustomName = 0
@@ -1921,14 +2448,27 @@ Failed: $($script:FailureCount)
     if ($EnableDebug -and $script:RepositoryDictionary.Count -gt 0) {
         $totalTags = 0
         $reposWithTags = 0
+        $totalSemVerTags = 0
+        $reposWithSemVerTags = 0
+        
         foreach ($repo in $script:RepositoryDictionary.Values) {
             if ($repo.ContainsKey('TagDates') -and $repo.TagDates.Count -gt 0) {
                 $totalTags += $repo.TagDates.Count
                 $reposWithTags++
             }
+            if ($repo.ContainsKey('ParsedVersions') -and $repo.ParsedVersions.Count -gt 0) {
+                $totalSemVerTags += $repo.ParsedVersions.Count
+                $reposWithSemVerTags++
+            }
         }
+        
         $summary += "`nRepositories with Tag Data: $reposWithTags"
         $summary += "`nTotal Tags Processed: $totalTags"
+        
+        if ($reposWithSemVerTags -gt 0) {
+            $summary += "`nRepositories with SemVer Tags: $reposWithSemVerTags"
+            $summary += "`nTotal SemVer Tags Parsed: $totalSemVerTags"
+        }
     }
     
     $summary += "`n========================================"
@@ -1963,6 +2503,12 @@ try {
     } else {
         Write-Log "Post-checkout scripts: DISABLED" -Level Info
     }
+
+    if ($script:ErrorContextEnabled) {
+        Write-Log "Error context: ENABLED - Detailed error information will be shown" -Level Info
+    } else {
+        Write-Log "Error context: DISABLED - Use -EnableErrorContext for detailed error information" -Level Debug
+    }
     
     # Calculate and log script hash in debug mode
     if ($EnableDebug) {
@@ -1996,6 +2542,7 @@ try {
     
     # Store the dependency file name for recursive processing
     $script:DefaultDependencyFileName = Split-Path -Leaf $InputFile
+    Write-Log "Default dependency file name for recursive processing: $($script:DefaultDependencyFileName)" -Level Debug
     
     # Determine credentials file path
     if ([string]::IsNullOrEmpty($CredentialsFile)) {
@@ -2014,14 +2561,54 @@ try {
         exit 1
     }
     
-    # Process the initial dependency file (no calling repository root for top level)
+    # Process the initial dependency file with enhanced error handling
     Write-Log "Starting dependency processing at depth 0" -Level Info
-    $checkedOutRepos = Process-DependencyFile -DependencyFilePath $InputFile -Depth 0
+    
+    $checkedOutRepos = Invoke-WithErrorContext -Context "Processing root dependency file" -ScriptBlock {
+        Process-DependencyFile -DependencyFilePath $InputFile -Depth 0
+    }
+
+    # Handle null return
+    if ($null -eq $checkedOutRepos) {
+        Write-Log "WARNING: Process-DependencyFile returned null, initializing as empty array" -Level Warning
+        $checkedOutRepos = @()
+    } else {
+        Write-Log "Process-DependencyFile returned type: $($checkedOutRepos.GetType().FullName)" -Level Debug
+    }
+    if ($null -eq $checkedOutRepos) {
+        Write-Log "WARNING: checkedOutRepos is null!" -Level Warning
+        $checkedOutRepos = @()
+    }
+    
     Write-Log "Completed depth 0 processing: 1 dependency file processed, $($checkedOutRepos.Count) repositories checked out" -Level Info
     
+    # Additional debug information
+    if ($EnableDebug) {
+        Write-Log "Detailed checkedOutRepos information:" -Level Debug
+        Write-Log "  Count: $($checkedOutRepos.Count)" -Level Debug
+        Write-Log "  IsArray: $($checkedOutRepos -is [Array])" -Level Debug
+        if ($checkedOutRepos.Count -gt 0) {
+            Write-Log "  Repository details:" -Level Debug
+            foreach ($repo in $checkedOutRepos) {
+                Write-Log "    - Repository: $($repo.Repository.'Repository URL'), Path: $($repo.AbsolutePath)" -Level Debug
+            }
+        }
+    }
+    
     # If recursive mode is enabled, process nested dependencies
+    Write-Log "Checking recursive processing conditions - RecursiveMode: $($script:RecursiveMode), CheckedOutRepos.Count: $($checkedOutRepos.Count)" -Level Debug
+    
     if ($script:RecursiveMode -and $checkedOutRepos.Count -gt 0) {
-        Process-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DefaultDependencyFileName $script:DefaultDependencyFileName -CurrentDepth 0
+        Write-Log "Entering recursive processing with $($checkedOutRepos.Count) repositories" -Level Info
+        Invoke-WithErrorContext -Context "Processing recursive dependencies" -ScriptBlock {
+            Process-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DefaultDependencyFileName $script:DefaultDependencyFileName -CurrentDepth 0
+        }
+    } else {
+        if (-not $script:RecursiveMode) {
+            Write-Log "Recursive processing skipped - recursive mode is disabled" -Level Info
+        } elseif ($checkedOutRepos.Count -eq 0) {
+            Write-Log "Recursive processing skipped - no new repositories were checked out at depth 0" -Level Info
+        }
     }
     
     # Show summary
@@ -2036,8 +2623,7 @@ try {
     }
 }
 catch {
-    $errorMessage = "Unexpected error: $_"
-    Write-Log $errorMessage -Level Error
-    Show-ErrorDialog -Message $errorMessage
+    Write-ErrorWithContext -ErrorRecord $_ -AdditionalMessage "Unexpected error in main execution"
+    Show-ErrorDialog -Message $_.Exception.Message
     exit 1
 }
