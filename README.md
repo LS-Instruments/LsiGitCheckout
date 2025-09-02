@@ -1,6 +1,6 @@
 # LsiGitCheckout
 
-A PowerShell script for managing multiple Git repositories with support for tags, SSH authentication via PuTTY, Git LFS, and submodules. Features advanced recursive dependency resolution with API compatibility checking, Semantic Versioning (SemVer) support, flexible compatibility modes, intelligent automatic tag temporal sorting, custom dependency file configurations, and post-checkout PowerShell script execution for integration with external dependency management systems.
+A PowerShell script for managing multiple Git repositories with support for tags, SSH authentication via PuTTY, Git LFS, and submodules. Features advanced recursive dependency resolution with API compatibility checking, Semantic Versioning (SemVer) support with floating versions, flexible compatibility modes, intelligent automatic tag temporal sorting, custom dependency file configurations, and post-checkout PowerShell script execution for integration with external dependency management systems.
 
 ## Table of Contents
 
@@ -35,6 +35,7 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - **Dry Run Mode**: Preview operations without making changes
 - **Recursive Dependencies**: Discover and process nested repository dependencies with API compatibility checking
 - **Dependency Resolution Modes**: Choose between Agnostic (tag-based) and SemVer (Semantic Versioning) resolution
+- **Floating Versions**: Support for SemVer floating version patterns (x.y.*, x.*) for automatic latest version selection
 - **Flexible Compatibility Modes**: Choose between Strict and Permissive API compatibility modes
 - **Intelligent Tag Temporal Sorting**: Always-on automatic chronological tag ordering using actual git tag dates with optimized performance
 - **Custom Dependency Files**: Per-repository custom dependency file paths and names with proper isolation
@@ -161,7 +162,7 @@ Contains repository configurations without any credential information:
 - **API Compatible Tags** (optional, Agnostic mode): List of API-compatible tags (can be in any order - automatic chronological sorting)
 - **API Compatibility** (optional): "Strict" or "Permissive" (defaults to script parameter when absent)
 - **Dependency Resolution** (optional): "Agnostic" (default) or "SemVer" - see [Dependency Resolution Modes](#dependency-resolution-modes)
-- **Version** (required for SemVer mode): Semantic version requirement (e.g., "2.1.0")
+- **Version** (required for SemVer mode): Semantic version requirement (e.g., "2.1.0", "2.1.*", "2.*")
 - **Version Regex** (optional, SemVer mode): Custom regex pattern for version extraction from tags
 - **Skip LFS** (optional): Skip Git LFS downloads for this repository and all submodules
 - **Dependency File Path** (optional): Custom subdirectory within repository for dependency file
@@ -289,7 +290,7 @@ At this point, the script must determine:
 LsiGitCheckout provides two powerful approaches to solve this challenge:
 
 1. **Agnostic Mode**: Uses explicit "API Compatible Tags" lists with intelligent intersection/union algorithms
-2. **SemVer Mode**: Automatically resolves compatible versions based on Semantic Versioning 2.0.0 rules
+2. **SemVer Mode**: Automatically resolves compatible versions based on Semantic Versioning 2.0.0 rules with floating version support
 
 Both modes use sophisticated conflict resolution algorithms that consider the compatibility requirements of all callers and select the optimal version that satisfies everyone's needs.
 
@@ -301,7 +302,8 @@ Each mode offers distinct advantages and is suited for different scenarios:
 - **Zero maintenance overhead**: Compatible updates require no configuration changes
 - **Automatic conflict detection**: Clear error messages when version requirements conflict
 - **Immediate availability**: Entire dependency tree benefits from compatible updates as soon as they're released
-- **Simplified configuration**: Only need to specify minimum version requirements
+- **Simplified configuration**: Only need to specify minimum version requirements or floating patterns
+- **Floating versions**: Automatically select latest compatible versions using patterns like `2.1.*` or `2.*`
 - **Industry standard**: Follows well-understood Semantic Versioning 2.0.0 rules
 
 #### Agnostic Mode Advantages  
@@ -315,6 +317,7 @@ Each mode offers distinct advantages and is suited for different scenarios:
 - You want to minimize configuration maintenance overhead
 - Your team understands and follows SemVer 2.0.0 principles
 - You prefer automatic compatibility resolution with clear, predictable rules
+- You want to leverage floating versions for automatic latest version selection
 - You're starting a new project or can enforce semantic versioning discipline
 
 #### When to Choose Agnostic Mode
@@ -353,15 +356,18 @@ The traditional tag-based resolution using exact tags and explicit API Compatibl
 
 ### SemVer Mode
 
-Automatic version resolution based on Semantic Versioning 2.0.0 rules. This mode eliminates the need to maintain explicit compatibility lists by leveraging semantic versioning conventions.
+Automatic version resolution based on Semantic Versioning 2.0.0 rules. This mode eliminates the need to maintain explicit compatibility lists by leveraging semantic versioning conventions and supports floating version patterns for automatic latest version selection.
 
 **Key Features:**
 - Automatic compatibility resolution using SemVer rules
+- Floating version patterns for automatic latest version selection
 - Support for custom version tag patterns
 - Intelligent conflict detection and reporting
-- Lowest compatible version selection for stability
+- Mixed specification mode: floating patterns select highest compatible versions
 
-**Configuration Example:**
+**Configuration Examples:**
+
+#### Lowest Applicable Version (traditional)
 ```json
 {
   "Repository URL": "https://github.com/org/library.git",
@@ -372,7 +378,54 @@ Automatic version resolution based on Semantic Versioning 2.0.0 rules. This mode
 }
 ```
 
+#### Floating Patch Version (new in v7.1.0)
+```json
+{
+  "Repository URL": "https://github.com/org/library.git",
+  "Base Path": "libs/library", 
+  "Dependency Resolution": "SemVer",
+  "Version": "2.1.*"
+}
+```
+
+#### Floating Minor Version (new in v7.1.0)
+```json
+{
+  "Repository URL": "https://github.com/org/library.git",
+  "Base Path": "libs/library",
+  "Dependency Resolution": "SemVer",
+  "Version": "2.*"
+}
+```
+
 ### SemVer Mode Details
+
+#### Version Specification Patterns
+
+SemVer mode supports three version specification patterns:
+
+1. **Lowest Applicable Version (`x.y.z`)**: Select minimum version that satisfies compatibility requirements
+   - Example: `"Version": "2.1.0"` → Compatible: 2.1.0, 2.1.1, 2.2.0 → Selects: 2.1.0
+
+2. **Floating Patch Version (`x.y.*`)**: Select latest patch version within specified major.minor
+   - Example: `"Version": "2.1.*"` → Compatible: 2.1.0, 2.1.1, 2.1.5 → Selects: 2.1.5
+
+3. **Floating Minor Version (`x.*`)**: Select latest minor.patch version within specified major
+   - Example: `"Version": "2.*"` → Compatible: 2.1.0, 2.3.2, 2.5.0 → Selects: 2.5.0
+
+#### Mixed Specification Mode
+
+When multiple repositories declare the same dependency with different specification patterns:
+
+- **If ANY dependency uses floating patterns** → select **highest** compatible version
+- **If ALL dependencies use lowest-applicable** → select **lowest** compatible version
+
+**Example Mixed Mode Scenario:**
+```
+Repository A: "Version": "3.0.0" (lowest-applicable)  
+Repository B: "Version": "3.*" (floating minor)
+Result: System selects highest 3.x.x version that satisfies both requirements
+```
 
 #### Version Compatibility Rules
 
@@ -388,10 +441,6 @@ SemVer mode follows standard Semantic Versioning 2.0.0 rules:
    - Compatible versions must have the same MINOR version
    - PATCH must be >= the requested version
    - Example: Request `0.2.1` → Compatible: `0.2.1`, `0.2.5`, NOT `0.3.0`
-
-#### Version Selection
-
-When multiple compatible versions exist, the script selects the **lowest compatible version** to ensure stability and predictable behavior.
 
 #### Custom Version Tag Formats
 
@@ -412,15 +461,15 @@ If your repositories use non-standard version tag formats, you can specify a cus
 
 If multiple repositories depend on the same library with incompatible version requirements, the script will report a detailed conflict error showing:
 - All repositories requesting the conflicting dependency
-- Their individual version requirements  
+- Their individual version requirements and pattern types
 - The compatible versions for each requirement
 
 **Example conflict:**
 ```
 SemVer conflict for repository 'https://github.com/org/shared-lib.git':
 No version satisfies all requirements:
-- https://github.com/org/app-a.git requests: 2.1.0 (compatible: v2.1.0, v2.1.1, v2.2.0)
-- https://github.com/org/app-b.git requests: 3.0.0 (compatible: v3.0.0, v3.1.0)
+- https://github.com/org/app-a.git requests: 2.1.0 (type: LowestApplicable, compatible: v2.1.0, v2.1.1, v2.2.0)
+- https://github.com/org/app-b.git requests: 3.* (type: FloatingMinor, compatible: v3.0.0, v3.1.0, v3.2.0)
 ```
 
 ### Mixed Mode Support
@@ -440,7 +489,7 @@ You can use both Agnostic and SemVer modes in the same dependency tree. Each rep
     "Repository URL": "https://github.com/org/lib-core.git", 
     "Base Path": "libs/core",
     "Dependency Resolution": "SemVer",
-    "Version": "2.3.0"
+    "Version": "2.3.*"
   },
   {
     "Repository URL": "https://github.com/org/lib-utils.git",
@@ -454,10 +503,12 @@ You can use both Agnostic and SemVer modes in the same dependency tree. Each rep
 ### Best Practices
 
 1. **Choose SemVer mode** when your repositories follow semantic versioning consistently
-2. **Use Agnostic mode** when you need fine-grained control over compatibility or don't follow strict semver
-3. **Mix modes appropriately** - use SemVer for well-versioned libraries and Agnostic for experimental or legacy components
-4. **Test your dependency tree** with `-DryRun` before actual checkouts
-5. **Use consistent version tag formats** across your organization when using SemVer mode
+2. **Use floating versions** (`x.y.*`, `x.*`) when you want automatic latest version selection
+3. **Use lowest-applicable versions** (`x.y.z`) when you need stability and predictable versions
+4. **Use Agnostic mode** when you need fine-grained control over compatibility or don't follow strict semver
+5. **Mix modes appropriately** - use SemVer for well-versioned libraries and Agnostic for experimental or legacy components
+6. **Test your dependency tree** with `-DryRun` before actual checkouts
+7. **Use consistent version tag formats** across your organization when using SemVer mode
 
 ## API Compatibility Modes
 
@@ -818,25 +869,32 @@ Write-Host "Dependency setup completed for $env:LSIGIT_REPOSITORY_PATH"
    - Verify version requirements are compatible
    - Check that version tags follow your specified regex pattern
    - Review conflict details in error messages for resolution guidance
+   - Consider using floating versions (x.y.*, x.*) for more flexible version selection
 
-7. **Tag temporal sorting issues**  
+7. **Floating version pattern errors**
+   - Ensure floating patterns use correct syntax: `x.y.*` or `x.*` 
+   - Verify repository tags match the specified Version Regex pattern
+   - Check that compatible versions exist for floating patterns
+   - Review debug logs for pattern parsing and version selection details
+
+8. **Tag temporal sorting issues**  
    - Verify git tags exist in repositories
    - Check debug logs for tag date fetching errors
    - Ensure repositories are accessible for tag date queries
    - Review verbose output for tag selection decisions
 
-8. **Custom dependency file not found**
+9. **Custom dependency file not found**
    - Verify the custom path and filename are correct
    - Check that the dependency file exists in the specified location
    - Remember that paths are relative to repository root
    - Use debug logging to see resolved paths
 
-9. **Repository path conflicts**
-   - Ensure the same repository isn't referenced with different relative paths
-   - Check that custom dependency file paths don't create conflicting layouts
-   - Verify relative paths resolve correctly from repository roots
+10. **Repository path conflicts**
+    - Ensure the same repository isn't referenced with different relative paths
+    - Check that custom dependency file paths don't create conflicting layouts
+    - Verify relative paths resolve correctly from repository roots
 
-10. **Post-checkout script issues**
+11. **Post-checkout script issues**
     - Verify script file exists at the specified location
     - Ensure script has .ps1 extension
     - Check script execution permissions
@@ -860,6 +918,8 @@ Check the generated debug log file for:
 - Compatibility mode interactions
 - Tag date fetching operations and chronological sorting
 - SemVer version parsing and conflict resolution
+- Version pattern recognition (LowestApplicable, FloatingPatch, FloatingMinor)
+- Mixed specification mode selection logic
 - Custom dependency file path resolution
 - Repository root path usage for relative path resolution
 - Post-checkout script discovery and execution details
@@ -878,8 +938,64 @@ This provides:
 - Line numbers and function names where errors occurred
 - Detailed error context for complex dependency resolution scenarios
 - Enhanced troubleshooting information for SemVer conflicts
+- Floating version pattern parsing and resolution diagnostics
 
 ## Migration Guide
+
+### From Version 7.0.0 to 7.1.0
+
+Version 7.1.0 introduces Floating Versions support for SemVer mode:
+
+#### New Features Available
+- **Floating Patch Versions (`x.y.*`)**: Automatically select latest patch versions
+- **Floating Minor Versions (`x.*`)**: Automatically select latest minor.patch versions  
+- **Mixed Specification Mode**: Intelligent selection between lowest-applicable and highest-compatible based on pattern types
+- **Enhanced logging**: Shows version pattern types and selection reasoning
+
+#### Migration Steps
+1. **Immediate**: All existing v7.0.0 configurations work without changes
+2. **Optional**: Convert appropriate SemVer specifications to floating patterns for automatic latest version selection
+3. **Enhanced workflows**: Leverage floating versions for dependency currency while maintaining stability where needed
+
+#### Floating Version Examples
+
+**Before (Lowest Applicable):**
+```json
+{
+  "Repository URL": "https://github.com/org/library.git",
+  "Dependency Resolution": "SemVer",
+  "Version": "2.1.0"
+}
+```
+
+**After (Floating Patch - optional):**
+```json
+{
+  "Repository URL": "https://github.com/org/library.git",
+  "Dependency Resolution": "SemVer",
+  "Version": "2.1.*"
+}
+```
+
+**After (Floating Minor - optional):**
+```json
+{
+  "Repository URL": "https://github.com/org/library.git",
+  "Dependency Resolution": "SemVer",
+  "Version": "2.*"
+}
+```
+
+#### Benefits of Floating Versions
+- **Automatic updates**: Get latest patches/minors without manual configuration changes
+- **Flexible dependency management**: Mix fixed and floating patterns as appropriate
+- **Reduced maintenance**: Less frequent dependency file updates required
+- **Better currency**: Stay up-to-date with compatible improvements
+
+#### Non-Breaking Changes
+- **Zero configuration changes required**: All existing dependency files work without modification
+- **Backward compatibility**: Traditional `x.y.z` patterns remain the default
+- **Gradual adoption**: Convert to floating patterns as appropriate for your stability requirements
 
 ### From Version 6.2.x to 7.0.0
 

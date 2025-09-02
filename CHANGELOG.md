@@ -5,6 +5,39 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.0] - 2025-09-02
+
+### Added
+- Floating versions support for SemVer dependency resolution mode
+- New version pattern `x.y.*` for automatic patch version updates (e.g., `"Version": "2.1.*"`)
+- New version pattern `x.*` for automatic minor and patch version updates (e.g., `"Version": "2.*"`)
+- Mixed specification mode: when any dependency uses floating versions, automatically select highest compatible version
+- `Parse-VersionPattern` function to handle floating version pattern parsing and validation
+- Enhanced `Test-SemVerCompatibility` function to support floating pattern compatibility testing
+- `Select-VersionFromIntersection` function for intelligent version selection based on pattern types
+- `Get-CompatibleVersionsForPattern` function for floating pattern version resolution
+- Comprehensive floating version examples in documentation and migration guide
+
+### Changed
+- SemVer version selection behavior: now selects highest compatible version when floating patterns are present
+- Enhanced error messages to display floating pattern types and detailed compatibility information
+- Updated migration guide with floating version examples for all SemVer scenarios
+- Improved debug logging to show floating pattern types and selection reasoning
+
+### Fixed
+- Version selection now properly handles mixed floating and fixed version requirements
+- SemVer conflict resolution provides clearer error messages with pattern type information
+
+### Deprecated
+- None
+
+### Removed
+- None
+
+### Security
+- None
+
+
 ## [7.0.0] - 2025-01-27
 
 ### Added

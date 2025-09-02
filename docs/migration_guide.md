@@ -1,6 +1,6 @@
 # Migration and Dependency Management Guide
 
-This guide covers advanced scenarios for migrating existing projects to LsiGitCheckout and managing shared dependencies over time. Both Agnostic mode (explicit API Compatible Tags) and SemVer mode (automatic semantic versioning) approaches are covered.
+This guide covers advanced scenarios for migrating existing projects to LsiGitCheckout and managing shared dependencies over time. Both Agnostic mode (explicit API Compatible Tags) and SemVer mode (automatic semantic versioning with floating versions) approaches are covered.
 
 ## Table of Contents
 
@@ -55,7 +55,7 @@ Level 2:     UserInterface (v4.1.3)    BusinessLogic (v4.5.1)
                    │                           │
                    │                    ┌──────┴──────┐
                    │                    │             │
-Level 1:     CommonControls (v3.0.8) ────────┐   DataAccess (v2.2.5)
+Level 1:     CommonControls (v3.0.8) ────────────   DataAccess (v2.2.5)
                    │                         │        │
                    └─────────────────────────┼────────┘
                                              │
@@ -294,10 +294,10 @@ Here's the dependency tree showing both **old tags** (existing) and **new tags**
            │                     ┌─────┴──────┐
            │                     │            │
      CommonControls              │        DataAccess
-    v3.0.8 → v3.1.0 ─────────────┐      v2.2.5 → v2.3.0
-           │                     │            │
-           └─────────────────────┼────────────┘
-                                 │
+    v3.0.8 → v3.1.0 ─────────────┘       v2.2.5 → v2.3.0
+           │                                  │
+           └──────────────────────────────────┘
+                               │
                          DatabaseUtils
                            v1.2.0
                          (unchanged)
@@ -392,22 +392,22 @@ The bottom-up migration approach ensures that your entire dependency tree become
 
 ## Migrating Existing Dependency Trees to LsiGitCheckout (SemVer Mode)
 
-The migration process for SemVer mode follows the same bottom-up approach as Agnostic mode, but leverages Semantic Versioning 2.0.0 rules for automatic compatibility resolution instead of explicit API Compatible Tags lists.
+The migration process for SemVer mode follows the same bottom-up approach as Agnostic mode, but leverages Semantic Versioning 2.0.0 rules with floating version specifications for automatic compatibility resolution instead of explicit API Compatible Tags lists.
 
-### SemVer Migration Strategy: Bottom-Up Approach
+### SemVer Migration Strategy: Bottom-Up Approach with Floating Versions
 
-The key principle remains the same: **start from the penultimate level** and work your way up to the root project. However, with SemVer mode, you don't need to maintain explicit API Compatible Tags - the script automatically determines compatibility based on semantic versioning rules.
+The key principle remains the same: **start from the penultimate level** and work your way up to the root project. However, with SemVer mode using floating versions, you don't need to maintain explicit API Compatible Tags - the script automatically determines and uses compatible versions based on semantic versioning rules and floating version specifications.
 
-#### Basic SemVer Concept
+#### Basic SemVer Concept with Floating Versions
 
 1. **Identify Dependency Levels**: Map out your dependency tree (same as Agnostic mode)
 2. **Prepare Leaf Dependencies**: Ensure leaf repositories have appropriate semantic version tags
 3. **Start at Penultimate Level**: Begin with repositories that depend directly on leaf nodes
-4. **Add SemVer Dependencies Files**: For each level, add `dependencies.json` files with SemVer configuration
+4. **Add SemVer Dependencies Files with Floating Versions**: For each level, add `dependencies.json` files with SemVer configuration using floating version specifications
 5. **Tag with Semantic Versions**: Create semantic version tags for each level
 6. **Work Upward**: Repeat until you reach your root project
 
-#### The SemVer Migration Process
+#### The SemVer Migration Process with Floating Versions
 
 ```
 Level 3 (Root):     ProjectMain
@@ -421,9 +421,9 @@ Level 0 (Leaf):    BaseFoundation
 
 **Migration Order**: Same as Agnostic mode - ensure Level 0 has semantic version tags, then start with Level 1.
 
-### Practical SemVer Example
+### Practical SemVer Example with Floating Versions
 
-Let's walk through migrating the same dependency tree using SemVer mode. This assumes the same starting state as the Agnostic example.
+Let's walk through migrating the same dependency tree using SemVer mode with floating versions. This assumes the same starting state as the Agnostic example.
 
 #### Current Dependency Tree and Semantic Versions
 
@@ -436,7 +436,7 @@ Level 2:     UserInterface (v4.1.3)    BusinessLogic (v4.5.1)
                    │                           │
                    │                    ┌──────┴──────┐
                    │                    │             │
-Level 1:     CommonControls (v3.0.8) ────────┐   DataAccess (v2.2.5)
+Level 1:     CommonControls (v3.0.8) ────────────   DataAccess (v2.2.5)
                    │                         │        │
                    └─────────────────────────┼────────┘
                                              │
@@ -448,7 +448,7 @@ Level 0 (Leaf):                     DatabaseUtils (v1.2.0)
 
 The directory structure remains identical to the Agnostic mode example.
 
-#### SemVer Migration Target: New Semantic Versions
+#### SemVer Migration Target: New Semantic Versions with Floating Version Requirements
 
 The migration process will create new semantic version tags for each repository (except leaf dependencies):
 
@@ -469,14 +469,14 @@ git tag --list  # Verify v1.2.0 exists and follows semantic versioning
 # No changes needed for leaf dependencies
 ```
 
-#### Step 2: Configure Penultimate Level Dependencies (Level 1) - SemVer Mode
+#### Step 2: Configure Penultimate Level Dependencies (Level 1) - SemVer Mode with Floating Versions
 
-Now we start adding `dependencies.json` files with SemVer configuration, beginning with repositories that depend directly on leaf nodes.
+Now we start adding `dependencies.json` files with SemVer configuration using floating versions, beginning with repositories that depend directly on leaf nodes.
 
-**Important Note About SemVer Migration:**
-During SemVer migration, we specify exact version requirements using the "Version" field. The script will automatically find compatible versions based on SemVer rules, eliminating the need for explicit API Compatible Tags.
+**Important Note About SemVer Migration with Floating Versions:**
+During SemVer migration, we specify floating version requirements using the "Version" field with floating version syntax. This allows automatic updates for compatible versions while maintaining version boundaries.
 
-##### Configure DataAccess (SemVer Mode)
+##### Configure DataAccess (SemVer Mode with Floating Versions)
 
 **Current tag**: `v2.2.5` → **New tag**: `v2.3.0` (minor version bump for adding dependencies)
 
@@ -484,27 +484,29 @@ During SemVer migration, we specify exact version requirements using the "Versio
 Set-Location DataAccess
 ```
 
-Create `dependencies.json` with SemVer configuration:
+Create `dependencies.json` with SemVer floating version configuration:
 ```json
 [
   {
     "Repository URL": "https://github.com/yourorg/DatabaseUtils.git",
     "Base Path": "../shared/database-utils",
     "Dependency Resolution": "SemVer",
-    "Version": "1.2.0"
+    "Version": "1.2.*"
   }
 ]
 ```
 
+**Note**: `1.2.*` allows automatic updates to `v1.2.1`, `v1.2.2`, etc., but not `v1.3.0` or `v2.0.0`
+
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout SemVer dependencies configuration"
+git commit -m "Add LsiGitCheckout SemVer dependencies configuration with floating versions"
 git tag v2.3.0  # Minor version bump, compatible with v2.2.5
 git push origin v2.3.0
 ```
 
-##### Configure CommonControls (SemVer Mode)
+##### Configure CommonControls (SemVer Mode with Floating Versions)
 
 **Current tag**: `v3.0.8` → **New tag**: `v3.1.0` (minor version bump for adding dependencies)
 
@@ -512,29 +514,31 @@ git push origin v2.3.0
 Set-Location ..\CommonControls
 ```
 
-Create `dependencies.json` with SemVer configuration:
+Create `dependencies.json` with SemVer floating version configuration:
 ```json
 [
   {
     "Repository URL": "https://github.com/yourorg/DatabaseUtils.git",
     "Base Path": "../shared/database-utils",
     "Dependency Resolution": "SemVer",
-    "Version": "1.2.0"
+    "Version": "1.2.*"
   }
 ]
 ```
 
+**Note**: Both DataAccess and CommonControls use the same floating version requirement, ensuring consistent dependency resolution.
+
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout SemVer dependencies configuration"
+git commit -m "Add LsiGitCheckout SemVer dependencies configuration with floating versions"
 git tag v3.1.0  # Minor version bump, compatible with v3.0.8
 git push origin v3.1.0
 ```
 
-#### Step 3: Configure Level 2 Dependencies (SemVer Mode)
+#### Step 3: Configure Level 2 Dependencies (SemVer Mode with Floating Versions)
 
-##### Configure UserInterface (SemVer Mode)
+##### Configure UserInterface (SemVer Mode with Floating Versions)
 
 **Current tag**: `v4.1.3` → **New tag**: `v4.2.0` (minor version bump for adding dependencies)
 
@@ -542,27 +546,29 @@ git push origin v3.1.0
 Set-Location ..\UserInterface
 ```
 
-Create `dependencies.json` with SemVer configuration:
+Create `dependencies.json` with SemVer floating version configuration:
 ```json
 [
   {
     "Repository URL": "https://github.com/yourorg/CommonControls.git",
     "Base Path": "../shared/common-controls",
     "Dependency Resolution": "SemVer",
-    "Version": "3.1.0"
+    "Version": "3.*"
   }
 ]
 ```
 
+**Note**: `3.*` allows automatic updates to `v3.1.1`, `v3.2.0`, `v3.9.0`, but not `v4.0.0`
+
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout SemVer dependencies configuration"
+git commit -m "Add LsiGitCheckout SemVer dependencies configuration with floating versions"
 git tag v4.2.0  # Minor version bump, compatible with v4.1.3
 git push origin v4.2.0
 ```
 
-##### Configure BusinessLogic (SemVer Mode)
+##### Configure BusinessLogic (SemVer Mode with Floating Versions)
 
 **Current tag**: `v4.5.1` → **New tag**: `v4.6.0` (minor version bump)
 
@@ -570,33 +576,35 @@ git push origin v4.2.0
 Set-Location ..\BusinessLogic
 ```
 
-Create `dependencies.json` with SemVer configuration:
+Create `dependencies.json` with SemVer floating version configuration:
 ```json
 [
   {
     "Repository URL": "https://github.com/yourorg/DataAccess.git",
     "Base Path": "libs/data-access",
     "Dependency Resolution": "SemVer",
-    "Version": "2.3.0"
+    "Version": "2.*"
   },
   {
     "Repository URL": "https://github.com/yourorg/CommonControls.git",
     "Base Path": "../shared/common-controls",
     "Dependency Resolution": "SemVer",
-    "Version": "3.1.0"
+    "Version": "3.*"
   }
 ]
 ```
 
+**Note**: Both dependencies use floating ranges allowing automatic minor and patch updates.
+
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout SemVer dependencies configuration"
+git commit -m "Add LsiGitCheckout SemVer dependencies configuration with floating versions"
 git tag v4.6.0  # Minor version bump - API compatible with v4.5.1
 git push origin v4.6.0
 ```
 
-#### Step 4: Configure Root Project (MyApplication) - SemVer Mode
+#### Step 4: Configure Root Project (MyApplication) - SemVer Mode with Floating Versions
 
 **Current tag**: `v0.9.2` → **New tag**: `v1.0.0` (major version bump for significant migration to LsiGitCheckout)
 
@@ -604,71 +612,78 @@ git push origin v4.6.0
 Set-Location ..\MyApplication
 ```
 
-Create `dependencies.json` with SemVer configuration:
+Create `dependencies.json` with SemVer floating version configuration:
 ```json
 [
   {
     "Repository URL": "https://github.com/yourorg/UserInterface.git",
     "Base Path": "modules/user-interface",
     "Dependency Resolution": "SemVer",
-    "Version": "4.2.0"
+    "Version": "4.*"
   },
   {
     "Repository URL": "https://github.com/yourorg/BusinessLogic.git", 
     "Base Path": "modules/business-logic",
     "Dependency Resolution": "SemVer",
-    "Version": "4.6.0"
+    "Version": "4.*"
   }
 ]
 ```
 
+**Note**: Both dependencies use floating ranges for automatic compatible updates throughout the dependency tree.
+
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout SemVer dependencies configuration - Major migration to semantic dependency management"
+git commit -m "Add LsiGitCheckout SemVer dependencies configuration with floating versions - Major migration to semantic dependency management"
 git tag v1.0.0  # Major version for significant architectural change
 git push origin v1.0.0
 ```
 
-### Updated SemVer Dependency Tree After Migration
+### Updated SemVer Dependency Tree After Migration with Floating Versions
 
-Here's the dependency tree showing both **old tags** (existing) and **new SemVer tags** (with LsiGitCheckout SemVer support):
+Here's the dependency tree showing both **old tags** (existing) and **new SemVer tags** (with LsiGitCheckout SemVer floating version support):
 
 ```
                     MyApplication
-                   v0.9.2 → v1.0.0
+                   v0.9.2 → v1.0.0 (4.*, 4.*)
                          │
            ┌─────────────┴─────────────┐
            │                           │
      UserInterface              BusinessLogic
-    v4.1.3 → v4.2.0            v4.5.1 → v4.6.0
+    v4.1.3 → v4.2.0 (3.*)        v4.5.1 → v4.6.0 (2.*, 3.*)
            │                           │
            │                     ┌─────┴──────┐
            │                     │            │
      CommonControls              │        DataAccess
-    v3.0.8 → v3.1.0 ─────────────┐      v2.2.5 → v2.3.0
-           │                     │            │
-           └─────────────────────┼────────────┘
+    v3.0.8 → v3.1.0 (1.2.*) ─────┘       v2.2.5 → v2.3.0 (1.2.*)
+           │                                  │
+           └──────────────────────────────────┘
                                  │
                          DatabaseUtils
                            v1.2.0
                          (unchanged)
 ```
 
-### Step 5: Test Your SemVer Migration
+**Legend for Floating Versions:**
+- `1.2.*`: Accepts v1.2.x (patch updates only)
+- `3.*`: Accepts v3.x.x but not v4.0.0+ (minor and patch updates)
+- `4.*`: Accepts v4.x.x but not v5.0.0+ (minor and patch updates)
 
-Test that the SemVer migration worked correctly:
+### Step 5: Test Your SemVer Migration with Floating Versions
+
+Test that the SemVer migration with floating versions worked correctly:
 
 ```powershell
 # Navigate to a clean workspace
-Set-Location C:\workspace\test-semver-migration
-New-Item -ItemType Directory -Name "test-semver-migration" -Force
-Set-Location test-semver-migration
+Set-Location C:\workspace\test-semver-floating-migration
+New-Item -ItemType Directory -Name "test-semver-floating-migration" -Force
+Set-Location test-semver-floating-migration
 
 # Clone and run LsiGitCheckout on your root project
 git clone https://github.com/yourorg/MyApplication.git
 Set-Location MyApplication
-git checkout v1.0.0  # Use the new tag with LsiGitCheckout SemVer support
+git checkout v1.0.0  # Use the new tag with LsiGitCheckout SemVer floating version support
 
 # Run LsiGitCheckout (assumes script is in PATH or current directory)
 .\LsiGitCheckout.ps1
@@ -678,7 +693,7 @@ Get-ChildItem modules\      # Should show user-interface and business-logic
 Get-ChildItem shared\       # Should show database-utils and common-controls (shared dependencies)
 Get-ChildItem modules\business-logic\libs\    # Should show only data-access
 
-# Verify the correct tags were checked out (same as Agnostic mode)
+# Verify the correct tags were checked out (should use the specified versions from floating ranges)
 Set-Location modules\user-interface
 git describe --tags  # Should show v4.2.0
 Set-Location ..\business-logic  
@@ -691,91 +706,88 @@ Set-Location ..\database-utils
 git describe --tags  # Should show v1.2.0 (single shared location)
 ```
 
-### Key SemVer Migration Tips
+### Key SemVer Migration Tips with Floating Versions
 
-#### Advantages of SemVer Migration
+#### Advantages of SemVer Migration with Floating Versions
 
-1. **No API Compatible Tags Maintenance**: The script automatically determines compatible versions using SemVer rules
-2. **Automatic Conflict Resolution**: When conflicts occur, you get detailed error messages showing exactly which versions are compatible
-3. **Simplified Future Updates**: Adding new compatible versions requires only updating the "Version" field, not maintaining arrays
-4. **Clear Compatibility Rules**: SemVer 2.0.0 rules provide consistent, predictable compatibility behavior
+1. **No API Compatible Tags Maintenance**: The script automatically determines compatible versions using SemVer rules and floating version ranges
+2. **Automatic Dependency Updates**: When new compatible versions are released, they are automatically used on the next LsiGitCheckout run
+3. **Simplified Future Updates**: Adding new compatible versions requires no configuration changes
+4. **Clear Compatibility Rules**: SemVer 2.0.0 rules with floating version syntax provide consistent, predictable compatibility behavior
+5. **True Set-and-Forget**: Once configured, the dependency tree automatically stays up-to-date with compatible releases
 
-#### SemVer Version Requirements During Migration
+#### Floating Version Requirements During Migration
 
-When filling out the "Version" field **after migration**:
+When filling out the "Version" field with floating versions **after migration**:
 
-1. **Specify Minimum Requirements**: Set the minimum version that includes required features/fixes
-2. **Follow SemVer Rules**: Understand that the script will accept any compatible version >= your requirement
-3. **Consider Major Version Boundaries**: Be careful with major version requirements as they may cause conflicts
-4. **Test Compatibility**: Verify that your code works with the version range that SemVer rules will allow
+1. **Choose Appropriate Ranges**: Select the floating version pattern that matches your compatibility needs:
+   - `1.2.*` - Accept patch updates only (1.2.x)
+   - `1.*` - Accept minor and patch updates (1.x.x, but not 2.0.0)
+2. **Consider Stability vs Freshness**: Tighter ranges (patch-level) provide more stability, wider ranges (minor-level) provide fresher updates
+3. **Test Compatibility Ranges**: Verify that your code works with the version range that your floating specification will allow
+4. **Align Team Practices**: Ensure your team understands the floating version patterns being used
 
-**Example for future SemVer updates**:
+**Example floating version strategies**:
 ```powershell
-Set-Location SomeLibrary
-git tag --list | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+$"  # List semantic version tags
-# If you need features from v2.4.0, set "Version": "2.4.0"
-# The script will automatically accept v2.4.0, v2.4.1, v2.5.0, etc. but not v3.0.0
+# Conservative: patch updates only
+"Version": "2.4.*"  # Accepts 2.4.0, 2.4.1, 2.4.2, but not 2.5.0
+
+# Balanced: minor and patch updates  
+"Version": "2.*"  # Accepts 2.4.0, 2.5.0, 2.9.0, but not 3.0.0
+
+# Fixed version: specific version only
+"Version": "2.4.1"  # Accepts only 2.4.1 (lowest applicable mode)
 ```
 
-#### Handling Version Tag Formats
+#### Validation for SemVer Migration with Floating Versions
 
-If your repositories use non-standard version tag formats, specify a custom regex:
-
-```json
-{
-  "Repository URL": "https://github.com/yourorg/CustomLib.git",
-  "Base Path": "libs/custom",
-  "Dependency Resolution": "SemVer",
-  "Version": "1.5.0",
-  "Version Regex": "^release-(\\d+)\\.(\\d+)\\.(\\d+)$"
-}
-```
-
-#### Validation for SemVer Migration
-
-After completing SemVer migration:
+After completing SemVer migration with floating versions:
 1. **Test recursive cloning** from a clean workspace
-2. **Verify SemVer conflict resolution** by temporarily creating incompatible version requirements
-3. **Validate version selection** - confirm the script selects the lowest compatible version
-4. **Test future version updates** by adding new compatible tags and verifying automatic resolution
+2. **Verify floating version resolution** by creating new compatible versions and confirming automatic resolution
+3. **Test version conflict scenarios** to understand error reporting
+4. **Validate automatic updates** by releasing new patch/minor versions and confirming they are automatically used
+5. **Monitor dependency freshness** to ensure floating versions are working as expected
 
 ### SemVer vs Agnostic Migration Comparison
 
-| Aspect | Agnostic Mode | SemVer Mode |
-|--------|---------------|-------------|
-| **Configuration Complexity** | Higher (explicit API Compatible Tags) | Lower (just Version field) |
-| **Maintenance Overhead** | Manual tag list maintenance | Automatic compatibility resolution |
-| **Flexibility** | Maximum control over compatibility | Follows strict SemVer rules |
+| Aspect | Agnostic Mode | SemVer Mode (Floating Versions) |
+|--------|---------------|--------------------------------|
+| **Configuration Complexity** | Higher (explicit API Compatible Tags) | Lower (floating version patterns) |
+| **Maintenance Overhead** | Manual tag list maintenance | Zero maintenance for compatible updates |
+| **Flexibility** | Maximum control over compatibility | Follows SemVer rules with floating ranges |
 | **Version Requirements** | Must follow semantic versioning strictly | More flexible with version formats |
-| **Conflict Resolution** | Intersection/Union algorithms | SemVer compatibility rules |
-| **Future Updates** | Manual API Compatible Tags updates | Automatic based on version requirements |
+| **Automatic Updates** | Manual updates required | Automatic for compatible versions |
+| **Future Updates** | Manual API Compatible Tags updates | Automatic based on floating version ranges |
 
 ### When to Choose Each Mode
 
-**Choose SemVer Mode When:**
+**Choose SemVer Mode with Floating Versions When:**
 - Your repositories follow semantic versioning consistently
-- You want to reduce maintenance overhead
-- You prefer automatic compatibility resolution
-- Your team understands SemVer rules well
+- You want zero maintenance overhead for compatible updates
+- You prefer automatic dependency resolution and updates
+- Your team understands SemVer rules and floating version patterns well
+- You want true "set-and-forget" dependency management
 
 **Choose Agnostic Mode When:**
-- You need fine-grained control over compatibility
+- You need fine-grained control over every version compatibility decision
 - Your repositories don't follow strict semantic versioning
-- You have complex compatibility relationships
+- You have complex compatibility relationships that don't fit SemVer rules
 - You're migrating legacy systems with non-standard versioning
+- You prefer explicit control over when dependency updates occur
 
-### Next Steps for SemVer Migration
+### Next Steps for SemVer Migration with Floating Versions
 
-Once your SemVer dependency tree is migrated:
-- Ensure all new tags follow semantic versioning conventions
-- Educate your team on SemVer 2.0.0 rules
+Once your SemVer dependency tree with floating versions is migrated:
+- Ensure all new tags follow semantic versioning conventions strictly
+- Educate your team on SemVer 2.0.0 rules and floating version patterns
 - Set up processes to maintain semantic versioning discipline
 - Consider using tools to validate semantic version bumps
-- Monitor SemVer conflict resolution in practice
+- Monitor automatic dependency resolution in practice
+- Establish policies for when to update floating version ranges
 
-The SemVer migration approach provides the same dependency management benefits as Agnostic mode while significantly reducing configuration complexity and maintenance overhead through automatic compatibility resolution.
+The SemVer migration approach with floating versions provides the same dependency management benefits as Agnostic mode while significantly reducing configuration complexity and completely eliminating maintenance overhead through automatic compatibility resolution and updates.
 
-## Handling Shared Dependencies Version Changes
+## Handling Shared Dependencies Version Changes (Agnostic Mode)
 
 Once you have successfully migrated your dependency tree to LsiGitCheckout, you'll need to manage version changes in shared dependencies over time. This section demonstrates how to handle both API-compatible updates and API-breaking changes using the dependency tree from the migration example.
 
@@ -795,7 +807,7 @@ After completing the migration example, we have this dependency tree with LsiGit
            │                   ┌───────┴──────┐
            │                   │              │
      CommonControls            │          DataAccess
-        v3.1.0 ────────────────┘            v2.3.0
+        v3.1.0 ─────────────────┘            v2.3.0
            │                                  │
            └──────────────────────────────────┘
                                │
@@ -1288,25 +1300,25 @@ This systematic approach ensures that shared dependency updates are managed safe
 
 ## Handling Shared Dependencies Version Changes (SemVer Mode)
 
-Once you have migrated your dependency tree to SemVer mode, managing version changes becomes significantly simpler due to automatic compatibility resolution. This section demonstrates how SemVer mode handles the same scenarios as Agnostic mode but with reduced manual overhead.
+Once you have migrated your dependency tree to SemVer mode with floating versions, managing version changes becomes dramatically simpler due to automatic compatibility resolution and updates. This section demonstrates how SemVer mode with floating versions handles version changes with minimal to zero manual intervention.
 
-### Starting Point: Post-SemVer Migration Dependency Tree
+### Starting Point: Post-SemVer Migration Dependency Tree with Floating Versions
 
-After completing the SemVer migration example, we have this dependency tree with SemVer LsiGitCheckout support:
+After completing the SemVer migration example with floating versions, we have this dependency tree with SemVer LsiGitCheckout support:
 
 ```
                     MyApplication
-                      v1.0.0 (SemVer)
+                  v1.0.0 (4.*, 4.*)
                          │
            ┌─────────────┴─────────────┐
            │                           │
      UserInterface              BusinessLogic
-      v4.2.0 (SemVer)              v4.6.0 (SemVer)
+     v4.2.0 (3.*)              v4.6.0 (2.*, 3.*)
            │                           │
            │                   ┌───────┴──────┐
            │                   │              │
      CommonControls            │          DataAccess
-      v3.1.0 (SemVer) ─────────┘          v2.3.0 (SemVer)
+     v3.1.0 (1.2.*) ───────────┘          v2.3.0 (1.2.*)
            │                                  │
            └──────────────────────────────────┘
                                │
@@ -1314,114 +1326,113 @@ After completing the SemVer migration example, we have this dependency tree with
                           v1.2.0 (leaf)
 ```
 
-All repositories except DatabaseUtils contain `dependencies.json` files with SemVer LsiGitCheckout configuration.
+All repositories except DatabaseUtils contain `dependencies.json` files with SemVer floating version LsiGitCheckout configuration.
 
-### Scenario 1: SemVer Compatible Update (v1.2.0 → v1.2.1)
+### Scenario 1: SemVer Compatible Update (v1.2.0 → v1.2.1) - The True Power of Floating Versions
 
-Let's assume DatabaseUtils releases a patch version v1.2.1 that follows semantic versioning (bug fixes only, no breaking changes). With SemVer mode, this update is dramatically simpler than Agnostic mode.
+Let's assume DatabaseUtils releases a patch version v1.2.1 that follows semantic versioning (bug fixes only, no breaking changes). With SemVer mode using floating versions, this update demonstrates the true power of the approach.
 
-#### The SemVer Advantage: Automatic Compatibility
+#### The SemVer Floating Version Advantage: Zero-Configuration Automatic Updates
 
-**Key Insight**: With SemVer mode, when DatabaseUtils releases v1.2.1, **no configuration changes are needed** in any dependent repositories. The existing `"Version": "1.2.0"` requirements automatically accept v1.2.1 due to SemVer compatibility rules.
+**Key Insight**: With SemVer mode using floating versions, when DatabaseUtils releases v1.2.1, **absolutely no configuration changes are needed** anywhere in the dependency tree. The existing floating version requirements (`1.2.*`) automatically accept v1.2.1, and the entire dependency tree immediately benefits from the bug fixes.
 
-**Complete Update Process for SemVer Compatible Changes:**
+**Complete Update Process for SemVer Compatible Changes with Floating Versions:**
 
 1. **DatabaseUtils**: Release v1.2.1 (patch version)
-2. **All dependent repositories**: No changes needed
+2. **All dependent repositories**: **No changes needed whatsoever**
 3. **Next LsiGitCheckout run**: Automatically uses v1.2.1 when available
 
 **Result**: The entire dependency tree automatically benefits from the bug fixes in v1.2.1 without any manual configuration updates.
 
-#### Optional: Updating Minimum Version Requirements
+#### Demonstration: Automatic Updates in Action
 
-If you specifically want to require v1.2.1 (for example, to ensure specific bug fixes are present), you can optionally update the minimum version requirements:
-
-##### Update DataAccess (Optional)
+Let's see this in practice:
 
 ```powershell
-Set-Location DataAccess
+# Navigate to an existing workspace with the SemVer dependency tree
+Set-Location C:\workspace\my-application
+Set-Location MyApplication
+
+# Before the update - check current versions
+.\LsiGitCheckout.ps1 -Verbose
+# This shows DatabaseUtils v1.2.0 being used
+
+# DatabaseUtils team releases v1.2.1 (patch version) - no config changes needed anywhere
+
+# Run LsiGitCheckout again
+.\LsiGitCheckout.ps1 -Verbose
+# This now automatically uses DatabaseUtils v1.2.1 throughout the entire tree!
+
+# Verify the update
+Set-Location shared\database-utils
+git describe --tags  # Should now show v1.2.1
 ```
 
-Update `dependencies.json` (optional):
-```json
-[
-  {
-    "Repository URL": "https://github.com/yourorg/DatabaseUtils.git",
-    "Base Path": "../shared/database-utils",
-    "Dependency Resolution": "SemVer",
-    "Version": "1.2.1"
-  }
-]
-```
+#### Updated SemVer Dependency Tree (Automatic Compatible Update)
 
-Commit and create a new tag:
-```powershell
-git add dependencies.json
-git commit -m "Update DatabaseUtils minimum version to v1.2.1 for specific bug fixes"
-git tag v2.3.1  # Minor version bump for dependency requirement change
-git push origin v2.3.1
-```
-
-**Important**: This step is optional. Without any updates, SemVer mode will automatically use v1.2.1 when it becomes available.
-
-#### Result: Updated SemVer Dependency Tree (Automatic Compatible Update)
-
-With SemVer mode, the dependency tree automatically benefits from v1.2.1 without any configuration changes:
+With floating versions, the dependency tree automatically uses v1.2.1 without any configuration changes:
 
 ```
                     MyApplication
-                      v1.0.0 (SemVer) - automatically uses latest compatible versions
-                         │
-           ┌─────────────┴─────────────┐
+                  v1.0.0 (4.*, 4.*)
+                         │                        🔄 Automatically benefits
+           ┌─────────────┴─────────────┐           from v1.2.1
            │                           │
      UserInterface              BusinessLogic
-      v4.2.0 (SemVer)              v4.6.0 (SemVer)
-           │                           │
-           │                   ┌───────┴──────┐
+     v4.2.0 (3.*)              v4.6.0 (2.*, 3.*)
+           │                           │           🔄 Automatically benefits
+           │                   ┌───────┴──────┐     from v1.2.1
            │                   │              │
      CommonControls            │          DataAccess
-      v3.1.0 (SemVer) ─────────┘          v2.3.0 (SemVer)
+     v3.1.0 (1.2.*) ───────────┘          v2.3.0 (1.2.*)
            │                                  │
+           │     🔄 Auto-updates to v1.2.1   │     🔄 Auto-updates to v1.2.1
            └──────────────────────────────────┘
                                │
                          DatabaseUtils
-                       v1.2.0 → v1.2.1 (leaf)
+                       v1.2.0 → v1.2.1
+                        (automatic)
 ```
 
-**Key Benefits of SemVer Approach:**
-- **Zero configuration changes required**: All dependencies automatically accept v1.2.1
-- **Immediate availability**: As soon as v1.2.1 is available, the entire tree benefits
-- **No maintenance overhead**: No API Compatible Tags to update
-- **Clear semantics**: SemVer rules guarantee compatibility
+**Key Benefits of Floating Version Approach:**
+- **Zero manual work**: No configuration files to update
+- **Immediate propagation**: Bug fixes flow automatically through the entire tree
+- **No deployment coordination**: Each team gets updates automatically on their next build
+- **Rollback safety**: If v1.2.1 has issues, teams can temporarily pin to v1.2.0 until fixed
 
-### Scenario 2: SemVer Breaking Update (v1.2.1 → v2.0.0)
+### Scenario 2: SemVer Breaking Update (v1.2.1 → v2.0.0) - Clear Boundaries and Explicit Updates
 
-Now let's assume DatabaseUtils releases v2.0.0 with breaking API changes. SemVer mode provides clear conflict detection and resolution guidance.
+Now let's assume DatabaseUtils releases v2.0.0 with breaking API changes. SemVer mode with floating versions provides clear boundaries and explicit opt-in for breaking changes.
 
-#### Step 1: Analyze SemVer Impact and Plan Migration
+#### Step 1: Breaking Changes Are Automatically Blocked
 
-Before making changes, the major version bump to v2.0.0 signals breaking changes. We need to:
+**Key Insight**: When DatabaseUtils releases v2.0.0, **floating versions automatically prevent the breaking change from propagating** until teams explicitly opt-in.
 
-1. **Review DatabaseUtils v2.0.0 changes** to understand the breaking changes
-2. **Test compatibility** with DataAccess and CommonControls  
-3. **Update code as needed** to handle the new API
-4. **Decide on version strategy** for each repository
+```powershell
+# DatabaseUtils releases v2.0.0 with breaking changes
 
-For this example, let's assume:
-- **DatabaseUtils v2.0.0** has breaking API changes but provides enhanced capabilities
-- **DataAccess** can be updated to use the new API without changing its own public API
-- **CommonControls** can be updated to use new features without changing its own public API  
-- **Higher-level repositories** don't change their APIs but benefit from the enhanced capabilities
+# Run LsiGitCheckout - still uses v1.2.1 (or latest v1.x)
+.\LsiGitCheckout.ps1 -Verbose
+# Output shows: "Using DatabaseUtils v1.2.1 (blocked from v2.0.0 by 1.2.* constraint)"
 
-#### Step 2: Update Direct Dependencies (SemVer Mode)
+# The entire tree continues to work with v1.2.x until explicit updates
+```
 
-##### Update DataAccess (No Public API Changes)
+**Automatic Protection**: The `1.2.*` floating versions in DataAccess and CommonControls automatically reject v2.0.0, providing protection against unintended breaking changes.
+
+#### Step 2: Selective Opt-In to Breaking Changes
+
+Teams can now evaluate and opt-in to DatabaseUtils v2.0.0 at their own pace:
+
+##### Update DataAccess to Use DatabaseUtils v2.0.0
+
+**Current configuration**: `"Version": "1.2.*"` → **New configuration**: `"Version": "2.*"`
 
 ```powershell
 Set-Location DataAccess
 ```
 
-Make internal implementation changes to use DatabaseUtils v2.0.0, then update dependencies:
+Make code changes to handle DatabaseUtils v2.0.0 API changes, then update dependencies:
 
 ```json
 [
@@ -1429,31 +1440,31 @@ Make internal implementation changes to use DatabaseUtils v2.0.0, then update de
     "Repository URL": "https://github.com/yourorg/DatabaseUtils.git",
     "Base Path": "../shared/database-utils",
     "Dependency Resolution": "SemVer",
-    "Version": "2.0.0"
+    "Version": "2.*"
   }
 ]
 ```
 
-Commit and tag with **minor version bump** (public API unchanged):
+Commit and tag with **minor version bump** (if DataAccess public API unchanged):
 ```powershell
-git add .  # Add all code changes + dependencies.json
+git add .
 git commit -m "Update to DatabaseUtils v2.0.0 with enhanced capabilities
 
 - Updated internal database connection handling for new API
 - Leveraged improved query performance features  
 - Enhanced error handling with new exception types
 - Public API remains unchanged - internal improvements only"
-git tag v2.4.0  # Minor version bump - public API unchanged, enhanced capabilities
+git tag v2.4.0  # Minor version bump - public API unchanged
 git push origin v2.4.0
 ```
 
-##### Update CommonControls (No Public API Changes)
+##### Update CommonControls to Use DatabaseUtils v2.0.0
 
 ```powershell
 Set-Location ..\CommonControls
 ```
 
-Make internal changes to leverage enhanced DatabaseUtils features:
+Make code changes and update to floating version for v2.x:
 
 ```json
 [
@@ -1461,251 +1472,275 @@ Make internal changes to leverage enhanced DatabaseUtils features:
     "Repository URL": "https://github.com/yourorg/DatabaseUtils.git",
     "Base Path": "../shared/database-utils",
     "Dependency Resolution": "SemVer",
-    "Version": "2.0.0"
+    "Version": "2.*"
   }
 ]
 ```
 
-Commit and tag with **minor version bump**:
+Commit and tag:
 ```powershell
 git add .
 git commit -m "Update to DatabaseUtils v2.0.0 for enhanced logging
 
 - Improved internal logging using new DatabaseUtils capabilities
 - Enhanced configuration loading performance
-- Public API remains unchanged - internal improvements only"
-git tag v3.2.0  # Minor version bump - public API unchanged, enhanced capabilities  
+- Public API remains unchanged"
+git tag v3.2.0  # Minor version bump - public API unchanged
 git push origin v3.2.0
 ```
 
-#### Step 3: Update Indirect Dependencies (SemVer Mode)
+#### Step 3: Gradual Propagation Through the Tree
 
-##### Update UserInterface (No API Changes)
+Now that the direct dependencies have been updated, the updates can propagate upward:
 
-```powershell
-Set-Location ..\UserInterface
-```
+##### Update BusinessLogic to Use Enhanced Dependencies
 
-Update dependency reference (no code changes needed):
-
-```json
-[
-  {
-    "Repository URL": "https://github.com/yourorg/CommonControls.git",
-    "Base Path": "../shared/common-controls",
-    "Dependency Resolution": "SemVer",
-    "Version": "3.2.0"
-  }
-]
-```
-
-**Note**: SemVer automatically maintains compatibility with v3.1.0
-
-Commit and tag with **minor version bump**:
-```powershell
-git add dependencies.json
-git commit -m "Update to CommonControls v3.2.0 for enhanced capabilities
-
-- Benefits from improved logging and performance in CommonControls
-- Transitively benefits from DatabaseUtils v2.0.0 enhancements
-- Public API remains unchanged"
-git tag v4.3.0  # Minor version bump - public API unchanged, enhanced capabilities
-git push origin v4.3.0
-```
-
-##### Update BusinessLogic (No API Changes)
+**Current configuration**: Uses `2.*` and `3.*` → **New benefit**: Automatically gets v2.4.0 and v3.2.0
 
 ```powershell
 Set-Location ..\BusinessLogic
+
+# Run LsiGitCheckout to see automatic updates
+.\LsiGitCheckout.ps1 -Verbose
+# Shows: DataAccess v2.4.0 (2.* allows this), CommonControls v3.2.0 (3.* allows this)
+# Transitively now uses DatabaseUtils v2.0.0!
 ```
 
-Update both dependencies:
+**No configuration changes needed** - BusinessLogic automatically benefits from the enhanced capabilities because:
+- `^2.3.0` automatically accepts v2.4.0 (minor version update)
+- `^3.1.0` automatically accepts v3.2.0 (minor version update)
 
-```json
-[
-  {
-    "Repository URL": "https://github.com/yourorg/DataAccess.git",
-    "Base Path": "libs/data-access",
-    "Dependency Resolution": "SemVer",
-    "Version": "2.4.0"
-  },
-  {
-    "Repository URL": "https://github.com/yourorg/CommonControls.git",
-    "Base Path": "../shared/common-controls",
-    "Dependency Resolution": "SemVer", 
-    "Version": "3.2.0"
-  }
-]
-```
-
-**Note**: SemVer automatically maintains compatibility with previous versions (v2.3.0 for DataAccess and v3.1.0 for CommonControls)
-
-Commit and tag with **minor version bump**:
+Optionally, update BusinessLogic version to document the enhancement:
 ```powershell
-git add dependencies.json
-git commit -m "Update dependencies for DatabaseUtils v2.0.0 enhanced capabilities
-
-- Benefits from improved DataAccess v2.4.0 performance
-- Leverages enhanced CommonControls v3.2.0 features
-- Transitively benefits from DatabaseUtils v2.0.0 enhancements
-- Public API remains unchanged"
-git tag v4.7.0  # Minor version bump - public API unchanged, enhanced capabilities
+git tag v4.7.0 -m "Transitively updated to DatabaseUtils v2.0.0 enhanced capabilities"
 git push origin v4.7.0
 ```
 
-#### Step 4: Update Root Application (SemVer Mode)
+##### Update UserInterface Automatically
+
+**Current configuration**: Uses `3.*` → **New benefit**: Automatically gets v3.2.0
+
+```powershell
+Set-Location ..\UserInterface
+
+# UserInterface automatically benefits from CommonControls v3.2.0
+.\LsiGitCheckout.ps1 -Verbose
+# Shows: CommonControls v3.2.0 (3.* allows this)
+# Transitively now uses DatabaseUtils v2.0.0!
+```
+
+Again, no configuration changes needed.
+
+##### Update Root Application Automatically
+
+**Current configuration**: Uses `4.*` and `4.*` → **New benefit**: Automatically gets latest compatible versions
 
 ```powershell
 Set-Location ..\MyApplication
+
+# MyApplication automatically benefits from all updates
+.\LsiGitCheckout.ps1 -Verbose
+# Shows: UserInterface v4.2.0 (still compatible), BusinessLogic v4.7.0 (4.* allows this)
+# Entire tree now uses DatabaseUtils v2.0.0!
 ```
 
-Update `dependencies.json`:
+No configuration changes needed for the root application either.
+
+#### Result: Updated SemVer Dependency Tree with Selective Breaking Change Adoption
+
+```
+                    MyApplication
+                  v1.0.0 (^4.2.0, ^4.6.0)
+                         │                     🔄 Auto-benefits from all updates
+           ┌─────────────┴─────────────┐        throughout the tree
+           │                           │
+     UserInterface              BusinessLogic
+     v4.2.0 (^3.1.0)              v4.6.0→v4.7.0 (^2.3.0, ^3.1.0)
+           │                           │        🔄 Auto-gets v2.4.0 & v3.2.0
+           │                   ┌───────┴──────┐
+           │                   │              │
+     CommonControls            │          DataAccess
+     v3.1.0→v3.2.0 (^2.0.0) ───┘          v2.3.0→v2.4.0 (^2.0.0)
+           │                                  │
+           │       ✅ Opted in to v2.0.0      │      ✅ Opted in to v2.0.0
+           └──────────────────────────────────┘
+                               │
+                         DatabaseUtils
+                       v1.2.1 → v2.0.0
+                      (breaking change)
+```
+
+### Scenario 3: Mixed Version Updates - Some Teams Adopt, Others Stay Behind
+
+A powerful aspect of floating versions is that teams can adopt breaking changes at their own pace:
+
+#### Team A Updates, Team B Stays on Stable
+
+Let's assume only the DataAccess team updates to DatabaseUtils v2.0.0, but CommonControls stays on v1.x:
+
+##### DataAccess Updates to v2.0.0
 
 ```json
 [
   {
-    "Repository URL": "https://github.com/yourorg/UserInterface.git",
-    "Base Path": "modules/user-interface",
+    "Repository URL": "https://github.com/yourorg/DatabaseUtils.git",
+    "Base Path": "../shared/database-utils",
     "Dependency Resolution": "SemVer",
-    "Version": "4.3.0"
-  },
-  {
-    "Repository URL": "https://github.com/yourorg/BusinessLogic.git",
-    "Base Path": "modules/business-logic", 
-    "Dependency Resolution": "SemVer",
-    "Version": "4.7.0"
+    "Version": "2.*"
   }
 ]
 ```
 
-**Note**: SemVer automatically maintains compatibility with v4.2.0 for UserInterface and v4.6.0 for BusinessLogic
+##### CommonControls Stays on v1.x
 
-Commit and tag with **minor version bump**:
+```json
+[
+  {
+    "Repository URL": "https://github.com/yourorg/DatabaseUtils.git",
+    "Base Path": "../shared/database-utils",
+    "Dependency Resolution": "SemVer",
+    "Version": "1.2.*"
+  }
+]
+```
+
+#### Result: SemVer Conflict Detection
+
+When BusinessLogic tries to use both dependencies:
+
 ```powershell
-git add dependencies.json
-git commit -m "Update to get DatabaseUtils v2.0.0 enhanced capabilities throughout tree
-
-- Benefits from enhanced UserInterface v4.3.0 performance
-- Leverages improved BusinessLogic v4.7.0 features
-- Complete migration to DatabaseUtils v2.0.0 enhanced capabilities
-- Application API remains unchanged"
-git tag v1.1.0  # Minor version bump - public API unchanged, enhanced capabilities
-git push origin v1.1.0
+Set-Location BusinessLogic
+.\LsiGitCheckout.ps1 -Verbose
 ```
 
-#### Result: Updated SemVer Dependency Tree (Enhanced Capabilities, APIs Unchanged)
+**LsiGitCheckout automatically detects the version conflict and reports:**
 
 ```
-                    MyApplication
-                   v1.0.0 → v1.1.0 (SemVer)
-                         │
-           ┌─────────────┴─────────────┐
-           │                           │
-     UserInterface              BusinessLogic
-    v4.2.0 → v4.3.0 (SemVer)    v4.6.0 → v4.7.0 (SemVer)
-           │                           │
-           │                     ┌─────┴──────┐
-           │                     │            │
-     CommonControls              │        DataAccess
-    v3.1.0 → v3.2.0 (SemVer) ────┘       v2.3.0 → v2.4.0 (SemVer)
-           │                                  │
-           └──────────────────────────────────┘
-                                 │
-                         DatabaseUtils
-                       v1.2.1 → v2.0.0 (leaf)
+SemVer conflict for repository 'https://github.com/yourorg/DatabaseUtils.git':
+No version satisfies all requirements:
+- DataAccess (v2.4.0) requests: 2.* (compatible: v2.0.0, v2.1.0, v2.2.0)
+- CommonControls (v3.1.0) requests: 1.2.* (compatible: v1.2.0, v1.2.1, v1.2.2)
+
+Resolution options:
+1. Update CommonControls to support DatabaseUtils v2.x
+2. Keep DataAccess on DatabaseUtils v1.x until CommonControls is ready
+3. Use different dependency paths to avoid shared dependency conflicts
 ```
 
-### Key Differences Between SemVer and Agnostic Updates
+This clear error message helps teams coordinate their updates appropriately.
+
+### Key Differences Between SemVer Floating Versions and Agnostic Updates
 
 #### SemVer Compatible Updates (v1.2.0 → v1.2.1) 
-- **Configuration**: **Zero changes required** - automatic compatibility via SemVer rules
-- **Automatic Compatibility**: All existing version requirements automatically accept newer compatible versions
-- **Rollback**: Easy due to SemVer compatibility guarantees
-- **Deployment**: **Immediate availability** - entire tree benefits as soon as new version is released
-- **LsiGitCheckout Behavior**: Automatically resolves to lowest compatible version that satisfies all requirements
+- **Configuration**: **Zero changes required** - automatic compatibility via floating versions
+- **Automatic Updates**: All compatible updates flow automatically through the entire tree
+- **Rollback**: Easy - temporarily pin specific versions if needed
+- **Deployment**: **Immediate benefit** - entire organization gets bug fixes automatically
+- **Team Coordination**: **None required** - updates flow automatically
 
-#### SemVer Breaking Updates with Enhanced Capabilities (v1.2.1 → v2.0.0)
-- **Clear Breaking Change Signal**: Major version bump clearly indicates breaking changes
-- **Simplified Configuration**: No need to manage API Compatible Tags arrays
-- **Automatic Conflict Detection**: Script automatically detects SemVer incompatibilities and provides detailed error messages
-- **Version Strategy Clarity**: Each repository's version bump follows semantic versioning rules
-- **Deployment Coordination**: Major version boundaries provide clear upgrade coordination points
+#### SemVer Breaking Updates (v1.2.1 → v2.0.0)
+- **Automatic Protection**: Breaking changes are blocked until explicit opt-in
+- **Clear Boundaries**: Major version changes signal breaking changes clearly
+- **Selective Adoption**: Teams can adopt at their own pace
+- **Conflict Detection**: Automatic detection and clear error messages for version conflicts
+- **Gradual Migration**: Updates propagate automatically once dependencies are updated
 
-### Best Practices for SemVer Shared Dependency Updates
+### Best Practices for SemVer Floating Version Updates
 
-#### For SemVer Compatible Updates (The Key Advantage)
-1. **Embrace Automatic Compatibility**: For patch/minor updates, rely on SemVer automatic compatibility - no configuration changes needed
-2. **Leverage Zero-Maintenance Updates**: The entire dependency tree automatically benefits from compatible updates
-3. **Update Requirements Only When Necessary**: Only update minimum version requirements if you specifically need features/fixes from newer versions
-4. **Trust SemVer Rules**: Semantic versioning guarantees compatibility within the same major version
+#### For SemVer Compatible Updates (The Zero-Maintenance Advantage)
+
+1. **Trust Floating Versions**: For patch/minor updates, rely completely on automatic updates
+2. **No Configuration Needed**: Resist the urge to update configuration files for compatible updates
+3. **Monitor Automatic Updates**: Set up monitoring to track which versions are being used automatically
+4. **Use Explicit Pins Only When Needed**: Only pin to specific versions when debugging issues
 
 #### For SemVer Breaking Updates
-1. **Respect Major Version Boundaries**: Major version bumps signal breaking changes - handle them appropriately
-2. **Distinguish Public vs Internal API Changes**: Only bump your major version if your public API breaks
-3. **Use Minor Bumps for Internal Improvements**: When your public API remains stable despite dependency changes
-4. **Coordinate Team Communication**: Major version updates require coordination across dependent teams
-5. **Plan Migration Windows**: Major dependency updates need careful timing and testing
 
-#### SemVer Version Strategy
+1. **Respect Major Version Boundaries**: Never ignore major version bumps - they signal real breaking changes
+2. **Plan Breaking Change Adoption**: Coordinate with dependent teams when adopting major version updates
+3. **Update Floating Ranges**: Change `~1.2.0` to `^2.0.0` to opt into new major versions
+4. **Test Compatibility Thoroughly**: Major version updates require thorough testing
+5. **Coordinate Team Migration**: Use version conflict detection to coordinate team updates
+
+#### SemVer Floating Version Strategy
+
+**For Floating Version Specifications:**
+
+| Pattern | Accepts | Use When |
+|---------|---------|----------|
+| `1.2.*` | 1.2.x only | You want only patch updates |
+| `1.*` | 1.x.x (not 2.0.0) | You want minor and patch updates |
+| `1.2.0` | Exactly 1.2.0 | You want lowest applicable behavior |
+| `2.*` | 2.x.x (not 3.0.0) | You've adopted a major version update |
 
 **For Version Requirements:**
-- **Be Conservative**: Specify the minimum version you actually need
-- **Understand Implications**: Know that SemVer will automatically accept newer compatible versions
-- **Consider Version Ranges**: Your specified version becomes the lower bound of an automatic range
+- **Be Conservative Initially**: Start with tighter ranges (`~1.2.0`) and widen as confidence grows
+- **Understand Update Implications**: Know what updates your floating versions will automatically accept
+- **Monitor Automatic Updates**: Track which versions are actually being used in practice
+- **Coordinate Major Updates**: Plan major version adoptions across teams
 
-**For Version Bumps:**
-- **Follow SemVer Strictly**: Your version bumps signal compatibility to dependent repositories
-- **Major for Breaking Changes**: Only when your public API has breaking changes
-- **Minor for New Features**: When adding functionality without breaking existing API
-- **Patch for Bug Fixes**: For bug fixes that don't change functionality
+#### SemVer Floating Version Benefits
 
-#### SemVer Conflict Resolution
+1. **Zero Maintenance for Compatible Updates**: Bug fixes and feature updates flow automatically
+2. **Automatic Protection from Breaking Changes**: Major version boundaries prevent unwanted breaks
+3. **Clear Upgrade Paths**: Explicit decisions required only for major version updates
+4. **Team Independence**: Teams can adopt breaking changes at their own pace
+5. **Conflict Detection**: Automatic detection of incompatible version requirements
 
-When SemVer conflicts occur, the script provides detailed information:
+### Troubleshooting SemVer Floating Version Issues
 
-```
-SemVer conflict for repository 'https://github.com/yourorg/shared-lib.git':
-No version satisfies all requirements:
-- https://github.com/yourorg/app-a.git requests: 2.1.0 (compatible: v2.1.0, v2.1.1, v2.2.0)
-- https://github.com/yourorg/app-b.git requests: 3.0.0 (compatible: v3.0.0, v3.1.0)
-```
+#### Issue: Unwanted Automatic Updates
 
-**Resolution strategies:**
-1. **Update one requirement**: If app-a can work with v3.0.0, update its version requirement
-2. **Coordinate version releases**: Release a v3.x compatible version of the code that app-a needs
-3. **Use Agnostic mode**: For complex compatibility relationships that don't fit SemVer
+**Problem**: A minor version update breaks functionality despite following SemVer
 
-#### Testing Strategy for SemVer
+**Solution**:
+1. Temporarily pin to the working version: `"Version": "1.2.3"` (exact version)
+2. Investigate the breaking change and report to the library maintainer
+3. Once fixed, return to floating version: `"Version": "1.2.*"`
 
-1. **Unit test all SemVer updates** in each repository
-2. **Integration test version compatibility** across the dependency tree
-3. **Verify automatic resolution** works as expected
-4. **Test conflict scenarios** to understand error reporting
-5. **Validate SemVer compliance** of your version bumps
+#### Issue: Stuck on Old Versions
 
-### SemVer vs Agnostic Mode Summary
+**Problem**: Dependencies aren't updating to newer compatible versions
 
-| Aspect | SemVer Mode | Agnostic Mode |
-|--------|-------------|---------------|
-| **Configuration Overhead** | Low (just Version field) | High (API Compatible Tags maintenance) |
-| **Compatibility Rules** | Automatic (SemVer 2.0.0) | Manual (explicit tag lists) |
-| **Conflict Detection** | Automatic with detailed reporting | Manual verification required |
-| **Version Updates** | Simple version requirement changes | Complex tag list maintenance |
-| **Flexibility** | Follows SemVer rules | Complete control over compatibility |
-| **Learning Curve** | Requires SemVer understanding | Requires understanding of custom compatibility rules |
+**Solution**:
+1. Check floating version specification: `1.2.*` only accepts 1.2.x
+2. Widen range if appropriate: `1.*` accepts 1.x.x
+3. Verify the dependency actually has newer versions available
+4. Check for version conflicts with other dependencies
 
-### When Each Mode Excels
+#### Issue: Version Conflicts
 
-**SemVer Mode is ideal when:**
-- Your repositories follow semantic versioning consistently
-- You want to reduce configuration maintenance overhead
-- You prefer automatic compatibility resolution with clear rules
-- Your team understands and follows SemVer 2.0.0 principles
+**Problem**: SemVer reports version conflicts between dependencies
 
-**Agnostic Mode is better when:**
-- You need fine-grained control over version compatibility
-- Your repositories don't follow strict semantic versioning
-- You have complex compatibility relationships that don't fit SemVer rules
-- You're migrating legacy systems with inconsistent versioning approaches
+**Solution**:
+1. Review the conflict report to understand incompatible requirements
+2. Coordinate with teams to align on compatible version ranges
+3. Consider updating floating version ranges to find common compatible versions
+4. Plan staged rollouts for major version updates
 
-Both modes provide sophisticated dependency management - choose based on your team's versioning practices and maintenance preferences.
+### SemVer vs Agnostic Mode Summary for Version Changes
+
+| Aspect | SemVer Mode (Floating Versions) | Agnostic Mode |
+|--------|--------------------------------|---------------|
+| **Compatible Updates** | Fully automatic, zero config | Manual updates required everywhere |
+| **Breaking Updates** | Automatic protection + explicit opt-in | Manual evaluation and updates |
+| **Team Coordination** | Minimal (only for major versions) | High (for all updates) |
+| **Maintenance Overhead** | Near zero | High (API Compatible Tags) |
+| **Update Speed** | Immediate for compatible changes | Depends on manual update schedule |
+| **Safety** | Automatic protection from breaking changes | Manual evaluation required |
+
+### When Each Mode Excels for Version Management
+
+**SemVer Mode with Floating Versions is ideal for:**
+- Organizations with many repositories and frequent updates
+- Teams that follow semantic versioning consistently  
+- Environments where automatic security/bug fix propagation is critical
+- Projects where manual dependency maintenance is a bottleneck
+
+**Agnostic Mode is better for:**
+- Legacy systems with inconsistent versioning
+- High-security environments requiring explicit approval for all changes
+- Complex compatibility relationships that don't fit SemVer patterns
+- Teams that prefer explicit control over every dependency update
+
+The SemVer floating version approach transforms dependency management from a high-maintenance, error-prone manual process into a largely automatic system that provides both safety and agility.
