@@ -1,0 +1,14 @@
+[
+  {
+	"Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestRootA.git",
+	"Base Path": "test-root-a",
+	"Dependency Resolution": "SemVer",
+	"Version": "3.0.2"
+  },
+  {
+	"Repository URL": "https://github.com/LS-Instruments/LsiCheckOutTestRootB.git",
+	"Base Path": "test-root-b",
+	"Dependency Resolution": "SemVer",
+	"Version": "3.0.0"
+  }
+]

@@ -46,11 +46,18 @@
     .\LsiGitCheckout.ps1 -Verbose -DisablePostCheckoutScripts
     .\LsiGitCheckout.ps1 -EnableDebug -EnableErrorContext
 .NOTES
-    Version: 7.0.0
-    Last Modified: 2025-01-27
+    Version: 7.1.0
+    Last Modified: 2025-09-02
 
     This script uses PuTTY/plink for SSH authentication. SSH keys must be in PuTTY format (.ppk).
     Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.    
+    
+    Changes in 7.1.0:
+    - Added "Floating Versions" support for SemVer dependency resolution
+    - New version patterns: "x.y.*" (latest patch) and "x.*" (latest minor.patch)  
+    - Mixed specification mode: if any dependency uses floating versions, select highest compatible
+    - Backward compatible with existing "Lowest applicable version" specifications
+    - Enhanced version parsing to handle wildcard patterns
     
     Changes in 7.0.0:
     - Added Semantic Versioning (SemVer) support with "Dependency Resolution" field
@@ -60,16 +67,34 @@
     - Immutable configuration: Dependency Resolution mode and Version Regex cannot change
     - Mixed mode support: Can use both Agnostic and SemVer repositories in same tree
     
-    SemVer Mode Configuration:
+    SemVer Mode Configuration Examples:
+
+    Lowest Applicable Version (existing):
+    {
+      "Repository URL": "https://github.com/myorg/library.git",
+      "Base Path": "libs/library", 
+      "Dependency Resolution": "SemVer",
+      "Version": "2.1.0",
+      "Version Regex": "^v(\d+)\.(\d+)\.(\d+)$"
+    }
+
+    Floating Patch Version (new in 7.1.0):
+    {
+      "Repository URL": "https://github.com/myorg/library.git",
+      "Base Path": "libs/library",
+      "Dependency Resolution": "SemVer", 
+      "Version": "2.1.*",
+      "Version Regex": "^v(\d+)\.(\d+)\.(\d+)$"
+    }
+
+    Floating Minor Version (new in 7.1.0):
     {
       "Repository URL": "https://github.com/myorg/library.git",
       "Base Path": "libs/library",
       "Dependency Resolution": "SemVer",
-      "Version": "2.1.0",
-      "Version Regex": "^v(\d+)\.(\d+)\.(\d+)$"  // Optional, has sensible default
+      "Version": "2.*",
+      "Version Regex": "^v(\d+)\.(\d+)\.(\d+)$"
     }
-    
-
     
     Changes in 6.2.1:
     - Added support for post-checkout scripts at depth 0 (root level) when configured in the input dependency file
@@ -163,7 +188,7 @@ param(
 )
 
 # Script configuration
-$script:Version = "7.0.0"
+$script:Version = "7.1.0"
 $script:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:ErrorFile = Join-Path $ScriptPath "LsiGitCheckout_Errors.txt"
 $script:DebugLogFile = Join-Path $ScriptPath ("debug_log_{0}.txt" -f (Get-Date -Format "yyyyMMddHHmm"))
@@ -312,33 +337,188 @@ function Write-Log {
     }
 }
 
+function Parse-VersionPattern {
+    <#
+    .SYNOPSIS
+        Parses a version pattern and determines its type and constraints
+    .DESCRIPTION
+        Supports three patterns:
+        - x.y.z: Lowest applicable version (existing behavior)
+        - x.y.*: Floating patch version
+        - x.*: Floating minor.patch version
+    #>
+    param(
+        [string]$VersionPattern
+    )
+    
+    Write-Log "Parsing version pattern: $VersionPattern" -Level Debug
+    
+    # Check for floating version patterns
+    if ($VersionPattern -match '^(\d+)\.(\d+)\.\*$') {
+        # x.y.* pattern - floating patch
+        return @{
+            Type = "FloatingPatch"
+            Major = [int]$Matches[1]
+            Minor = [int]$Matches[2]
+            Patch = $null
+            OriginalPattern = $VersionPattern
+        }
+    }
+    elseif ($VersionPattern -match '^(\d+)\.\*$') {
+        # x.* pattern - floating minor.patch
+        return @{
+            Type = "FloatingMinor"
+            Major = [int]$Matches[1]
+            Minor = $null
+            Patch = $null
+            OriginalPattern = $VersionPattern
+        }
+    }
+    elseif ($VersionPattern -match '^(\d+)\.(\d+)\.(\d+)$') {
+        # x.y.z pattern - lowest applicable (existing)
+        return @{
+            Type = "LowestApplicable"
+            Major = [int]$Matches[1]
+            Minor = [int]$Matches[2]
+            Patch = [int]$Matches[3]
+            OriginalPattern = $VersionPattern
+        }
+    }
+    else {
+        throw "Invalid version pattern '$VersionPattern'. Supported formats: x.y.z, x.y.*, x.*"
+    }
+}
+
 function Test-SemVerCompatibility {
     <#
     .SYNOPSIS
-        Tests if an available version is compatible with a requested version according to SemVer rules
+        Tests if an available version is compatible with a version pattern
     .DESCRIPTION
-        Implements SemVer 2.0.0 compatibility rules:
-        - For 0.x.y versions: Minor version acts as major (breaking changes)
-        - For >=1.0.0 versions: Standard SemVer (same major, >= minor.patch)
+        Handles both traditional SemVer compatibility and new floating version patterns
     #>
     param(
         [Version]$Available,
-        [Version]$Requested
+        [hashtable]$VersionPattern
     )
     
-    # Special handling for 0.x.y versions
-    if ($Requested.Major -eq 0) {
-        return $Available.Major -eq 0 -and 
-               $Available.Minor -eq $Requested.Minor -and 
-               $Available.Build -ge $Requested.Build  # Build = Patch in Version object
+    $major = $Available.Major
+    $minor = $Available.Minor
+    $patch = $Available.Build  # Build = Patch in Version object
+    
+    switch ($VersionPattern.Type) {
+        "LowestApplicable" {
+            # Existing SemVer logic
+            if ($VersionPattern.Major -eq 0) {
+                # Special handling for 0.x.y versions
+                return $major -eq 0 -and 
+                       $minor -eq $VersionPattern.Minor -and 
+                       $patch -ge $VersionPattern.Patch
+            }
+            
+            # Standard SemVer: compatible if same major and >= requested minor.patch
+            return $major -eq $VersionPattern.Major -and
+                   ($minor -gt $VersionPattern.Minor -or 
+                   ($minor -eq $VersionPattern.Minor -and $patch -ge $VersionPattern.Patch))
+        }
+        
+        "FloatingPatch" {
+            # x.y.* - same major.minor, any patch >= 0
+            if ($VersionPattern.Major -eq 0) {
+                # Special handling for 0.x.* versions
+                return $major -eq 0 -and $minor -eq $VersionPattern.Minor
+            }
+            
+            return $major -eq $VersionPattern.Major -and $minor -eq $VersionPattern.Minor
+        }
+        
+        "FloatingMinor" {
+            # x.* - same major, any minor.patch >= 0
+            if ($VersionPattern.Major -eq 0) {
+                # Special handling for 0.* versions
+                return $major -eq 0
+            }
+            
+            return $major -eq $VersionPattern.Major
+        }
+        
+        default {
+            throw "Unknown version pattern type: $($VersionPattern.Type)"
+        }
+    }
+}
+
+function Get-CompatibleVersionsForPattern {
+    <#
+    .SYNOPSIS
+        Gets all versions compatible with a specific version pattern
+    #>
+    param(
+        [hashtable]$ParsedVersions,  # tag -> Version mapping
+        [hashtable]$VersionPattern
+    )
+    
+    $compatible = @()
+    
+    foreach ($entry in $ParsedVersions.GetEnumerator()) {
+        if (Test-SemVerCompatibility -Available $entry.Value -VersionPattern $VersionPattern) {
+            $compatible += [PSCustomObject]@{
+                Tag = $entry.Key
+                Version = $entry.Value
+            }
+        }
     }
     
-    # Standard SemVer: compatible if same major and >= requested minor.patch
-    if ($Available.Major -ne $Requested.Major) {
-        return $false
+    if ($compatible.Count -eq 0) {
+        # Format available versions for error message
+        $availableFormatted = $ParsedVersions.GetEnumerator() | 
+            Sort-Object { $_.Value } | 
+            ForEach-Object { "$($_.Key) ($($_.Value.Major).$($_.Value.Minor).$($_.Value.Build))" }
+        
+        throw "No compatible version found for pattern '$($VersionPattern.OriginalPattern)'. " +
+              "Available versions: $($availableFormatted -join ', ')"
     }
     
-    return $Available -ge $Requested
+    # Sort by version to ensure consistent ordering
+    $compatible = $compatible | Sort-Object { $_.Version }
+    
+    Write-Log "Found $($compatible.Count) compatible versions for pattern '$($VersionPattern.OriginalPattern)'" -Level Debug
+    
+    return $compatible
+}
+
+function Select-VersionFromIntersection {
+    <#
+    .SYNOPSIS
+        Selects the appropriate version from intersection based on specification types
+    .DESCRIPTION
+        If any pattern is floating, select highest version; otherwise select lowest
+    #>
+    param(
+        [array]$IntersectionVersions,  # Array of PSCustomObject with Tag and Version
+        [hashtable]$RequestedPatterns  # caller -> VersionPattern mapping
+    )
+    
+    # Check if any pattern is floating
+    $hasFloatingPattern = $false
+    foreach ($pattern in $RequestedPatterns.Values) {
+        if ($pattern.Type -eq "FloatingPatch" -or $pattern.Type -eq "FloatingMinor") {
+            $hasFloatingPattern = $true
+            break
+        }
+    }
+    
+    if ($hasFloatingPattern) {
+        # Select highest (most recent) version
+        $selected = $IntersectionVersions | Sort-Object { $_.Version } | Select-Object -Last 1
+        Write-Log "Floating version detected - selecting highest compatible version: $(Format-SemVersion $selected.Version) (tag: $($selected.Tag))" -Level Info
+    }
+    else {
+        # Select lowest version (existing behavior)
+        $selected = $IntersectionVersions | Sort-Object { $_.Version } | Select-Object -First 1
+        Write-Log "All patterns are lowest-applicable - selecting lowest compatible version: $(Format-SemVersion $selected.Version) (tag: $($selected.Tag))" -Level Info
+    }
+    
+    return $selected
 }
 
 function Parse-RepositoryVersions {
@@ -432,45 +612,6 @@ function Parse-RepositoryVersions {
         Pop-Location -ErrorAction SilentlyContinue
         throw
     }
-}
-
-function Get-CompatibleSemVersions {
-    <#
-    .SYNOPSIS
-        Gets all versions from ParsedVersions that are compatible with the requested version
-    #>
-    param(
-        [hashtable]$ParsedVersions,  # tag -> Version mapping
-        [Version]$RequestedVersion
-    )
-    
-    $compatible = @()
-    
-    foreach ($entry in $ParsedVersions.GetEnumerator()) {
-        if (Test-SemVerCompatibility -Available $entry.Value -Requested $RequestedVersion) {
-            $compatible += [PSCustomObject]@{
-                Tag = $entry.Key
-                Version = $entry.Value
-            }
-        }
-    }
-    
-    if ($compatible.Count -eq 0) {
-        # Format available versions for error message
-        $availableFormatted = $ParsedVersions.GetEnumerator() | 
-            Sort-Object { $_.Value } | 
-            ForEach-Object { "$($_.Key) ($($_.Value.Major).$($_.Value.Minor).$($_.Value.Build))" }
-        
-        throw "No compatible version found for $($RequestedVersion.Major).$($RequestedVersion.Minor).$($RequestedVersion.Build). " +
-              "Available versions: $($availableFormatted -join ', ')"
-    }
-    
-    # Sort by version to ensure consistent ordering
-    $compatible = $compatible | Sort-Object { $_.Version }
-    
-    Write-Log "Found $($compatible.Count) compatible versions for $($RequestedVersion.Major).$($RequestedVersion.Minor).$($RequestedVersion.Build)" -Level Debug
-    
-    return $compatible
 }
 
 function Get-SemVersionIntersection {
@@ -1363,7 +1504,7 @@ function Update-RepositoryDictionary {
 function Update-SemVerRepository {
     <#
     .SYNOPSIS
-        Updates repository dictionary for SemVer mode repositories
+        Updates repository dictionary for SemVer mode repositories with floating version support
     #>
     param(
         [PSCustomObject]$Repository,
@@ -1374,38 +1515,18 @@ function Update-SemVerRepository {
     $repoUrl = $Repository.'Repository URL'
     $basePath = $Repository.'Base Path'
     
-    # Parse requested version
-    $requestedVersionStr = $Repository.Version
-    if (-not $requestedVersionStr) {
+    # Parse version pattern (now supports floating versions)
+    $versionPattern = $Repository.Version
+    if (-not $versionPattern) {
         throw "Repository '$repoUrl' uses SemVer mode but no 'Version' field specified"
     }
     
     try {
-        # Parse as Major.Minor.Patch
-        if ($requestedVersionStr -match '^(\d+)\.(\d+)\.(\d+)$') {
-            $major = [int]$Matches[1]
-            $minor = [int]$Matches[2]
-            $patch = [int]$Matches[3]
-            
-            # Debug logging to see what we're parsing
-            Write-Log "Parsing version string '$requestedVersionStr': Major=$major, Minor=$minor, Patch=$patch" -Level Debug
-            
-           $requestedVersion = [Version]::new($major, $minor, $patch)
-            
-            Write-Log "Successfully parsed version: $($requestedVersion.ToString())" -Level Debug
-        } else {
-            throw "Version string '$requestedVersionStr' does not match expected format x.y.z"
-        }
+        $parsedPattern = Parse-VersionPattern -VersionPattern $versionPattern
+        Write-Log "Parsed version pattern '$versionPattern' as type: $($parsedPattern.Type)" -Level Debug
     }
     catch {
-        # More specific error handling
-        if ($_.Exception.Message -like "*does not match expected format*") {
-            throw "Repository '$repoUrl' has invalid Version format '$requestedVersionStr'. Expected format: x.y.z (e.g., 2.1.0)"
-        } else {
-            # Log the actual error for debugging
-            Write-Log "Error creating Version object: $($_.Exception.Message)" -Level Debug
-            throw "Repository '$repoUrl' failed to parse version '$requestedVersionStr': $($_.Exception.Message)"
-        }
+        throw "Repository '$repoUrl' has invalid Version pattern '$versionPattern': $($_.Exception.Message)"
     }
     
     # Get version regex
@@ -1431,7 +1552,7 @@ function Update-SemVerRepository {
     
     if ($script:RepositoryDictionary.ContainsKey($repoUrl)) {
         # Existing repository
-        Write-Log "SemVer repository already exists in dictionary, checking version compatibility..." -Level Info
+        Write-Log "SemVer repository already exists in dictionary, checking version pattern compatibility..." -Level Info
         
         $existingRepo = $script:RepositoryDictionary[$repoUrl]
         $existingAbsolutePath = $existingRepo.AbsolutePath
@@ -1444,31 +1565,28 @@ function Update-SemVerRepository {
             throw $errorMessage
         }
         
-        # Add new caller's requested version
-        if (-not $existingRepo.ContainsKey('RequestedVersions')) {
-            $existingRepo.RequestedVersions = @{}
+        # Add new caller's requested version pattern
+        if (-not $existingRepo.ContainsKey('RequestedPatterns')) {
+            $existingRepo.RequestedPatterns = @{}
         }
-        $existingRepo.RequestedVersions[$callerUrl] = $requestedVersion
+        $existingRepo.RequestedPatterns[$callerUrl] = $parsedPattern
         
-        Write-Log "Caller '$callerUrl' requests version $(Format-SemVersion $requestedVersion)" -Level Debug
+        Write-Log "Caller '$callerUrl' requests version pattern: $($parsedPattern.OriginalPattern) (type: $($parsedPattern.Type))" -Level Debug
         
         # Get compatible versions for new request
-        $newCompatible = Get-CompatibleSemVersions -ParsedVersions $existingRepo.ParsedVersions `
-                                                  -RequestedVersion $requestedVersion
+        $newCompatible = Get-CompatibleVersionsForPattern -ParsedVersions $existingRepo.ParsedVersions -VersionPattern $parsedPattern
         
         # Intersect with existing compatible versions
-        $intersection = Get-SemVersionIntersection -Set1 $existingRepo.CompatibleVersions `
-                                                  -Set2 $newCompatible
+        $intersection = Get-SemVersionIntersection -Set1 $existingRepo.CompatibleVersions -Set2 $newCompatible
         
         if ($intersection.Count -eq 0) {
             # Build detailed error message
             $callerDetails = @()
-            foreach ($caller in $existingRepo.RequestedVersions.GetEnumerator()) {
-                $version = Format-SemVersion $caller.Value
-                $compatible = Get-CompatibleSemVersions -ParsedVersions $existingRepo.ParsedVersions `
-                                                       -RequestedVersion $caller.Value
+            foreach ($caller in $existingRepo.RequestedPatterns.GetEnumerator()) {
+                $pattern = $caller.Value.OriginalPattern
+                $compatible = Get-CompatibleVersionsForPattern -ParsedVersions $existingRepo.ParsedVersions -VersionPattern $caller.Value
                 $compatibleStr = ($compatible | ForEach-Object { $_.Tag }) -join ', '
-                $callerDetails += "- $($caller.Key) requests: $version (compatible: $compatibleStr)"
+                $callerDetails += "- $($caller.Key) requests: $pattern (type: $($caller.Value.Type), compatible: $compatibleStr)"
             }
             
             $errorMessage = "SemVer conflict for repository '$repoUrl':`n" +
@@ -1480,8 +1598,8 @@ function Update-SemVerRepository {
             throw $errorMessage
         }
         
-        # Select lowest version from intersection
-        $selected = $intersection | Sort-Object { $_.Version } | Select-Object -First 1
+        # Select version based on pattern types (floating vs lowest-applicable)
+        $selected = Select-VersionFromIntersection -IntersectionVersions $intersection -RequestedPatterns $existingRepo.RequestedPatterns
         
         $oldTag = $existingRepo.SelectedTag
         $newTag = $selected.Tag
@@ -1506,14 +1624,14 @@ function Update-SemVerRepository {
     } else {
         # New repository
         Write-Log "First discovery of SemVer repository: $repoUrl" -Level Info
-        Write-Log "Requested version: $(Format-SemVersion $requestedVersion)" -Level Debug
+        Write-Log "Requested version pattern: $($parsedPattern.OriginalPattern) (type: $($parsedPattern.Type))" -Level Debug
         
         # For new repositories, we need to mark that versions need to be parsed after clone
         $script:RepositoryDictionary[$repoUrl] = @{
             AbsolutePath = $absoluteBasePath
             DependencyResolution = "SemVer"
             VersionRegex = $versionRegex
-            RequestedVersions = @{ $callerUrl = $requestedVersion }
+            RequestedPatterns = @{ $callerUrl = $parsedPattern }
             NeedVersionParsing = $true  # Flag to parse versions after clone
             AlreadyCheckedOut = $false
             NeedCheckout = $false
@@ -1798,11 +1916,11 @@ function Invoke-GitCheckout {
                 $repoDict.ParsedVersions = $parseResult.ParsedVersions
                 $repoDict.CompiledRegex = $parseResult.CompiledRegex
                 
-                # Get all requested versions and find compatible ones
+                # Get all requested patterns and find compatible ones
                 $allCompatible = $null
-                foreach ($request in $repoDict.RequestedVersions.GetEnumerator()) {
-                    $compatible = Get-CompatibleSemVersions -ParsedVersions $repoDict.ParsedVersions `
-                                                           -RequestedVersion $request.Value
+                foreach ($request in $repoDict.RequestedPatterns.GetEnumerator()) {
+                    $compatible = Get-CompatibleVersionsForPattern -ParsedVersions $repoDict.ParsedVersions `
+                                                                 -VersionPattern $request.Value
                     
                     if ($null -eq $allCompatible) {
                         $allCompatible = $compatible
@@ -1816,8 +1934,8 @@ function Invoke-GitCheckout {
                     throw "No compatible SemVer version found after parsing repository"
                 }
                 
-                # Select lowest version
-                $selected = $allCompatible | Sort-Object { $_.Version } | Select-Object -First 1
+                # Select version based on pattern types
+                $selected = Select-VersionFromIntersection -IntersectionVersions $allCompatible -RequestedPatterns $repoDict.RequestedPatterns
                 
                 $repoDict.CompatibleVersions = $allCompatible
                 $repoDict.SelectedVersion = $selected.Version
