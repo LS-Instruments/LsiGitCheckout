@@ -1507,8 +1507,8 @@ Set-Location ..\BusinessLogic
 ```
 
 **No configuration changes needed** - BusinessLogic automatically benefits from the enhanced capabilities because:
-- `^2.3.0` automatically accepts v2.4.0 (minor version update)
-- `^3.1.0` automatically accepts v3.2.0 (minor version update)
+- `2.*` automatically accepts v2.4.0 (minor version update)
+- `3.*` automatically accepts v3.2.0 (minor version update)
 
 Optionally, update BusinessLogic version to document the enhancement:
 ```powershell
@@ -1550,19 +1550,19 @@ No configuration changes needed for the root application either.
 
 ```
                     MyApplication
-                  v1.0.0 (^4.2.0, ^4.6.0)
+                  v1.0.0 (4.*, 4.*)
                          │                     🔄 Auto-benefits from all updates
            ┌─────────────┴─────────────┐        throughout the tree
            │                           │
      UserInterface              BusinessLogic
-     v4.2.0 (^3.1.0)              v4.6.0→v4.7.0 (^2.3.0, ^3.1.0)
+     v4.2.0 (3.*)              v4.6.0→v4.7.0 (2.*, 3.*)
            │                           │        🔄 Auto-gets v2.4.0 & v3.2.0
            │                   ┌───────┴──────┐
            │                   │              │
      CommonControls            │          DataAccess
-     v3.1.0→v3.2.0 (^2.0.0) ───┘          v2.3.0→v2.4.0 (^2.0.0)
+     v3.1.0→v3.2.0 (2.*) ───┘          v2.3.0→v2.4.0 (2.*)
            │                                  │
-           │       ✅ Opted in to v2.0.0      │      ✅ Opted in to v2.0.0
+           │       ✅ Opted in to v2.0.0     │     ✅ Opted in to v2.0.0
            └──────────────────────────────────┘
                                │
                          DatabaseUtils

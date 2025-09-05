@@ -35,7 +35,7 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - **Dry Run Mode**: Preview operations without making changes
 - **Recursive Dependencies**: Discover and process nested repository dependencies with API compatibility checking
 - **Dependency Resolution Modes**: Choose between Agnostic (tag-based) and SemVer (Semantic Versioning) resolution
-- **Floating Versions**: Support for SemVer floating version patterns (x.y.*, x.*) for automatic latest version selection
+- **Floating Versions**: Support for SemVer floating version patterns (x.y.\*, x.\*) for automatic latest version selection
 - **Flexible Compatibility Modes**: Choose between Strict and Permissive API compatibility modes
 - **Intelligent Tag Temporal Sorting**: Always-on automatic chronological tag ordering using actual git tag dates with optimized performance
 - **Custom Dependency Files**: Per-repository custom dependency file paths and names with proper isolation
@@ -335,7 +335,7 @@ LsiGitCheckout supports two dependency resolution modes that can be mixed within
 
 ### Agnostic Mode (Default)
 
-The traditional tag-based resolution using exact tags and explicit API Compatible Tags lists. This mode provides maximum control and flexibility for projects that don't follow strict semantic versioning.
+A tag-based resolution using exact tags and explicit API Compatible Tags lists. This mode provides maximum control and flexibility for projects that don't follow strict semantic versioning.
 
 **Key Features:**
 - Explicit compatibility definitions via "API Compatible Tags"
@@ -367,7 +367,7 @@ Automatic version resolution based on Semantic Versioning 2.0.0 rules. This mode
 
 **Configuration Examples:**
 
-#### Lowest Applicable Version (traditional)
+#### Lowest Applicable Version
 ```json
 {
   "Repository URL": "https://github.com/org/library.git",
@@ -378,7 +378,7 @@ Automatic version resolution based on Semantic Versioning 2.0.0 rules. This mode
 }
 ```
 
-#### Floating Patch Version (new in v7.1.0)
+#### Floating Patch Version
 ```json
 {
   "Repository URL": "https://github.com/org/library.git",
@@ -388,7 +388,7 @@ Automatic version resolution based on Semantic Versioning 2.0.0 rules. This mode
 }
 ```
 
-#### Floating Minor Version (new in v7.1.0)
+#### Floating Minor Version
 ```json
 {
   "Repository URL": "https://github.com/org/library.git",
@@ -510,7 +510,7 @@ You can use both Agnostic and SemVer modes in the same dependency tree. Each rep
 6. **Test your dependency tree** with `-DryRun` before actual checkouts
 7. **Use consistent version tag formats** across your organization when using SemVer mode
 
-## API Compatibility Modes
+## API Compatibility Modes (Agnostic Mode)
 
 API compatibility modes control how version conflicts are resolved when multiple projects depend on the same repository. These modes apply to Agnostic mode repositories.
 
@@ -588,7 +588,7 @@ When the same repository is encountered multiple times with different compatibil
 .\LsiGitCheckout.ps1 -DisableRecursion
 ```
 
-## Checkout Tag Selection Algorithm
+## Checkout Tag Selection Algorithm (Agnostic Mode)
 
 The script features an intelligent automatic tag selection algorithm using actual git tag dates, providing optimal version selection without any manual configuration required.
 
