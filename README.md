@@ -10,8 +10,9 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - [Basic Usage (Non-Recursive)](#basic-usage-non-recursive)
 - [Advanced Usage (Recursive Mode)](#advanced-usage-recursive-mode)
 - [Dependency Resolution Modes](#dependency-resolution-modes)
-- [API Compatibility Modes](#api-compatibility-modes)
-- [Checkout Tag Selection Algorithm](#checkout-tag-selection-algorithm)
+- [SemVer Mode](#semver-mode)
+- [Agnostic Mode](#agnostic-mode)
+- [Choosing Between Dependency Resolution Modes](#choosing-between-dependency-resolution-modes)
 - [Custom Dependency Files](#custom-dependency-files)
 - [Post-Checkout Scripts](#post-checkout-scripts)
 - [Security Best Practices](#security-best-practices)
@@ -156,7 +157,7 @@ Contains repository configurations without any credential information:
 }
 ```
 
-**Simple Array Format (Legacy Support):**
+**Simple Array Format (No Post-Checkout Scripts):**
 ```json
 [
   {
@@ -175,7 +176,7 @@ Contains repository configurations without any credential information:
 - **Repository URL** (required): Git repository URL (HTTPS or SSH)
 - **Base Path** (required): Local directory checkout path (relative or absolute)
 - **Dependency Resolution** (optional): "SemVer" (recommended) or "Agnostic" (default) - see [Dependency Resolution Modes](#dependency-resolution-modes)
-- **Version** (required for SemVer mode): Semantic version requirement (e.g., "2.1.0", "2.1.*", "2.*")
+- **Version** (required for SemVer mode): Semantic version requirement (e.g., "2.1.0", "2.1.\*", "2.\*")
 - **Version Regex** (optional, SemVer mode): Custom regex pattern for version extraction from tags
 - **Tag** (required for Agnostic mode): Git tag to checkout
 - **API Compatible Tags** (optional, Agnostic mode): List of API-compatible tags (can be in any order - automatic chronological sorting)
@@ -473,6 +474,33 @@ A tag-based resolution using exact tags and explicit API Compatible Tags lists. 
   "API Compatibility": "Strict"
 }
 ```
+
+### Version Management Rules
+
+When updating dependencies, simply add or remove versions from the API Compatible Tags array:
+
+1. **Adding a new compatible version** (e.g., v1.0.3 → v1.0.4):
+   - Add the new version to "API Compatible Tags" or update "Tag"
+   - Order doesn't matter - automatic sorting handles chronology
+   
+   ```json
+   {
+     "Tag": "v1.0.4",
+     "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2", "v1.0.3"]
+   }
+   ```
+
+2. **Bumping to an incompatible version** (e.g., v1.0.3 → v2.0.0):
+   - Update "Tag" to the new version
+   - Clear or update "API Compatible Tags" for the new API version
+   
+   ```json
+   {
+     "Tag": "v2.0.0",
+     "API Compatible Tags": []
+   }
+   ```
+
 
 ### API Compatibility Modes in Agnostic Mode
 

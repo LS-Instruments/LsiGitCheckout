@@ -11,7 +11,7 @@ This guide covers advanced scenarios for migrating existing projects to LsiGitCh
 
 ## Migrating Existing Dependency Trees to LsiGitCheckout (SemVer Mode)
 
-The migration process for SemVer mode follows a bottom-up approach, but leverages Semantic Versioning 2.0.0 rules with floating version specifications for automatic compatibility resolution instead of explicit API Compatible Tags lists.
+The migration process for SemVer mode follows a bottom-up approach leveraging Semantic Versioning 2.0.0 rules with floating version specifications for automatic compatibility resolution.
 
 ### SemVer Migration Strategy: Bottom-Up Approach with Floating Versions
 
@@ -354,7 +354,7 @@ git describe --tags  # Should show v1.2.0 (single shared location)
 
 #### Advantages of SemVer Migration with Floating Versions
 
-1. **No API Compatible Tags Maintenance**: The script automatically determines compatible versions using SemVer rules and floating version ranges
+1. **No API Compatible Tags Maintenance**: The script automatically determines compatible versions using SemVer rules and floating version ranges as opposed to Agnostic mode where one has to maintain the API Compatible Tags
 2. **Automatic Dependency Updates**: When new compatible versions are released, they are automatically used on the next LsiGitCheckout run
 3. **Simplified Future Updates**: Adding new compatible versions requires no configuration changes
 4. **Clear Compatibility Rules**: SemVer 2.0.0 rules with floating version syntax provide consistent, predictable compatibility behavior
