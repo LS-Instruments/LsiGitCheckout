@@ -111,13 +111,60 @@ In non-recursive mode, the script processes only the repositories listed in your
 - `-DisablePostCheckoutScripts`: Disable post-checkout script execution (default: post-checkout scripts enabled)
 - `-EnableErrorContext`: Enable detailed error context with stack traces (default: simple errors only)
 
+### Understanding Dependency Resolution Modes
+
+LsiGitCheckout provides two approaches for determining which git tag to checkout for each repository. Both modes examine the available git tags in each repository to make their selection decisions.
+
+#### SemVer Mode (Recommended)
+
+Uses **Semantic Versioning 2.0.0 rules** with the `Version` field in your dependency file to automatically determine compatible tags.
+
+**How it works:**
+1. You specify a `"Version"` field in your dependency file for each repository
+2. Script fetches all git tags from the repository
+3. Parses tags using a version regex pattern to extract semantic versions
+4. Finds all tags compatible with your version requirement
+5. Selects the appropriate version based on your pattern type
+
+**Version Field Patterns in Dependency File:**
+- **Lowest Applicable (`x.y.z`)**: Selects minimum version that satisfies compatibility
+  - Example: `"Version": "2.1.0"` in dependency file → Selects 2.1.0, 2.1.1, or 2.2.0 but not 3.0.0
+- **Floating Patch (`x.y.*`)**: Automatically selects latest patch within major.minor
+  - Example: `"Version": "2.1.*"` in dependency file → Selects latest 2.1.x (e.g., 2.1.5 if available)
+- **Floating Minor (`x.*`)**: Automatically selects latest minor.patch within major
+  - Example: `"Version": "2.*"` in dependency file → Selects latest 2.x.x (e.g., 2.5.3 if available)
+
+**Key Benefits:**
+- Zero maintenance for compatible updates
+- Automatic selection of bug fixes and compatible features
+- Clear boundaries preventing breaking changes
+
+#### Agnostic Mode
+
+Uses **explicit tag specification** with the `Tag` field in your dependency file to checkout exact versions.
+
+**How it works:**
+1. You specify a `"Tag"` field in your dependency file for each repository
+2. Script checks if the specified tag exists in the repository
+3. Checks out exactly the requested tag
+4. No automatic version resolution or compatibility checking
+
+**Tag Field Usage in Dependency File:**
+- **Exact Tag (`Tag`)**: Specifies the precise git tag to checkout
+  - Example: `"Tag": "v2.1.0"` in dependency file → Checks out exactly tag v2.1.0
+
+**Key Benefits:**
+- Maximum control over exact versions
+- Works with any tagging scheme
+- Explicit, predictable behavior
+
 ### Configuration Files
 
 #### dependencies.json
 
-Contains repository configurations without any credential information:
+The dependencies.json file contains the specification of the repositories that are your dependencies. This file lists all the repositories you want to checkout and configure, without any credential information:
 
-**SemVer Mode with Floating Versions (Recommended):**
+**SemVer Mode Configuration (Recommended):**
 ```json
 {
   "Post-Checkout Script File Name": "setup-dependencies.ps1",
@@ -129,35 +176,27 @@ Contains repository configurations without any credential information:
       "Dependency Resolution": "SemVer",
       "Version": "2.1.*",
       "Version Regex": "^v(\\d+)\\.(\\d+)\\.(\\d+)$",
-      "Skip LFS": false,
-      "Dependency File Path": "config/deps",
-      "Dependency File Name": "project-deps.json"
+      "Skip LFS": false
     }
   ]
 }
 ```
 
-**Agnostic Mode with Explicit Compatibility:**
+**Agnostic Mode Configuration:**
 ```json
 {
-  "Post-Checkout Script File Name": "setup-dependencies.ps1",
-  "Post-Checkout Script File Path": "scripts/build",
   "Repositories": [
     {
       "Repository URL": "https://github.com/user/repo.git",
       "Base Path": "repos/my-repo",
-      "Tag": "v1.0.0",
-      "API Compatible Tags": ["v0.9.0", "v0.9.1", "v0.9.2"],
-      "API Compatibility": "Strict",
-      "Skip LFS": false,
-      "Dependency File Path": "config/deps",
-      "Dependency File Name": "project-deps.json"
+      "Tag": "v2.1.0",
+      "Skip LFS": false
     }
   ]
 }
 ```
 
-**Simple Array Format (No Post-Checkout Scripts):**
+**Simple Array Format (Legacy Support):**
 ```json
 [
   {
@@ -169,21 +208,26 @@ Contains repository configurations without any credential information:
 ]
 ```
 
-**Configuration Options:**
-- **Post-Checkout Script File Name** (optional): PowerShell script to execute after successful repository checkout
-- **Post-Checkout Script File Path** (optional): Subdirectory within repository where post-checkout script is located (default: repository root)
-- **Repositories** (required in object format): Array of repository configurations
+#### Configuration Fields
+
+**Common Fields:**
 - **Repository URL** (required): Git repository URL (HTTPS or SSH)
 - **Base Path** (required): Local directory checkout path (relative or absolute)
-- **Dependency Resolution** (optional): "SemVer" (recommended) or "Agnostic" (default) - see [Dependency Resolution Modes](#dependency-resolution-modes)
-- **Version** (required for SemVer mode): Semantic version requirement (e.g., "2.1.0", "2.1.\*", "2.\*")
-- **Version Regex** (optional, SemVer mode): Custom regex pattern for version extraction from tags
-- **Tag** (required for Agnostic mode): Git tag to checkout
-- **API Compatible Tags** (optional, Agnostic mode): List of API-compatible tags (can be in any order - automatic chronological sorting)
-- **API Compatibility** (optional, Agnostic mode): "Strict" or "Permissive" (defaults to script parameter when absent)
-- **Skip LFS** (optional): Skip Git LFS downloads for this repository and all submodules
-- **Dependency File Path** (optional): Custom subdirectory within repository for dependency file
+- **Dependency Resolution** (optional): "SemVer" (recommended) or "Agnostic" (default)
+- **Skip LFS** (optional): Skip Git LFS downloads for this repository
+- **Dependency File Path** (optional): Custom subdirectory for dependency file
 - **Dependency File Name** (optional): Custom name for dependency file
+
+**SemVer Mode Fields:**
+- **Version** (required): Semantic version requirement (e.g., "2.1.0", "2.1.*", "2.*")
+- **Version Regex** (optional): Custom regex pattern for version extraction from tags (default: `^v?(\\d+)\\.(\\d+)\\.(\\d+)$`)
+
+**Agnostic Mode Fields:**
+- **Tag** (required): Git tag to checkout (e.g., "v2.1.0")
+
+**Post-Checkout Script Fields:**
+- **Post-Checkout Script File Name** (optional): PowerShell script to execute after checkout
+- **Post-Checkout Script File Path** (optional): Subdirectory where script is located
 
 #### git_credentials.json
 
@@ -227,44 +271,33 @@ Maps hostnames to SSH key files:
   {
     "Repository URL": "https://github.com/microsoft/terminal.git",
     "Base Path": "repos/windows-terminal",
-    "Tag": "v1.19.10573.0",
-    "API Compatible Tags": ["v1.19.10572.0", "v1.19.10571.0"]
+    "Tag": "v1.19.10573.0"
   },
   {
     "Repository URL": "https://github.com/PowerShell/PowerShell.git",
     "Base Path": "repos/powershell",
     "Tag": "v7.4.1",
-    "API Compatible Tags": ["v7.4.0"],
     "Skip LFS": true
   }
 ]
 ```
 
-#### Example 3: Private Repository with SSH and Post-Checkout Scripts
+#### Example 3: Mixed Mode Usage
 
-dependencies.json:
 ```json
-{
-  "Post-Checkout Script File Name": "install-dependencies.ps1",
-  "Repositories": [
-    {
-      "Repository URL": "git@github.com:mycompany/private-repo.git",
-      "Base Path": "C:\\Projects\\private-repo",
-      "Dependency Resolution": "SemVer",
-      "Version": "2024.*",
-      "API Compatibility": "Strict",
-      "Dependency File Path": "build/config",
-      "Dependency File Name": "external-requirements.json"
-    }
-  ]
-}
-```
-
-git_credentials.json:
-```json
-{
-  "github.com": "C:\\Users\\john\\.ssh\\github_company.ppk"
-}
+[
+  {
+    "Repository URL": "https://github.com/org/modern-lib.git",
+    "Base Path": "libs/modern",
+    "Dependency Resolution": "SemVer",
+    "Version": "3.*"
+  },
+  {
+    "Repository URL": "https://github.com/org/legacy-lib.git",
+    "Base Path": "libs/legacy",
+    "Tag": "release-2024-01"
+  }
+]
 ```
 
 ## Advanced Usage (Recursive Mode)
@@ -338,18 +371,18 @@ The two dependency resolution modes can be mixed within the same dependency tree
 
 ## SemVer Mode
 
-Automatic version resolution based on Semantic Versioning 2.0.0 rules. This mode eliminates the need to maintain explicit compatibility lists by leveraging semantic versioning conventions and supports floating version patterns for automatic latest version selection.
+Automatic version resolution based on Semantic Versioning 2.0.0 rules for managing shared dependencies across multiple repositories. This mode eliminates the need to maintain explicit compatibility lists by leveraging semantic versioning conventions and supports floating version patterns for automatic latest version selection.
 
-**Key Features:**
+**Key Features for Shared Dependencies:**
 - Automatic compatibility resolution using SemVer rules
 - Floating version patterns for automatic latest version selection
 - Support for custom version tag patterns
 - Intelligent conflict detection and reporting
 - Mixed specification mode: floating patterns select highest compatible versions
 
-**Configuration Examples:**
+### Advanced SemVer Configuration
 
-### Lowest Applicable Version
+#### Lowest Applicable Version
 ```json
 {
   "Repository URL": "https://github.com/org/library.git",
@@ -360,7 +393,7 @@ Automatic version resolution based on Semantic Versioning 2.0.0 rules. This mode
 }
 ```
 
-### Floating Patch Version
+#### Floating Patch Version
 ```json
 {
   "Repository URL": "https://github.com/org/library.git",
@@ -370,7 +403,7 @@ Automatic version resolution based on Semantic Versioning 2.0.0 rules. This mode
 }
 ```
 
-### Floating Minor Version
+#### Floating Minor Version
 ```json
 {
   "Repository URL": "https://github.com/org/library.git",
@@ -380,11 +413,11 @@ Automatic version resolution based on Semantic Versioning 2.0.0 rules. This mode
 }
 ```
 
-### SemVer Mode Details
+### SemVer Shared Dependency Resolution
 
 #### Version Specification Patterns
 
-SemVer mode supports three version specification patterns:
+SemVer mode supports three version specification patterns for handling shared dependencies:
 
 1. **Lowest Applicable Version (`x.y.z`)**: Select minimum version that satisfies compatibility requirements
    - Example: `"Version": "2.1.0"` → Compatible: 2.1.0, 2.1.1, 2.2.0 → Selects: 2.1.0
@@ -456,15 +489,15 @@ No version satisfies all requirements:
 
 ## Agnostic Mode
 
-A tag-based resolution using exact tags and explicit API Compatible Tags lists. This mode provides maximum control and flexibility for projects that don't follow strict semantic versioning.
+A tag-based resolution using exact tags and explicit API Compatible Tags lists for managing shared dependencies. This mode provides maximum control and flexibility for projects that don't follow strict semantic versioning.
 
-**Key Features:**
+**Key Features for Shared Dependencies:**
 - Explicit compatibility definitions via "API Compatible Tags"
 - Always-on intelligent tag temporal sorting
 - Support for Strict and Permissive compatibility modes
 - Fine-grained control over version relationships
 
-**Configuration Example:**
+**Basic Configuration Example:**
 ```json
 {
   "Repository URL": "https://github.com/org/library.git",
@@ -474,33 +507,6 @@ A tag-based resolution using exact tags and explicit API Compatible Tags lists. 
   "API Compatibility": "Strict"
 }
 ```
-
-### Version Management Rules
-
-When updating dependencies, simply add or remove versions from the API Compatible Tags array:
-
-1. **Adding a new compatible version** (e.g., v1.0.3 → v1.0.4):
-   - Add the new version to "API Compatible Tags" or update "Tag"
-   - Order doesn't matter - automatic sorting handles chronology
-   
-   ```json
-   {
-     "Tag": "v1.0.4",
-     "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2", "v1.0.3"]
-   }
-   ```
-
-2. **Bumping to an incompatible version** (e.g., v1.0.3 → v2.0.0):
-   - Update "Tag" to the new version
-   - Clear or update "API Compatible Tags" for the new API version
-   
-   ```json
-   {
-     "Tag": "v2.0.0",
-     "API Compatible Tags": []
-   }
-   ```
-
 
 ### API Compatibility Modes in Agnostic Mode
 
@@ -580,6 +586,32 @@ When the same repository is encountered multiple times with different compatibil
 .\LsiGitCheckout.ps1 -DisableRecursion
 ```
 
+### Version Management Rules
+
+When updating dependencies, simply add or remove versions from the API Compatible Tags array:
+
+1. **Adding a new compatible version** (e.g., v1.0.3 → v1.0.4):
+   - Add the new version to "API Compatible Tags" or update "Tag"
+   - Order doesn't matter - automatic sorting handles chronology
+   
+   ```json
+   {
+     "Tag": "v1.0.4",
+     "API Compatible Tags": ["v1.0.0", "v1.0.1", "v1.0.2", "v1.0.3"]
+   }
+   ```
+
+2. **Bumping to an incompatible version** (e.g., v1.0.3 → v2.0.0):
+   - Update "Tag" to the new version
+   - Clear or update "API Compatible Tags" for the new API version
+   
+   ```json
+   {
+     "Tag": "v2.0.0",
+     "API Compatible Tags": []
+   }
+   ```
+
 ### Checkout Tag Selection Algorithm in Agnostic Mode
 
 The script features an intelligent automatic tag selection algorithm using actual git tag dates, providing optimal version selection without any manual configuration required.
@@ -588,34 +620,27 @@ The script features an intelligent automatic tag selection algorithm using actua
 
 The script automatically:
 1. **Fetches tag dates** from each repository after checkout using `git for-each-ref`
-2. **Sorts tags chronologically** during API compatibility resolution using actual git tag creation dates
-3. **Prioritizes Tag values** - intelligently prefers existing/new "Tag" values over other compatible tags when resolving conflicts
-4. **Optimizes performance** - only fetches tag dates and sorts when needed during conflict resolution
+2. **Sorts tags chronologically** during processing using actual git tag creation dates
+3. **Prioritizes specified tags** - intelligently uses your specified "Tag" values when processing repositories
+4. **Optimizes performance** - only fetches tag dates when needed
 
 #### Key Benefits
 
 - **Accurate chronology**: Uses actual git tag dates instead of assumed ordering
-- **Intelligent tag selection**: Prioritizes specified "Tag" values when they're compatible
-- **Minimal performance impact**: Efficient tag date fetching only when conflicts require resolution
-- **Simplified maintenance**: Add tags to "API Compatible Tags" in any order
+- **Intelligent tag selection**: Prioritizes your specified "Tag" values in dependency files
+- **Minimal performance impact**: Efficient tag date fetching only when needed
+- **Simplified maintenance**: Works automatically without manual configuration
 - **Optimal behavior**: No configuration required for best performance
 - **Zero maintenance overhead**: No need to maintain temporal order in configuration files
 
-#### Tag Selection Algorithm
-
-When multiple repositories reference the same dependency with different tags, the algorithm prioritizes in this order:
-
-1. **Both existing and new "Tag" are compatible**: Choose the chronologically most recent "Tag"
-2. **Only existing "Tag" is compatible**: Use the existing "Tag" 
-3. **Only new "Tag" is compatible**: Use the new "Tag"
-4. **Neither "Tag" is compatible**: Use the chronologically most recent tag from the compatible set (intersection/union)
-
 #### Performance Optimization
 
-- **On-demand processing**: Tag dates are only fetched when needed for conflict resolution
+- **On-demand processing**: Tag dates are only fetched when needed
 - **Efficient git operations**: Uses `git for-each-ref` instead of multiple `git log` calls
-- **Smart caching**: Tag dates are cached in memory during recursive processing
-- **Minimal server impact**: Only one tag date fetch per repository during initial checkout
+- **Smart caching**: Tag dates are cached in memory during processing
+- **Minimal server impact**: Only one tag date fetch per repository during checkout
+
+This intelligent sorting ensures that when you specify tags in your dependency files, the script handles them optimally while maintaining performance and accuracy.
 
 ### Mixed Mode Support
 
@@ -644,6 +669,12 @@ You can use both SemVer and Agnostic modes in the same dependency tree. Each rep
   }
 ]
 ```
+
+This flexibility allows you to:
+- Use SemVer mode for well-versioned libraries that follow semantic versioning
+- Use Agnostic mode for legacy components or repositories with custom tagging schemes
+- Choose the appropriate mode for each repository based on its versioning practices
+- Maintain different levels of control across your dependency tree
 
 ## Choosing Between Dependency Resolution Modes
 
