@@ -12,8 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Schema version 1.0.0 with execution metadata, per-repository results, summary counters, and error messages
   - `Export-CheckoutResults` function generates the JSON output
   - Output is guaranteed even on failure (written in `finally` block)
+- **Post-checkout script tracking** in JSON output per repository (`postCheckoutScript` field with configured, found, executed, status, reason) and at root level (`rootPostCheckoutScripts` array)
+- **`requestedBy` field** on each repository entry showing which parent repo or dependency file requested it
 - `Test-InteractiveSession` helper to detect non-interactive environments
 - Error message collector in `Write-Log` for structured output
+- `docs/test_repositories_reference.md` — catalog of all test repo tags and their dependencies
 
 ### Fixed
 - **Show-ErrorDialog pipeline leakage**: `MessageBox::Show()` return value leaked to pipeline, causing failures to be counted as successes

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point). Version 8.0.0, by LS Instruments AG.
+PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point). Version 8.1.0, by LS Instruments AG.
 
 ## Running the Tool
 
@@ -11,6 +11,7 @@ PowerShell-based dependency management tool that checks out multiple Git reposit
 .\LsiGitCheckout.ps1 -InputFile "path/to/deps.json"     # custom config
 .\LsiGitCheckout.ps1 -DryRun                             # preview without executing
 .\LsiGitCheckout.ps1 -EnableDebug -EnableErrorContext     # full debug output
+.\LsiGitCheckout.ps1 -OutputFile result.json             # structured JSON output
 ```
 
 Key parameters: `-InputFile`, `-CredentialsFile`, `-DryRun`, `-EnableDebug`, `-DisableRecursion`, `-MaxDepth` (default 5), `-ApiCompatibility` (Strict|Permissive), `-DisablePostCheckoutScripts`, `-EnableErrorContext`, `-OutputFile` (structured JSON results)
@@ -50,6 +51,7 @@ There are 16 test JSON configs covering SemVer, Agnostic, API incompatibility, c
 - **Recursive processing**: walks dependency trees with conflict detection, max depth configurable
 - **SSH**: PuTTY/Pageant integration for authentication (`.ppk` key format)
 - **Post-checkout scripts**: optional PowerShell scripts run after successful checkouts
+- **Structured output**: `-OutputFile` writes JSON (schema 1.0.0) with per-repo results, post-checkout script tracking, and `requestedBy` parent chain
 
 ## Coding Conventions
 
@@ -71,9 +73,10 @@ LsiGitCheckout.psd1      # Module manifest
 CHANGELOG.md             # Version history
 README.md                # Comprehensive user documentation
 docs/
-  developer_guide.md    # Developer setup, testing, debugging
-  comparison_guide.md    # vs Google Repo Tool
-  migration_guide.md     # Migration strategies
+  developer_guide.md            # Developer setup, testing, debugging
+  comparison_guide.md            # vs Google Repo Tool
+  migration_guide.md             # Migration strategies
+  test_repositories_reference.md # Test repo tags and dependency data
 examples/                # 7 example dependency JSON configs
 tests/                   # 16 test JSON configs + Pester test files
   LsiGitCheckout.Unit.Tests.ps1         # Unit tests (no network)
