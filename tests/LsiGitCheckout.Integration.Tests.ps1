@@ -116,6 +116,7 @@ Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
             $repo.path | Should -Not -BeNullOrEmpty
             $repo.dependencyResolution | Should -BeIn @('SemVer', 'Agnostic')
             $repo.status | Should -BeIn @('success', 'failed', 'skipped')
+            $repo.requestedBy | Should -Not -BeNullOrEmpty -Because "every repo should have a requestedBy"
         }
 
         # Mode-specific validations
