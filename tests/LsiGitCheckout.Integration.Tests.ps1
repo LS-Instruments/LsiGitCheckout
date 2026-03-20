@@ -21,30 +21,65 @@ BeforeDiscovery {
     # Test matrix: config filename -> expected exit code and repository count
     # All test configs are named dependencies.json in subdirectories so the filename
     # propagates correctly through all recursive depth levels.
-    # ExpectedRepos = total unique repositories discovered across all depth levels.
+    # ExpectedTags: expected final tag per repo URL suffix (e.g., 'RootA' -> 'v3.0.0').
+    # Repo URL suffixes used: RootA, RootB, TestA, TestB, TestC
     $script:TestCases = @(
-        # SemVer mode tests - expected to succeed
-        @{ Config = 'semver-basic/dependencies.json';                         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer basic' }
-        @{ Config = 'semver-floating-versions/dependencies.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer floating versions' }
-        @{ Config = 'semver-floating-versions-2/dependencies.json';           ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer floating versions 2' }
-        @{ Config = 'semver-custom-dep-path-1/dependencies.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer custom dep path 1' }
-        @{ Config = 'semver-custom-dep-path-2/dependencies.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer custom dep path 2' }
-        @{ Config = 'semver-post-checkout-scripts/dependencies.json';         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer post-checkout scripts' }
-        @{ Config = 'semver-post-checkout-scripts-2/dependencies.json';       ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer post-checkout scripts 2' }
-        @{ Config = 'semver-post-checkout-scripts-depth-0/dependencies.json'; ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $true;  Label = 'SemVer post-checkout depth 0' }
+        # SemVer mode tests
+        @{ Config = 'semver-basic/dependencies.json';                         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false
+           ExpectedTags = @{ RootA = 'v3.0.0'; RootB = 'v3.0.0'; TestA = 'v3.0.0'; TestB = 'v3.0.0'; TestC = 'v3.0.0' }
+           Label = 'SemVer basic' }
+        @{ Config = 'semver-floating-versions/dependencies.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false
+           ExpectedTags = @{ RootA = 'v3.0.1'; RootB = 'v3.0.0'; TestA = 'v3.0.0'; TestB = 'v3.0.1'; TestC = 'v3.0.2' }
+           Label = 'SemVer floating versions' }
+        @{ Config = 'semver-floating-versions-2/dependencies.json';           ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false
+           ExpectedTags = @{ RootA = 'v3.0.2'; RootB = 'v3.0.0'; TestA = 'v3.0.0'; TestB = 'v3.0.2'; TestC = 'v3.1.0' }
+           Label = 'SemVer floating versions 2' }
+        @{ Config = 'semver-custom-dep-path-1/dependencies.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false
+           ExpectedTags = @{ RootA = 'v3.0.0'; RootB = 'v3.0.2'; TestA = 'v3.0.0'; TestB = 'v3.0.0'; TestC = 'v3.0.0' }
+           Label = 'SemVer custom dep path 1' }
+        @{ Config = 'semver-custom-dep-path-2/dependencies.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false
+           ExpectedTags = @{ RootA = 'v3.0.0'; RootB = 'v3.0.3'; TestA = 'v3.0.0'; TestB = 'v3.0.0'; TestC = 'v3.0.0' }
+           Label = 'SemVer custom dep path 2' }
+        @{ Config = 'semver-post-checkout-scripts/dependencies.json';         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false
+           ExpectedTags = @{ RootA = 'v3.0.0'; RootB = 'v3.0.4'; TestA = 'v3.0.0'; TestB = 'v3.0.0'; TestC = 'v3.0.0' }
+           Label = 'SemVer post-checkout scripts' }
+        @{ Config = 'semver-post-checkout-scripts-2/dependencies.json';       ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false
+           ExpectedTags = @{ RootA = 'v3.0.0'; RootB = 'v3.0.5'; TestA = 'v3.0.0'; TestB = 'v3.0.0'; TestC = 'v3.0.0' }
+           Label = 'SemVer post-checkout scripts 2' }
+        @{ Config = 'semver-post-checkout-scripts-depth-0/dependencies.json'; ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $true
+           ExpectedTags = @{ RootA = 'v3.0.0'; RootB = 'v3.0.5'; TestA = 'v3.0.0'; TestB = 'v3.0.0'; TestC = 'v3.0.0' }
+           Label = 'SemVer post-checkout depth 0' }
 
-        # Agnostic mode tests - expected to succeed
-        @{ Config = 'agnostic-recursive/dependencies.json';                   ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic recursive' }
-        @{ Config = 'agnostic-custom-dep-path/dependencies.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic custom dep path' }
-        @{ Config = 'agnostic-partial-api-overlap/dependencies.json';         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic partial API overlap' }
-        @{ Config = 'agnostic-post-checkout-scripts/dependencies.json';       ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic post-checkout scripts' }
-        @{ Config = 'agnostic-post-checkout-scripts-2/dependencies.json';     ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic post-checkout scripts 2' }
-        @{ Config = 'agnostic-post-checkout-scripts-depth-0/dependencies.json'; ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $true;  Label = 'Agnostic post-checkout depth 0' }
+        # Agnostic mode tests
+        @{ Config = 'agnostic-recursive/dependencies.json';                   ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false
+           ExpectedTags = @{ RootA = 'v1.0.0'; RootB = 'v1.0.1'; TestA = 'v1.0.3'; TestB = 'v1.0.3'; TestC = 'v1.0.3' }
+           Label = 'Agnostic recursive' }
+        @{ Config = 'agnostic-custom-dep-path/dependencies.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false
+           ExpectedTags = @{ RootA = 'v1.0.0'; RootB = 'v1.0.2'; TestA = 'v1.0.3'; TestB = 'v1.0.3'; TestC = 'v1.0.3' }
+           Label = 'Agnostic custom dep path' }
+        @{ Config = 'agnostic-partial-api-overlap/dependencies.json';         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false
+           ExpectedTags = @{ RootA = 'v1.0.0'; RootB = 'v1.0.1'; TestA = 'v1.0.3'; TestB = 'v1.0.3'; TestC = 'v1.0.3' }
+           Label = 'Agnostic partial API overlap' }
+        @{ Config = 'agnostic-post-checkout-scripts/dependencies.json';       ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false
+           ExpectedTags = @{ RootA = 'v1.0.0'; RootB = 'v1.0.4'; TestA = 'v1.0.3'; TestB = 'v1.0.3'; TestC = 'v1.0.3' }
+           Label = 'Agnostic post-checkout scripts' }
+        @{ Config = 'agnostic-post-checkout-scripts-2/dependencies.json';     ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false
+           ExpectedTags = @{ RootA = 'v1.0.0'; RootB = 'v1.0.5'; TestA = 'v1.0.3'; TestB = 'v1.0.3'; TestC = 'v1.0.3' }
+           Label = 'Agnostic post-checkout scripts 2' }
+        @{ Config = 'agnostic-post-checkout-scripts-depth-0/dependencies.json'; ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $true
+           ExpectedTags = @{ RootA = 'v1.0.0'; RootB = 'v1.0.4'; TestA = 'v1.0.3'; TestB = 'v1.0.3'; TestC = 'v1.0.3' }
+           Label = 'Agnostic post-checkout depth 0' }
 
-        # API incompatibility tests - Permissive resolves Agnostic conflicts; Strict rejects them.
-        @{ Config = 'api-incompatibility-agnostic/dependencies.json';         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; ApiMode = 'Permissive'; Label = 'Agnostic API incompatibility (Permissive)' }
-        @{ Config = 'api-incompatibility-agnostic/dependencies.json';         ExpectedExit = 1; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; ApiMode = 'Strict';     Label = 'Agnostic API incompatibility (Strict)' }
-        @{ Config = 'api-incompatibility-semver/dependencies.json';           ExpectedExit = 1; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; ApiMode = 'Permissive'; Label = 'SemVer API incompatibility' }
+        # API incompatibility tests
+        @{ Config = 'api-incompatibility-agnostic/dependencies.json';         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; ApiMode = 'Permissive'
+           ExpectedTags = @{ RootA = 'v1.0.0'; RootB = 'v1.1.0'; TestA = 'v1.0.3'; TestB = 'v1.0.3'; TestC = 'v1.0.3' }
+           Label = 'Agnostic API incompatibility (Permissive)' }
+        @{ Config = 'api-incompatibility-agnostic/dependencies.json';         ExpectedExit = 1; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; ApiMode = 'Strict'
+           ExpectedTags = @{ RootA = 'v1.0.0'; RootB = 'v1.1.0'; TestA = 'v1.0.3'; TestB = 'v1.0.3'; TestC = 'v2.0.0' }
+           Label = 'Agnostic API incompatibility (Strict)' }
+        @{ Config = 'api-incompatibility-semver/dependencies.json';           ExpectedExit = 1; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; ApiMode = 'Permissive'
+           ExpectedTags = @{ RootA = 'v3.0.0'; RootB = 'v3.1.0'; TestA = 'v3.0.0'; TestB = 'v3.0.0'; TestC = 'v4.0.0' }
+           Label = 'SemVer API incompatibility' }
     )
 }
 
@@ -75,7 +110,7 @@ Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
     }
 
     It '<Label> (<Config>) exits with code <ExpectedExit>' -TestCases $script:TestCases {
-        param($Config, $ExpectedExit, $ExpectedRepos, $Mode, $HasRootScript, $ApiMode, $Label)
+        param($Config, $ExpectedExit, $ExpectedRepos, $Mode, $HasRootScript, $ApiMode, $ExpectedTags, $Label)
 
         $configPath = Join-Path $script:TestConfigDir $Config
         $configPath | Should -Exist
@@ -136,6 +171,24 @@ Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
             foreach ($repo in $semVerRepos) {
                 $repo.tag | Should -Not -BeNullOrEmpty -Because "SemVer repo should have a selected tag"
                 $repo.selectedVersion | Should -Not -BeNullOrEmpty -Because "SemVer repo should have a selected version"
+            }
+        }
+
+        # Validate expected tags per repository
+        if ($ExpectedTags) {
+            # Map repo URL suffixes to full URLs
+            $urlMap = @{
+                RootA = 'https://github.com/LS-Instruments/LsiCheckOutTestRootA.git'
+                RootB = 'https://github.com/LS-Instruments/LsiCheckOutTestRootB.git'
+                TestA = 'https://github.com/LS-Instruments/LsiCheckOutTestA.git'
+                TestB = 'https://github.com/LS-Instruments/LsiCheckOutTestB.git'
+                TestC = 'https://github.com/LS-Instruments/LsiCheckOutTestC.git'
+            }
+            foreach ($entry in $ExpectedTags.GetEnumerator()) {
+                $fullUrl = $urlMap[$entry.Key]
+                $repo = $result.repositories | Where-Object { $_.url -eq $fullUrl }
+                $repo | Should -Not -BeNullOrEmpty -Because "repo $($entry.Key) ($fullUrl) should be in results"
+                $repo.tag | Should -Be $entry.Value -Because "$($entry.Key) should be checked out at tag $($entry.Value)"
             }
         }
 
