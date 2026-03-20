@@ -97,6 +97,9 @@ In non-recursive mode, the script processes only the repositories listed in your
 
 # Enable detailed error context for debugging
 .\LsiGitCheckout.ps1 -EnableErrorContext
+
+# Export structured JSON results for CI/CD pipelines
+.\LsiGitCheckout.ps1 -OutputFile result.json
 ```
 
 ### Parameters
@@ -110,6 +113,7 @@ In non-recursive mode, the script processes only the repositories listed in your
 - `-DisableRecursion`: Disable recursive dependency processing (default: recursive mode enabled)
 - `-DisablePostCheckoutScripts`: Disable post-checkout script execution (default: post-checkout scripts enabled)
 - `-EnableErrorContext`: Enable detailed error context with stack traces (default: simple errors only)
+- `-OutputFile`: Write structured JSON results to the specified file path (for CI/CD integration)
 
 ### Understanding Dependency Resolution Modes
 
