@@ -71,6 +71,7 @@ LsiGitCheckout.psd1      # Module manifest
 CHANGELOG.md             # Version history
 README.md                # Comprehensive user documentation
 docs/
+  developer_guide.md    # Developer setup, testing, debugging
   comparison_guide.md    # vs Google Repo Tool
   migration_guide.md     # Migration strategies
 examples/                # 7 example dependency JSON configs

@@ -4,5 +4,79 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"terminal.integrated.defaultProfile.windows": "PowerShell",
+		"terminal.integrated.defaultProfile.linux": "pwsh",
+		"terminal.integrated.defaultProfile.osx": "pwsh",
+		"files.associations": {
+			"*.ps1": "powershell",
+			"*.psm1": "powershell",
+			"*.psd1": "powershell"
+		},
+		"[powershell]": {
+			"editor.tabSize": 4,
+			"editor.insertSpaces": true
+		}
+	},
+	"launch": {
+		"version": "0.2.0",
+		"configurations": [
+			{
+				"name": "Run Unit Tests",
+				"type": "PowerShell",
+				"request": "launch",
+				"script": "Invoke-Pester ./tests/LsiGitCheckout.Unit.Tests.ps1 -Output Detailed",
+				"createTemporaryIntegratedConsole": true
+			},
+			{
+				"name": "Run Integration Tests",
+				"type": "PowerShell",
+				"request": "launch",
+				"script": "Invoke-Pester ./tests/LsiGitCheckout.Integration.Tests.ps1 -Output Detailed",
+				"createTemporaryIntegratedConsole": true
+			},
+			{
+				"name": "Run All Tests",
+				"type": "PowerShell",
+				"request": "launch",
+				"script": "Invoke-Pester ./tests/ -Output Detailed",
+				"createTemporaryIntegratedConsole": true
+			},
+			{
+				"name": "Run Script (DryRun - SemVer)",
+				"type": "PowerShell",
+				"request": "launch",
+				"script": "${workspaceFolder}/LsiGitCheckout.ps1",
+				"args": [
+					"-InputFile", "${workspaceFolder}/tests/dependencies_semver.json",
+					"-DryRun"
+				],
+				"createTemporaryIntegratedConsole": true
+			},
+			{
+				"name": "Run Script (Custom Config)",
+				"type": "PowerShell",
+				"request": "launch",
+				"script": "${workspaceFolder}/LsiGitCheckout.ps1",
+				"args": [
+					"-InputFile", "${input:configFile}",
+					"-DryRun"
+				],
+				"createTemporaryIntegratedConsole": true
+			}
+		],
+		"inputs": [
+			{
+				"id": "configFile",
+				"type": "promptString",
+				"description": "Path to dependency configuration JSON file",
+				"default": "tests/dependencies_semver.json"
+			}
+		]
+	},
+	"extensions": {
+		"recommendations": [
+			"ms-vscode.powershell"
+		]
+	}
 }
