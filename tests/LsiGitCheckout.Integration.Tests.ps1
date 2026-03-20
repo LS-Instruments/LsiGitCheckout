@@ -40,10 +40,10 @@ BeforeDiscovery {
 
         # API incompatibility tests - use subdirectories so the file is named dependencies.json
         # and recursive lookup propagates correctly through all depth levels.
-        # TODO: These should exit 1 but current test repos + Permissive mode don't trigger a conflict.
-        # Design proper test data that exercises the API incompatibility detection path.
-        @{ Config = 'api-incompatibility-agnostic/dependencies.json';         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic API incompatibility' }
-        @{ Config = 'api-incompatibility-semver/dependencies.json';           ExpectedExit = 1; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer API incompatibility' }
+        # Permissive mode resolves Agnostic conflicts silently; Strict mode rejects them.
+        @{ Config = 'api-incompatibility-agnostic/dependencies.json';         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; ApiMode = 'Permissive'; Label = 'Agnostic API incompatibility (Permissive)' }
+        @{ Config = 'api-incompatibility-agnostic/dependencies.json';         ExpectedExit = 1; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; ApiMode = 'Strict';     Label = 'Agnostic API incompatibility (Strict)' }
+        @{ Config = 'api-incompatibility-semver/dependencies.json';           ExpectedExit = 1; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; ApiMode = 'Permissive'; Label = 'SemVer API incompatibility' }
     )
 }
 
@@ -77,7 +77,7 @@ Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
     }
 
     It '<Label> (<Config>) exits with code <ExpectedExit>' -TestCases $script:TestCases {
-        param($Config, $ExpectedExit, $ExpectedRepos, $Mode, $HasRootScript, $Label)
+        param($Config, $ExpectedExit, $ExpectedRepos, $Mode, $HasRootScript, $ApiMode, $Label)
 
         $configPath = Join-Path $script:TestConfigDir $Config
         $configPath | Should -Exist
@@ -86,10 +86,16 @@ Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
         $outputJson = Join-Path $TestDrive ("result_{0}.json" -f ($Config -replace '[^a-zA-Z0-9]', '_'))
 
         # Run the script as a child process — no DryRun so recursive checkout is exercised
-        $output = & pwsh -NoProfile -NonInteractive -File $script:ScriptPath `
-            -InputFile $configPath `
-            -OutputFile $outputJson `
-            -DisablePostCheckoutScripts 2>&1
+        $scriptArgs = @(
+            '-NoProfile', '-NonInteractive', '-File', $script:ScriptPath,
+            '-InputFile', $configPath,
+            '-OutputFile', $outputJson,
+            '-DisablePostCheckoutScripts'
+        )
+        if ($ApiMode) {
+            $scriptArgs += @('-ApiCompatibility', $ApiMode)
+        }
+        $output = & pwsh @scriptArgs 2>&1
         $actualExit = $LASTEXITCODE
 
         # Validate exit code
