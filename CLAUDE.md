@@ -53,6 +53,11 @@ There are 16 test JSON configs covering SemVer, Agnostic, API incompatibility, c
 - **Post-checkout scripts**: optional PowerShell scripts run after successful checkouts
 - **Structured output**: `-OutputFile` writes JSON (schema 1.0.0) with per-repo results, post-checkout script tracking, and `requestedBy` parent chain
 
+## Design Decisions
+
+- **API compatibility in Agnostic mode**: In **Permissive** mode (default), version/tag conflicts during recursive checkout are resolved silently by picking the best available tag. In **Strict** mode, any tag mismatch is an error. This is controlled by `-ApiCompatibility` (CLI) or `"API Compatibility"` (per-repo JSON field).
+- **SemVer major version conflicts**: SemVer mode always rejects cross-major version incompatibilities regardless of the API compatibility setting, since different major versions imply breaking API changes by SemVer convention.
+
 ## Coding Conventions
 
 - **PowerShell 7.6 LTS** required (`#Requires -Version 7.6`)
