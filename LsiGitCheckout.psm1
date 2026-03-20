@@ -657,13 +657,35 @@ function Test-GitLfsInstalled {
     }
 }
 
-function Test-PlinkInstalled {
+function Test-SshTransportAvailable {
+    <#
+    .SYNOPSIS
+        Tests whether the platform-appropriate SSH transport is available.
+    .DESCRIPTION
+        On Windows, checks for plink.exe (PuTTY SSH client).
+        On macOS/Linux, checks for the ssh command (OpenSSH client).
+    .OUTPUTS
+        [bool] True if SSH transport is available, False otherwise.
+    #>
     try {
-        $null = Get-Command plink.exe -ErrorAction Stop
-        return $true
+        if ($IsWindows) {
+            $null = Get-Command plink.exe -ErrorAction Stop
+            Write-Log "PuTTY plink found" -Level Debug
+            return $true
+        }
+        else {
+            $null = Get-Command ssh -ErrorAction Stop
+            Write-Log "OpenSSH client found" -Level Debug
+            return $true
+        }
     }
     catch {
-        Write-Log "Plink is not installed or not in PATH" -Level Warning
+        if ($IsWindows) {
+            Write-Log "Plink is not installed or not in PATH" -Level Warning
+        }
+        else {
+            Write-Log "OpenSSH client (ssh) is not installed or not in PATH" -Level Warning
+        }
         return $false
     }
 }
@@ -747,60 +769,136 @@ function Get-SshKeyForUrl {
 }
 
 function Set-GitSshKey {
+    <#
+    .SYNOPSIS
+        Configures Git SSH authentication for the current repository.
+    .DESCRIPTION
+        Dispatches to platform-specific SSH setup:
+        - Windows: PuTTY/plink via Set-GitSshKeyPlink
+        - macOS/Linux: OpenSSH via Set-GitSshKeyOpenSsh
+    .PARAMETER SshKeyPath
+        Path to the SSH private key file.
+    .PARAMETER RepoUrl
+        The repository URL (used for logging context).
+    .OUTPUTS
+        [bool] True if SSH was configured successfully, False otherwise.
+    #>
     param(
         [string]$SshKeyPath,
         [string]$RepoUrl = ""
     )
-    
+
     if (-not (Test-Path $SshKeyPath)) {
         Write-Log "SSH key file not found: $SshKeyPath" -Level Error
         return $false
     }
-    
-    # Check key file permissions (Windows)
-    $keyFile = Get-Item $SshKeyPath
-    $acl = Get-Acl $SshKeyPath
-    Write-Log "SSH key file permissions: $($acl.Owner)" -Level Debug
-    
-    # Check if the key is in PuTTY format
+
+    # Detect key format
     $keyContent = Get-Content $SshKeyPath -Raw -ErrorAction SilentlyContinue
     $isPuttyKey = $keyContent -match 'PuTTY-User-Key-File'
-    
-    if (-not (Test-PlinkInstalled)) {
+
+    if ($IsWindows) {
+        return Set-GitSshKeyPlink -SshKeyPath $SshKeyPath -IsPuttyKey $isPuttyKey
+    }
+    else {
+        return Set-GitSshKeyOpenSsh -SshKeyPath $SshKeyPath -IsPuttyKey $isPuttyKey
+    }
+}
+
+function Set-GitSshKeyPlink {
+    <#
+    .SYNOPSIS
+        Configures Git to use PuTTY/plink for SSH on Windows.
+    .DESCRIPTION
+        Validates the key is in PuTTY format, ensures plink.exe and Pageant are available,
+        and sets the GIT_SSH environment variable to plink.exe.
+    #>
+    param(
+        [string]$SshKeyPath,
+        [bool]$IsPuttyKey
+    )
+
+    # Check key file permissions (Windows ACL)
+    $acl = Get-Acl $SshKeyPath
+    Write-Log "SSH key file permissions: $($acl.Owner)" -Level Debug
+
+    if (-not (Test-SshTransportAvailable)) {
         Write-Log "Plink not found. Please install PuTTY or add plink.exe to PATH" -Level Error
         Show-ErrorDialog -Message "Plink.exe not found!`n`nPlease either:`n1. Install PuTTY (which includes plink)`n2. Add plink.exe to your PATH"
         return $false
     }
-    
-    if (-not $isPuttyKey) {
+
+    if (-not $IsPuttyKey) {
         Write-Log "SSH key is not in PuTTY format" -Level Error
         Show-ErrorDialog -Message "The SSH key is not in PuTTY format (.ppk).`n`nPlease convert your key to PuTTY format using PuTTYgen."
         return $false
     }
-    
+
     # Check if Pageant is running
     $pageantProcess = Get-Process pageant -ErrorAction SilentlyContinue
     if (-not $pageantProcess) {
         Write-Log "Pageant not running. Attempting to start it..." -Level Info
-        
+
         # Try to find and start Pageant
         $pageantPath = Get-Command pageant.exe -ErrorAction SilentlyContinue
         if ($pageantPath) {
             Start-Process pageant.exe
             Start-Sleep -Seconds 2
-            
+
             Show-ErrorDialog -Title "Pageant Started" -Message "Pageant has been started.`n`nPlease add your SSH key to Pageant:`n1. Right-click the Pageant icon in system tray`n2. Select 'Add Key'`n3. Browse to: $SshKeyPath`n4. Enter your passphrase`n`nThen click OK to continue."
         } else {
             Show-ErrorDialog -Message "Pageant not found. Please start Pageant and add your key before continuing."
             return $false
         }
     }
-    
+
     # Configure Git to use plink
     $plinkPath = (Get-Command plink.exe).Source
     $env:GIT_SSH = $plinkPath
     Write-Log "Configured Git to use PuTTY/plink: $plinkPath" -Level Debug
-    
+
+    return $true
+}
+
+function Set-GitSshKeyOpenSsh {
+    <#
+    .SYNOPSIS
+        Configures Git to use OpenSSH for SSH on macOS/Linux.
+    .DESCRIPTION
+        Validates the key is in OpenSSH format (rejects PuTTY .ppk keys),
+        checks file permissions, and sets GIT_SSH_COMMAND with the explicit key path.
+    #>
+    param(
+        [string]$SshKeyPath,
+        [bool]$IsPuttyKey
+    )
+
+    # Reject PuTTY keys on Unix
+    if ($IsPuttyKey) {
+        Write-Log "SSH key is in PuTTY format (.ppk), which is not supported on macOS/Linux" -Level Error
+        Write-Log "Convert with: puttygen '$SshKeyPath' -O private-openssh -o <output_path>" -Level Error
+        return $false
+    }
+
+    if (-not (Test-SshTransportAvailable)) {
+        Write-Log "OpenSSH client (ssh) not found in PATH" -Level Error
+        return $false
+    }
+
+    # Check key file permissions (Unix)
+    $fileItem = Get-Item $SshKeyPath
+    if ($null -ne $fileItem.UnixMode) {
+        $mode = $fileItem.UnixMode
+        # Warn if group or other have any permissions (should be --- for both)
+        if ($mode -match '.{4}[^\-].{2}$' -or $mode -match '.{7}[^\-]') {
+            Write-Log "SSH key file has overly permissive permissions: $mode. Run: chmod 600 '$SshKeyPath'" -Level Warning
+        }
+    }
+
+    # Set GIT_SSH_COMMAND with explicit key
+    $env:GIT_SSH_COMMAND = "ssh -i `"$SshKeyPath`" -o IdentitiesOnly=yes"
+    Write-Log "Configured Git to use OpenSSH with key: $SshKeyPath" -Level Debug
+
     return $true
 }
 
@@ -2463,13 +2561,26 @@ function Read-CredentialsFile {
         
         Write-Log "Loaded SSH credentials for $($credentialsHash.Count) host(s)" -Level Info
         
-        # Validate all SSH key files exist
+        # Validate all SSH key files exist and check format for current platform
         foreach ($hostname in $credentialsHash.Keys) {
+            # Skip comment keys
+            if ($hostname.StartsWith('_')) { continue }
+
             $keyPath = $credentialsHash[$hostname]
             if (-not (Test-Path $keyPath)) {
                 Write-Log "Warning: SSH key file not found for $hostname : $keyPath" -Level Warning
             } else {
                 Write-Log "Found SSH key for $hostname : $keyPath" -Level Debug
+
+                # Advisory format check
+                $keyContent = Get-Content $keyPath -Raw -ErrorAction SilentlyContinue
+                $isPutty = $keyContent -match 'PuTTY-User-Key-File'
+                if ($IsWindows -and -not $isPutty) {
+                    Write-Log "SSH key for $hostname does not appear to be in PuTTY format (.ppk) — required on Windows" -Level Warning
+                }
+                elseif (-not $IsWindows -and $isPutty) {
+                    Write-Log "SSH key for $hostname is in PuTTY format (.ppk) — not supported on macOS/Linux. Convert with: puttygen '$keyPath' -O private-openssh -o <output_path>" -Level Warning
+                }
             }
         }
         
@@ -2715,7 +2826,7 @@ Export-ModuleMember -Function @(
     'Show-ConfirmDialog',
     'Test-GitInstalled',
     'Test-GitLfsInstalled',
-    'Test-PlinkInstalled',
+    'Test-SshTransportAvailable',
     'Get-RepositoryUrl',
     'Get-HostnameFromUrl',
     'Get-SshKeyForUrl',

@@ -26,7 +26,7 @@
         'Show-ConfirmDialog',
         'Test-GitInstalled',
         'Test-GitLfsInstalled',
-        'Test-PlinkInstalled',
+        'Test-SshTransportAvailable',
         'Get-RepositoryUrl',
         'Get-HostnameFromUrl',
         'Get-SshKeyForUrl',

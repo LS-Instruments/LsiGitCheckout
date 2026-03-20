@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point). Version 8.1.0, by LS Instruments AG.
+PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point). Version 8.0.0 (unreleased), by LS Instruments AG.
 
 ## Running the Tool
 
@@ -53,7 +53,7 @@ There are 17 test cases across 16 test configs covering SemVer, Agnostic, API in
 - **Two dependency resolution modes**: SemVer (recommended, automatic version resolution) and Agnostic (explicit tag-based)
 - **Configuration**: JSON files — `dependencies.json` for repos, `git_credentials.json` for SSH keys
 - **Recursive processing**: walks dependency trees with conflict detection, max depth configurable
-- **SSH**: PuTTY/Pageant integration for authentication (`.ppk` key format)
+- **SSH**: Cross-platform — PuTTY/Pageant on Windows (`.ppk`), OpenSSH on macOS/Linux
 - **Post-checkout scripts**: optional PowerShell scripts run after successful checkouts
 - **Structured output**: `-OutputFile` writes JSON (schema 1.0.0) with per-repo results, post-checkout script tracking, and `requestedBy` parent chain
 
@@ -61,7 +61,7 @@ There are 17 test cases across 16 test configs covering SemVer, Agnostic, API in
 
 - **API compatibility in Agnostic mode**: In **Permissive** mode (default), version/tag conflicts during recursive checkout are resolved silently by picking the best available tag. In **Strict** mode, any tag mismatch is an error. This is controlled by `-ApiCompatibility` (CLI) or `"API Compatibility"` (per-repo JSON field).
 - **SemVer major version conflicts**: SemVer mode always rejects cross-major version incompatibilities regardless of the API compatibility setting, since different major versions imply breaking API changes by SemVer convention.
-- **PuTTY/Pageant on Windows (not OpenSSH)**: We attempted to use OpenSSH on Windows but encountered persistent issues — possibly related to Git submodule operations not properly inheriting SSH settings (exact root cause not confirmed in commit history). PuTTY with `.ppk` keys and Pageant was the only reliable solution on Windows. On Mac/Linux, OpenSSH (as bundled with Git) should work natively and is a future TODO.
+- **SSH transport is platform-specific**: On Windows, PuTTY/plink with `.ppk` keys and Pageant is used. On macOS/Linux, OpenSSH is used via `GIT_SSH_COMMAND="ssh -i <key> -o IdentitiesOnly=yes"`, which specifies keys per-host without requiring `~/.ssh/config` changes or a running `ssh-agent`. **Why PuTTY on Windows**: We attempted OpenSSH on Windows but hit a specific failure: when a parent repository is cloned via HTTPS and has submodules accessed via SSH, the `git submodule update` process on Windows did not reliably inherit `GIT_SSH_COMMAND`/`GIT_SSH` environment variables, causing SSH submodule fetches to fail silently or hang. PuTTY/plink with Pageant (which manages keys via a system-tray agent process rather than environment variables) was the only reliable workaround. This issue was not reproduced on macOS/Linux, where environment variable inheritance across git subprocess forks works correctly.
 
 ## Coding Conventions
 
@@ -90,7 +90,7 @@ docs/
   testing_infrastructure.md      # Test architecture, constraints, and categories
 examples/                # 7 example dependency JSON configs
 tests/                   # Pester test files + 16 test config subdirectories
-  LsiGitCheckout.Unit.Tests.ps1         # 60 unit tests (no network)
+  LsiGitCheckout.Unit.Tests.ps1         # 65 unit tests (no network)
   LsiGitCheckout.Integration.Tests.ps1  # 17 integration tests (needs network)
   semver-basic/dependencies.json        # Test configs in subdirectories
   agnostic-recursive/dependencies.json  # (16 subdirectories total)

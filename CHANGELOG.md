@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Cross-platform SSH support**: OpenSSH on macOS/Linux via `GIT_SSH_COMMAND`, PuTTY/plink on Windows
+  - `Test-SshTransportAvailable` replaces `Test-PlinkInstalled` (platform-aware)
+  - `Set-GitSshKeyOpenSsh` for Unix: validates key format, checks permissions, sets `GIT_SSH_COMMAND`
+  - `Set-GitSshKeyPlink` for Windows: existing PuTTY/Pageant logic (unchanged behavior)
+  - `Read-CredentialsFile` now warns about wrong key format for the current platform
 - `LsiGitCheckout.psm1` module file containing all function definitions
 - `LsiGitCheckout.psd1` module manifest
 - `Initialize-LsiGitCheckout` function for module state initialization

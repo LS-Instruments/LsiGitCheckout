@@ -5,7 +5,8 @@ A PowerShell script for managing multiple Git repositories with support for tags
 ## Table of Contents
 
 - [Features](#features)
-- [Requirements](#requirements)
+- [Supported Platforms](#supported-platforms)
+- [Platform Setup](#platform-setup)
 - [Installation](#installation)
 - [Basic Usage (Non-Recursive)](#basic-usage-non-recursive)
 - [Advanced Usage (Recursive Mode)](#advanced-usage-recursive-mode)
@@ -16,7 +17,8 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - [Custom Dependency Files](#custom-dependency-files)
 - [Post-Checkout Scripts](#post-checkout-scripts)
 - [Security Best Practices](#security-best-practices)
-- [SSH Setup with PuTTY](#ssh-setup-with-putty)
+- [SSH Setup on Windows](#ssh-setup-on-windows)
+- [SSH Setup on macOS/Linux](#ssh-setup-on-macoslinux)
 - [Troubleshooting](#troubleshooting)
 - [Migration Guide](#migration-guide)
 - [Advanced Topics](#advanced-topics)
@@ -27,9 +29,9 @@ A PowerShell script for managing multiple Git repositories with support for tags
 
 - **Batch Operations**: Clone or update multiple Git repositories from a single JSON configuration file
 - **Tag Support**: Automatically checkout specific tags for each repository
-- **PuTTY/Pageant Integration**: SSH authentication using PuTTY format keys (.ppk)
+- **Cross-Platform SSH**: PuTTY/Pageant on Windows, OpenSSH on macOS/Linux
 - **Secure Credentials Management**: SSH keys stored separately from repository configuration
-- **Submodule Support**: Handles Git submodules with automatic SSH key lookup
+- **Submodule Support**: Handles Git submodules with automatic per-host SSH key lookup
 - **Git LFS Support**: Optional Git LFS content management with skip functionality
 - **Smart Reset**: Automatically resets repositories to clean state before checkout
 - **Error Handling**: Comprehensive logging and user-friendly error dialogs
@@ -42,24 +44,129 @@ A PowerShell script for managing multiple Git repositories with support for tags
 - **Custom Dependency Files**: Support for different project structures and naming conventions with proper isolation
 - **Post-Checkout Scripts**: Execute PowerShell scripts after successful repository checkouts for integration with external dependency management systems, including support for root-level execution
 
-## Requirements
+## Supported Platforms
 
-- **Operating System**: Windows 10/11 or Windows Server 2016+
-- **PowerShell**: Version 7.6 LTS or later (install via `winget install Microsoft.PowerShell`; installs side-by-side with Windows PowerShell 5.1)
-- **Git**: Git for Windows (https://git-scm.com/download/win)
-- **PuTTY Suite**: For SSH authentication (https://www.putty.org/)
-  - plink.exe must be in PATH
-  - pageant.exe for SSH key management
-- **Git LFS**: Optional, for Large File Storage support (https://git-lfs.github.com/)
+| Component | Windows 10/11, Server 2016+ | macOS | Linux |
+|-----------|----------------------------|-------|-------|
+| PowerShell | 7.6 LTS (side-by-side with 5.1) | 7.6 LTS | 7.6 LTS |
+| Git | Git for Windows 2.x+ | Xcode CLI tools or standalone | Distribution package |
+| SSH transport | PuTTY/plink + Pageant (`.ppk` keys) | OpenSSH (bundled) | OpenSSH (bundled) |
+| HTTPS auth | Git Credential Manager (bundled with Git for Windows) | Git Credential Manager | Git Credential Manager or PAT |
+| Git LFS | Optional | Optional | Optional |
+
+## Platform Setup
+
+### Windows
+
+1. **Install PowerShell 7.6 LTS** (installs as `pwsh.exe` alongside Windows PowerShell 5.1 — existing scripts are unaffected):
+
+   ```cmd
+   winget install Microsoft.PowerShell
+   ```
+
+2. **Install Git for Windows** (includes Git Credential Manager for HTTPS authentication):
+
+   Download from [git-scm.com](https://git-scm.com/download/win) or:
+
+   ```cmd
+   winget install Git.Git
+   ```
+
+3. **Set execution policy** (one-time, allows running local scripts):
+
+   ```powershell
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+   ```
+
+4. **SSH setup** (only if accessing repositories via SSH URLs):
+
+   LsiGitCheckout uses PuTTY/plink on Windows. See [SSH Setup on Windows](#ssh-setup-on-windows).
+
+### macOS
+
+1. **Install PowerShell 7.6 LTS**:
+
+   ```bash
+   # Via Homebrew (recommended)
+   brew install powershell
+
+   # Or via .NET global tool
+   dotnet tool install --global PowerShell
+   ```
+
+2. **Install Git** (may already be installed via Xcode CLI tools):
+
+   ```bash
+   # Check if installed
+   git --version
+
+   # Install Xcode CLI tools if needed
+   xcode-select --install
+   ```
+
+3. **Install Git Credential Manager** (for HTTPS authentication to GitHub, Azure DevOps, etc.):
+
+   ```bash
+   brew install git-credential-manager
+   git-credential-manager configure
+   ```
+
+4. **SSH setup** (only if accessing repositories via SSH URLs):
+
+   macOS includes OpenSSH. See [SSH Setup on macOS/Linux](#ssh-setup-on-macoslinux).
+
+### Linux
+
+1. **Install PowerShell 7.6 LTS**:
+
+   ```bash
+   # Ubuntu/Debian
+   sudo apt-get update
+   sudo apt-get install -y powershell
+
+   # RHEL/CentOS/Fedora
+   sudo dnf install powershell
+
+   # Or via .NET global tool
+   dotnet tool install --global PowerShell
+   ```
+
+   See [Microsoft's Linux installation guide](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-linux) for all distributions.
+
+2. **Install Git**:
+
+   ```bash
+   # Ubuntu/Debian
+   sudo apt-get install git
+
+   # RHEL/CentOS/Fedora
+   sudo dnf install git
+   ```
+
+3. **Install Git Credential Manager** (for HTTPS authentication):
+
+   ```bash
+   # Download latest .deb or .rpm from:
+   # https://github.com/git-credential-manager/git-credential-manager/releases
+   sudo dpkg -i gcm-linux_amd64.deb   # Debian/Ubuntu
+   git-credential-manager configure
+   ```
+
+   Alternatively, use a Personal Access Token (PAT) for HTTPS repos.
+
+4. **SSH setup** (only if accessing repositories via SSH URLs):
+
+   Linux includes OpenSSH. See [SSH Setup on macOS/Linux](#ssh-setup-on-macoslinux).
 
 ## Installation
 
-1. Download `LsiGitCheckout.ps1` to your desired location
+1. Download `LsiGitCheckout.ps1`, `LsiGitCheckout.psm1`, and `LsiGitCheckout.psd1` to the same directory
 2. Create `dependencies.json` with your repository configuration
-3. Create `git_credentials.json` with your SSH key mappings (if using SSH)
-4. Ensure execution policy allows running scripts:
-   ```powershell
-   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+3. Create `git_credentials.json` with your SSH key mappings (if using SSH repositories)
+4. Run with `pwsh`:
+
+   ```bash
+   pwsh ./LsiGitCheckout.ps1 -InputFile dependencies.json
    ```
 
 ## Basic Usage (Non-Recursive)
@@ -272,14 +379,25 @@ The dependencies.json file contains the specification of the repositories that a
 
 #### git_credentials.json
 
-Maps hostnames to SSH key files:
+Maps hostnames to SSH key file paths. The key format depends on your platform:
+
+**Windows** (PuTTY `.ppk` format):
 
 ```json
 {
   "github.com": "C:\\Users\\username\\.ssh\\github_key.ppk",
   "gitlab.com": "C:\\Users\\username\\.ssh\\gitlab_key.ppk",
-  "bitbucket.org": "C:\\Users\\username\\.ssh\\bitbucket_key.ppk",
   "ssh://git.internal.corp": "C:\\keys\\internal_key.ppk"
+}
+```
+
+**macOS/Linux** (OpenSSH format):
+
+```json
+{
+  "github.com": "/home/username/.ssh/id_ed25519",
+  "gitlab.com": "/home/username/.ssh/gitlab_rsa",
+  "ssh://git.internal.corp": "/home/username/.ssh/internal_key"
 }
 ```
 
@@ -962,7 +1080,9 @@ Write-Host "Dependency setup completed for $env:LSIGIT_REPOSITORY_PATH"
    - Use `-DisablePostCheckoutScripts` in untrusted environments
    - Monitor script execution logs for security events
 
-## SSH Setup with PuTTY
+## SSH Setup on Windows
+
+LsiGitCheckout uses PuTTY/plink for SSH on Windows.
 
 1. **Convert OpenSSH keys to PuTTY format**:
    - Open PuTTYgen
@@ -976,22 +1096,79 @@ Write-Host "Dependency setup completed for $env:LSIGIT_REPOSITORY_PATH"
    - Enter passphrase when prompted
 
 3. **Test SSH connection**:
+
    ```cmd
    plink -i "C:\path\to\key.ppk" git@github.com
    ```
+
+## SSH Setup on macOS/Linux
+
+LsiGitCheckout uses OpenSSH (bundled with Git or the OS) on macOS and Linux. No additional tools are required.
+
+1. **Use standard OpenSSH keys** (e.g., `id_ed25519`, `id_rsa`):
+
+   ```bash
+   # Generate a new key if needed
+   ssh-keygen -t ed25519 -C "your_email@example.com"
+   ```
+
+2. **Set correct permissions** (ssh refuses keys that are too permissive):
+
+   ```bash
+   chmod 600 ~/.ssh/id_ed25519
+   ```
+
+3. **Create `git_credentials.json`** mapping hostnames to your key paths:
+
+   ```json
+   {
+     "github.com": "/home/username/.ssh/id_ed25519",
+     "gitlab.com": "/home/username/.ssh/gitlab_rsa"
+   }
+   ```
+
+4. **Test SSH connection**:
+
+   ```bash
+   ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes git@github.com
+   ```
+
+**Note**: If your key has a passphrase and you are running in a non-interactive/CI environment, either use a passphrase-less deploy key or pre-load the key into `ssh-agent` before running LsiGitCheckout.
+
+**Passphrase-protected keys**: If your key has a passphrase, load it into `ssh-agent` before running LsiGitCheckout so it doesn't prompt during git operations:
+
+```bash
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_ed25519
+# Enter passphrase once — agent handles it for the rest of the session
+```
+
+**Converting from PuTTY format**: If you have `.ppk` keys from a Windows setup, convert them using PuTTYgen on Windows (**Conversions → Export OpenSSH key (force new file format)**) or on macOS/Linux:
+
+```bash
+# Requires puttygen (install via: brew install putty / apt install putty-tools)
+puttygen key.ppk -O private-openssh -o key_openssh
+chmod 600 key_openssh
+```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **"Plink.exe not found"**
+1. **"Plink.exe not found"** (Windows)
    - Install PuTTY suite
    - Add PuTTY installation directory to PATH
 
-2. **"SSH key is not in PuTTY format"**
+2. **"SSH key is not in PuTTY format"** (Windows)
    - Use PuTTYgen to convert OpenSSH keys to .ppk format
 
-3. **"No SSH key configured for repository"**
+3. **"SSH key is in PuTTY format (.ppk), which is not supported on macOS/Linux"**
+   - Convert with: `puttygen key.ppk -O private-openssh -o key_openssh`
+
+4. **"SSH key file has overly permissive permissions"** (macOS/Linux)
+   - Run: `chmod 600 /path/to/your/key`
+
+5. **"No SSH key configured for repository"**
    - Check that hostname is correctly specified in git_credentials.json
    - Verify the hostname matches the repository URL
 

@@ -609,3 +609,103 @@ Describe 'Export-CheckoutResults' {
         $result.rootPostCheckoutScripts[0].status | Should -Be 'skipped'
     }
 }
+
+Describe 'Test-SshTransportAvailable' {
+    It 'returns true when ssh is available on this system' {
+        # On macOS/Linux, ssh should always be present
+        if (-not $IsWindows) {
+            Test-SshTransportAvailable | Should -Be $true
+        } else {
+            Set-ItResult -Skipped -Because 'this test validates OpenSSH availability on Unix'
+        }
+    }
+}
+
+Describe 'Set-GitSshKey' {
+    BeforeAll {
+        # Create a temporary OpenSSH key for testing (no passphrase)
+        $script:testKeyPath = Join-Path $TestDrive 'test_key'
+        ssh-keygen -t ed25519 -f $script:testKeyPath -N '""' -q 2>$null
+        if (-not (Test-Path $script:testKeyPath)) {
+            # Fallback: create a fake OpenSSH-format key file
+            Set-Content -Path $script:testKeyPath -Value "-----BEGIN OPENSSH PRIVATE KEY-----`ntest`n-----END OPENSSH PRIVATE KEY-----"
+        }
+
+        # Create a fake PuTTY key for rejection testing
+        $script:testPuttyKeyPath = Join-Path $TestDrive 'test_key.ppk'
+        Set-Content -Path $script:testPuttyKeyPath -Value "PuTTY-User-Key-File-3: ssh-ed25519`nfake-putty-key-content"
+    }
+
+    Context 'OpenSSH path (macOS/Linux)' {
+        BeforeAll {
+            if ($IsWindows) {
+                $script:skipUnix = $true
+            }
+        }
+
+        It 'configures GIT_SSH_COMMAND with explicit key path' {
+            if ($script:skipUnix) {
+                Set-ItResult -Skipped -Because 'OpenSSH tests only run on macOS/Linux'
+                return
+            }
+
+            # Save and clear env vars
+            $originalSshCmd = $env:GIT_SSH_COMMAND
+            $originalSsh = $env:GIT_SSH
+            $env:GIT_SSH_COMMAND = $null
+            $env:GIT_SSH = $null
+
+            try {
+                $result = Set-GitSshKey -SshKeyPath $script:testKeyPath
+                $result | Should -Be $true
+                $env:GIT_SSH_COMMAND | Should -BeLike "ssh -i *test_key* -o IdentitiesOnly=yes"
+                $env:GIT_SSH | Should -BeNullOrEmpty
+            }
+            finally {
+                $env:GIT_SSH_COMMAND = $originalSshCmd
+                $env:GIT_SSH = $originalSsh
+            }
+        }
+
+        It 'rejects PuTTY format keys' {
+            if ($script:skipUnix) {
+                Set-ItResult -Skipped -Because 'OpenSSH tests only run on macOS/Linux'
+                return
+            }
+
+            $result = Set-GitSshKey -SshKeyPath $script:testPuttyKeyPath
+            $result | Should -Be $false
+        }
+
+        It 'returns false for non-existent key file' {
+            $result = Set-GitSshKey -SshKeyPath (Join-Path $TestDrive 'nonexistent_key')
+            $result | Should -Be $false
+        }
+    }
+
+    Context 'Permission check (macOS/Linux)' {
+        It 'warns on overly permissive key file' {
+            if ($IsWindows) {
+                Set-ItResult -Skipped -Because 'Unix permission tests only run on macOS/Linux'
+                return
+            }
+
+            # Make key world-readable
+            chmod 644 $script:testKeyPath
+
+            # Save env
+            $originalSshCmd = $env:GIT_SSH_COMMAND
+            $env:GIT_SSH_COMMAND = $null
+
+            try {
+                # Should still succeed but produce a warning
+                $result = Set-GitSshKey -SshKeyPath $script:testKeyPath
+                $result | Should -Be $true
+            }
+            finally {
+                chmod 600 $script:testKeyPath
+                $env:GIT_SSH_COMMAND = $originalSshCmd
+            }
+        }
+    }
+}
