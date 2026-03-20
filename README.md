@@ -45,7 +45,7 @@ A PowerShell script for managing multiple Git repositories with support for tags
 ## Requirements
 
 - **Operating System**: Windows 10/11 or Windows Server 2016+
-- **PowerShell**: Version 5.1 or higher
+- **PowerShell**: Version 7.6 LTS or later (install via `winget install Microsoft.PowerShell`; installs side-by-side with Windows PowerShell 5.1)
 - **Git**: Git for Windows (https://git-scm.com/download/win)
 - **PuTTY Suite**: For SSH authentication (https://www.putty.org/)
   - plink.exe must be in PATH

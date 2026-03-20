@@ -22,8 +22,6 @@ $RECYCLE.BIN/
 
 # PowerShell specific
 *.pssproj
-*.psm1
-*.psd1
 *.ps1xml
 
 # Visual Studio Code

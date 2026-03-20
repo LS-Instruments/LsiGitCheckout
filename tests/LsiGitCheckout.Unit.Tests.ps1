@@ -1,0 +1,395 @@
+#Requires -Version 7.6
+#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0' }
+
+<#
+.SYNOPSIS
+    Unit tests for LsiGitCheckout module functions
+.DESCRIPTION
+    Tests pure and near-pure functions that require no network or git operations.
+    Run with: Invoke-Pester ./tests/LsiGitCheckout.Unit.Tests.ps1 -Output Detailed
+#>
+
+BeforeAll {
+    # Import the module from parent directory
+    $modulePath = Join-Path $PSScriptRoot '..' 'LsiGitCheckout.psm1'
+    Import-Module $modulePath -Force
+
+    # Initialize module with test-safe defaults
+    Initialize-LsiGitCheckout -ScriptPath $PSScriptRoot
+
+    # Silence Write-Host output from Write-Log
+    Mock Write-Host {} -ModuleName LsiGitCheckout
+}
+
+Describe 'Parse-VersionPattern' {
+    It 'parses exact version x.y.z as LowestApplicable' {
+        $result = Parse-VersionPattern -VersionPattern '3.2.1'
+        $result.Type | Should -Be 'LowestApplicable'
+        $result.Major | Should -Be 3
+        $result.Minor | Should -Be 2
+        $result.Patch | Should -Be 1
+        $result.OriginalPattern | Should -Be '3.2.1'
+    }
+
+    It 'parses floating patch x.y.* as FloatingPatch' {
+        $result = Parse-VersionPattern -VersionPattern '2.1.*'
+        $result.Type | Should -Be 'FloatingPatch'
+        $result.Major | Should -Be 2
+        $result.Minor | Should -Be 1
+        $result.Patch | Should -BeNullOrEmpty
+    }
+
+    It 'parses floating minor x.* as FloatingMinor' {
+        $result = Parse-VersionPattern -VersionPattern '5.*'
+        $result.Type | Should -Be 'FloatingMinor'
+        $result.Major | Should -Be 5
+        $result.Minor | Should -BeNullOrEmpty
+        $result.Patch | Should -BeNullOrEmpty
+    }
+
+    It 'parses version 0.x.y correctly' {
+        $result = Parse-VersionPattern -VersionPattern '0.2.3'
+        $result.Type | Should -Be 'LowestApplicable'
+        $result.Major | Should -Be 0
+        $result.Minor | Should -Be 2
+        $result.Patch | Should -Be 3
+    }
+
+    It 'throws on invalid pattern' {
+        { Parse-VersionPattern -VersionPattern 'abc' } | Should -Throw '*Invalid version pattern*'
+    }
+
+    It 'throws on partial pattern x.y' {
+        { Parse-VersionPattern -VersionPattern '1.2' } | Should -Throw '*Invalid version pattern*'
+    }
+
+    It 'throws on empty string' {
+        { Parse-VersionPattern -VersionPattern '' } | Should -Throw '*Invalid version pattern*'
+    }
+}
+
+Describe 'Test-SemVerCompatibility' {
+    Context 'LowestApplicable pattern' {
+        BeforeAll {
+            $pattern = @{ Type = 'LowestApplicable'; Major = 2; Minor = 1; Patch = 0; OriginalPattern = '2.1.0' }
+        }
+
+        It 'accepts exact version match' {
+            Test-SemVerCompatibility -Available ([Version]::new(2, 1, 0)) -VersionPattern $pattern | Should -BeTrue
+        }
+
+        It 'accepts same major, higher minor' {
+            Test-SemVerCompatibility -Available ([Version]::new(2, 3, 0)) -VersionPattern $pattern | Should -BeTrue
+        }
+
+        It 'accepts same major.minor, higher patch' {
+            Test-SemVerCompatibility -Available ([Version]::new(2, 1, 5)) -VersionPattern $pattern | Should -BeTrue
+        }
+
+        It 'rejects different major version' {
+            Test-SemVerCompatibility -Available ([Version]::new(3, 0, 0)) -VersionPattern $pattern | Should -BeFalse
+        }
+
+        It 'rejects lower minor.patch' {
+            Test-SemVerCompatibility -Available ([Version]::new(2, 0, 9)) -VersionPattern $pattern | Should -BeFalse
+        }
+    }
+
+    Context 'LowestApplicable 0.x special case' {
+        BeforeAll {
+            $pattern = @{ Type = 'LowestApplicable'; Major = 0; Minor = 2; Patch = 1; OriginalPattern = '0.2.1' }
+        }
+
+        It 'accepts same 0.minor with higher patch' {
+            Test-SemVerCompatibility -Available ([Version]::new(0, 2, 3)) -VersionPattern $pattern | Should -BeTrue
+        }
+
+        It 'rejects different minor under 0.x' {
+            Test-SemVerCompatibility -Available ([Version]::new(0, 3, 0)) -VersionPattern $pattern | Should -BeFalse
+        }
+
+        It 'rejects lower patch under 0.x' {
+            Test-SemVerCompatibility -Available ([Version]::new(0, 2, 0)) -VersionPattern $pattern | Should -BeFalse
+        }
+    }
+
+    Context 'FloatingPatch pattern' {
+        BeforeAll {
+            $pattern = @{ Type = 'FloatingPatch'; Major = 2; Minor = 1; OriginalPattern = '2.1.*' }
+        }
+
+        It 'accepts any patch within same major.minor' {
+            Test-SemVerCompatibility -Available ([Version]::new(2, 1, 0)) -VersionPattern $pattern | Should -BeTrue
+            Test-SemVerCompatibility -Available ([Version]::new(2, 1, 99)) -VersionPattern $pattern | Should -BeTrue
+        }
+
+        It 'rejects different minor' {
+            Test-SemVerCompatibility -Available ([Version]::new(2, 2, 0)) -VersionPattern $pattern | Should -BeFalse
+        }
+
+        It 'rejects different major' {
+            Test-SemVerCompatibility -Available ([Version]::new(3, 1, 0)) -VersionPattern $pattern | Should -BeFalse
+        }
+    }
+
+    Context 'FloatingPatch 0.x special case' {
+        BeforeAll {
+            $pattern = @{ Type = 'FloatingPatch'; Major = 0; Minor = 3; OriginalPattern = '0.3.*' }
+        }
+
+        It 'accepts any patch within 0.3' {
+            Test-SemVerCompatibility -Available ([Version]::new(0, 3, 0)) -VersionPattern $pattern | Should -BeTrue
+            Test-SemVerCompatibility -Available ([Version]::new(0, 3, 15)) -VersionPattern $pattern | Should -BeTrue
+        }
+
+        It 'rejects different minor under 0.x' {
+            Test-SemVerCompatibility -Available ([Version]::new(0, 4, 0)) -VersionPattern $pattern | Should -BeFalse
+        }
+    }
+
+    Context 'FloatingMinor pattern' {
+        BeforeAll {
+            $pattern = @{ Type = 'FloatingMinor'; Major = 3; OriginalPattern = '3.*' }
+        }
+
+        It 'accepts any version within same major' {
+            Test-SemVerCompatibility -Available ([Version]::new(3, 0, 0)) -VersionPattern $pattern | Should -BeTrue
+            Test-SemVerCompatibility -Available ([Version]::new(3, 99, 99)) -VersionPattern $pattern | Should -BeTrue
+        }
+
+        It 'rejects different major' {
+            Test-SemVerCompatibility -Available ([Version]::new(4, 0, 0)) -VersionPattern $pattern | Should -BeFalse
+            Test-SemVerCompatibility -Available ([Version]::new(2, 0, 0)) -VersionPattern $pattern | Should -BeFalse
+        }
+    }
+
+    Context 'FloatingMinor 0.x special case' {
+        BeforeAll {
+            $pattern = @{ Type = 'FloatingMinor'; Major = 0; OriginalPattern = '0.*' }
+        }
+
+        It 'accepts any 0.x version' {
+            Test-SemVerCompatibility -Available ([Version]::new(0, 0, 0)) -VersionPattern $pattern | Should -BeTrue
+            Test-SemVerCompatibility -Available ([Version]::new(0, 9, 9)) -VersionPattern $pattern | Should -BeTrue
+        }
+
+        It 'rejects major > 0' {
+            Test-SemVerCompatibility -Available ([Version]::new(1, 0, 0)) -VersionPattern $pattern | Should -BeFalse
+        }
+    }
+}
+
+Describe 'Get-CompatibleVersionsForPattern' {
+    BeforeAll {
+        $versions = @{
+            'v1.0.0' = [Version]::new(1, 0, 0)
+            'v1.1.0' = [Version]::new(1, 1, 0)
+            'v1.1.5' = [Version]::new(1, 1, 5)
+            'v1.2.0' = [Version]::new(1, 2, 0)
+            'v2.0.0' = [Version]::new(2, 0, 0)
+        }
+    }
+
+    It 'returns versions >= requested for LowestApplicable' {
+        $pattern = @{ Type = 'LowestApplicable'; Major = 1; Minor = 1; Patch = 0; OriginalPattern = '1.1.0' }
+        $result = Get-CompatibleVersionsForPattern -ParsedVersions $versions -VersionPattern $pattern
+        $result.Count | Should -Be 3  # v1.1.0, v1.1.5, v1.2.0
+        $result.Tag | Should -Contain 'v1.1.0'
+        $result.Tag | Should -Contain 'v1.1.5'
+        $result.Tag | Should -Contain 'v1.2.0'
+    }
+
+    It 'returns only matching major.minor for FloatingPatch' {
+        $pattern = @{ Type = 'FloatingPatch'; Major = 1; Minor = 1; OriginalPattern = '1.1.*' }
+        $result = Get-CompatibleVersionsForPattern -ParsedVersions $versions -VersionPattern $pattern
+        $result.Count | Should -Be 2  # v1.1.0, v1.1.5
+        $result.Tag | Should -Contain 'v1.1.0'
+        $result.Tag | Should -Contain 'v1.1.5'
+    }
+
+    It 'returns all matching major for FloatingMinor' {
+        $pattern = @{ Type = 'FloatingMinor'; Major = 1; OriginalPattern = '1.*' }
+        $result = Get-CompatibleVersionsForPattern -ParsedVersions $versions -VersionPattern $pattern
+        $result.Count | Should -Be 4  # all v1.x.x
+        $result.Tag | Should -Not -Contain 'v2.0.0'
+    }
+
+    It 'throws when no compatible version found' {
+        $pattern = @{ Type = 'LowestApplicable'; Major = 3; Minor = 0; Patch = 0; OriginalPattern = '3.0.0' }
+        { Get-CompatibleVersionsForPattern -ParsedVersions $versions -VersionPattern $pattern } | Should -Throw '*No compatible version found*'
+    }
+}
+
+Describe 'Select-VersionFromIntersection' {
+    BeforeAll {
+        $intersectionVersions = @(
+            [PSCustomObject]@{ Tag = 'v1.1.0'; Version = [Version]::new(1, 1, 0) }
+            [PSCustomObject]@{ Tag = 'v1.1.5'; Version = [Version]::new(1, 1, 5) }
+            [PSCustomObject]@{ Tag = 'v1.2.0'; Version = [Version]::new(1, 2, 0) }
+        )
+    }
+
+    It 'selects lowest version when all patterns are LowestApplicable' {
+        $patterns = @{
+            'caller1' = @{ Type = 'LowestApplicable'; Major = 1; Minor = 1; Patch = 0; OriginalPattern = '1.1.0' }
+            'caller2' = @{ Type = 'LowestApplicable'; Major = 1; Minor = 0; Patch = 0; OriginalPattern = '1.0.0' }
+        }
+        $result = Select-VersionFromIntersection -IntersectionVersions $intersectionVersions -RequestedPatterns $patterns
+        $result.Tag | Should -Be 'v1.1.0'
+    }
+
+    It 'selects highest version when any pattern is floating' {
+        $patterns = @{
+            'caller1' = @{ Type = 'LowestApplicable'; Major = 1; Minor = 1; Patch = 0; OriginalPattern = '1.1.0' }
+            'caller2' = @{ Type = 'FloatingPatch'; Major = 1; Minor = 1; OriginalPattern = '1.1.*' }
+        }
+        $result = Select-VersionFromIntersection -IntersectionVersions $intersectionVersions -RequestedPatterns $patterns
+        $result.Tag | Should -Be 'v1.2.0'
+    }
+}
+
+Describe 'Get-SemVersionIntersection' {
+    It 'returns common tags between two sets' {
+        $set1 = @(
+            [PSCustomObject]@{ Tag = 'v1.0.0'; Version = [Version]::new(1, 0, 0) }
+            [PSCustomObject]@{ Tag = 'v1.1.0'; Version = [Version]::new(1, 1, 0) }
+            [PSCustomObject]@{ Tag = 'v1.2.0'; Version = [Version]::new(1, 2, 0) }
+        )
+        $set2 = @(
+            [PSCustomObject]@{ Tag = 'v1.1.0'; Version = [Version]::new(1, 1, 0) }
+            [PSCustomObject]@{ Tag = 'v1.2.0'; Version = [Version]::new(1, 2, 0) }
+            [PSCustomObject]@{ Tag = 'v2.0.0'; Version = [Version]::new(2, 0, 0) }
+        )
+        $result = Get-SemVersionIntersection -Set1 $set1 -Set2 $set2
+        $result.Count | Should -Be 2
+        $result.Tag | Should -Contain 'v1.1.0'
+        $result.Tag | Should -Contain 'v1.2.0'
+    }
+
+    It 'returns empty array when no intersection' {
+        $set1 = @(
+            [PSCustomObject]@{ Tag = 'v1.0.0'; Version = [Version]::new(1, 0, 0) }
+        )
+        $set2 = @(
+            [PSCustomObject]@{ Tag = 'v2.0.0'; Version = [Version]::new(2, 0, 0) }
+        )
+        $result = Get-SemVersionIntersection -Set1 $set1 -Set2 $set2
+        $result.Count | Should -Be 0
+    }
+}
+
+Describe 'Format-SemVersion' {
+    It 'formats Version object as major.minor.patch' {
+        $v = [Version]::new(3, 2, 1)
+        Format-SemVersion -Version $v | Should -Be '3.2.1'
+    }
+
+    It 'formats zero version correctly' {
+        $v = [Version]::new(0, 0, 0)
+        Format-SemVersion -Version $v | Should -Be '0.0.0'
+    }
+}
+
+Describe 'Get-TagIntersection' {
+    It 'returns common tags' {
+        $result = Get-TagIntersection -Tags1 @('v1.0', 'v1.1', 'v2.0') -Tags2 @('v1.1', 'v2.0', 'v3.0')
+        $result.Count | Should -Be 2
+        $result | Should -Contain 'v1.1'
+        $result | Should -Contain 'v2.0'
+    }
+
+    It 'returns empty when no overlap' {
+        $result = Get-TagIntersection -Tags1 @('v1.0') -Tags2 @('v2.0')
+        $result.Count | Should -Be 0
+    }
+
+    It 'handles empty arrays' {
+        $result = Get-TagIntersection -Tags1 @() -Tags2 @('v1.0')
+        $result.Count | Should -Be 0
+    }
+}
+
+Describe 'Get-HostnameFromUrl' {
+    It 'extracts hostname from HTTPS URL' {
+        Get-HostnameFromUrl -Url 'https://github.com/org/repo.git' | Should -Be 'github.com'
+    }
+
+    It 'extracts hostname from git@ SSH URL' {
+        Get-HostnameFromUrl -Url 'git@github.com:org/repo.git' | Should -Be 'github.com'
+    }
+
+    It 'extracts hostname from ssh:// URL' {
+        Get-HostnameFromUrl -Url 'ssh://git@gitlab.com/org/repo.git' | Should -Be 'gitlab.com'
+    }
+
+    It 'extracts hostname from ssh:// URL with port' {
+        Get-HostnameFromUrl -Url 'ssh://git@gitlab.com:2222/org/repo.git' | Should -Be 'gitlab.com'
+    }
+
+    It 'extracts hostname from HTTP URL' {
+        Get-HostnameFromUrl -Url 'http://internal-git.company.com/repo.git' | Should -Be 'internal-git.company.com'
+    }
+
+    It 'returns null for unrecognized format' {
+        Get-HostnameFromUrl -Url 'not-a-url' | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Validate-DependencyConfiguration' {
+    It 'passes when no conflict exists' {
+        $newRepo = [PSCustomObject]@{
+            'Repository URL' = 'https://github.com/org/repo.git'
+            'Dependency Resolution' = 'SemVer'
+        }
+        $existingRepo = @{
+            DependencyResolution = 'SemVer'
+        }
+        { Validate-DependencyConfiguration -NewRepo $newRepo -ExistingRepo $existingRepo } | Should -Not -Throw
+    }
+
+    It 'throws when dependency resolution mode changes' {
+        $newRepo = [PSCustomObject]@{
+            'Repository URL' = 'https://github.com/org/repo.git'
+            'Dependency Resolution' = 'SemVer'
+        }
+        $existingRepo = @{
+            DependencyResolution = 'Agnostic'
+        }
+        { Validate-DependencyConfiguration -NewRepo $newRepo -ExistingRepo $existingRepo } | Should -Throw '*cannot change*'
+    }
+
+    It 'throws when version regex changes for SemVer mode' {
+        $newRepo = [PSCustomObject]@{
+            'Repository URL' = 'https://github.com/org/repo.git'
+            'Dependency Resolution' = 'SemVer'
+            'Version Regex' = '^v(\d+)\.(\d+)\.(\d+)-beta$'
+        }
+        $existingRepo = @{
+            DependencyResolution = 'SemVer'
+            VersionRegex = '^v?(\d+)\.(\d+)\.(\d+)$'
+        }
+        { Validate-DependencyConfiguration -NewRepo $newRepo -ExistingRepo $existingRepo } | Should -Throw '*cannot change*'
+    }
+
+    It 'defaults to Agnostic when Dependency Resolution not specified' {
+        $newRepo = [PSCustomObject]@{
+            'Repository URL' = 'https://github.com/org/repo.git'
+        }
+        $existingRepo = @{
+            DependencyResolution = 'Agnostic'
+        }
+        { Validate-DependencyConfiguration -NewRepo $newRepo -ExistingRepo $existingRepo } | Should -Not -Throw
+    }
+}
+
+Describe 'Get-AbsoluteBasePath' {
+    It 'returns rooted path unchanged' {
+        if ($IsWindows) {
+            $result = Get-AbsoluteBasePath -BasePath 'C:\Projects\repo' -DependencyFilePath 'C:\config\deps.json'
+            $result | Should -Be 'C:\Projects\repo'
+        } else {
+            $result = Get-AbsoluteBasePath -BasePath '/tmp/repo' -DependencyFilePath '/config/deps.json'
+            $result | Should -Be '/tmp/repo'
+        }
+    }
+}

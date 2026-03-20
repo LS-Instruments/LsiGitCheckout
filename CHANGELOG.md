@@ -5,6 +5,21 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] - 2026-03-20
+
+### Changed
+- **BREAKING**: Requires PowerShell 7.6 LTS or later (previously 5.1). PowerShell 7.6 installs side-by-side with Windows PowerShell 5.1.
+- Refactored monolithic script into module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point)
+- Post-checkout scripts now execute via `pwsh` instead of `powershell.exe`
+- Replaced verbose null-check patterns with `??` null-coalescing operator
+
+### Added
+- `LsiGitCheckout.psm1` module file containing all function definitions
+- `LsiGitCheckout.psd1` module manifest
+- `Initialize-LsiGitCheckout` function for module state initialization
+- Automated unit tests using Pester 5.x (`tests/LsiGitCheckout.Unit.Tests.ps1`)
+- Automated integration tests for all 16 test configs (`tests/LsiGitCheckout.Integration.Tests.ps1`)
+
 ## [7.1.0] - 2025-09-02
 
 ### Added
