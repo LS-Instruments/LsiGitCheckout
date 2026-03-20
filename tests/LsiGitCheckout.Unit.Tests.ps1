@@ -393,3 +393,219 @@ Describe 'Get-AbsoluteBasePath' {
         }
     }
 }
+
+Describe 'Export-CheckoutResults' {
+    BeforeEach {
+        # Set up module state for testing
+        & (Get-Module LsiGitCheckout) {
+            $script:SuccessCount = 2
+            $script:FailureCount = 0
+            $script:PostCheckoutScriptExecutions = 0
+            $script:PostCheckoutScriptFailures = 0
+            $script:PostCheckoutScriptsEnabled = $false
+            $script:RecursiveMode = $true
+            $script:MaxDepth = 5
+            $script:DefaultApiCompatibility = 'Permissive'
+            $script:DefaultDependencyFileName = 'dependencies.json'
+            $script:DryRun = $false
+            $script:ProcessedDependencyFiles = @('C:\test\dependencies.json')
+            $script:ErrorMessages = @()
+            $script:RepositoryDictionary = @{
+                'https://github.com/org/repoA.git' = @{
+                    AbsolutePath = 'C:\test\repo-a'
+                    DependencyResolution = 'Agnostic'
+                    Tag = 'v1.0.0'
+                    AlreadyCheckedOut = $true
+                    NeedCheckout = $false
+                    CheckoutFailed = $false
+                    RequestedBy = @('root-dependency-file')
+                }
+                'https://github.com/org/repoB.git' = @{
+                    AbsolutePath = 'C:\test\repo-b'
+                    DependencyResolution = 'SemVer'
+                    AlreadyCheckedOut = $true
+                    NeedCheckout = $false
+                    CheckoutFailed = $false
+                    SelectedTag = 'v3.0.0'
+                    SelectedVersion = [Version]::new(3, 0, 0)
+                    RequestedPatterns = @{
+                        'root-dependency-file' = @{ OriginalPattern = '3.0.0'; Type = 'LowestApplicable' }
+                    }
+                    RequestedBy = @('root-dependency-file')
+                }
+            }
+        }
+    }
+
+    It 'writes valid JSON with correct schema version' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $outputFile | Should -Exist
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.schemaVersion | Should -Be '1.0.0'
+    }
+
+    It 'includes correct metadata' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.metadata.toolVersion | Should -Be '8.0.0'
+        $result.metadata.recursiveMode | Should -Be $true
+        $result.metadata.maxDepth | Should -Be 5
+        $result.metadata.apiCompatibility | Should -Be 'Permissive'
+        $result.metadata.inputFile | Should -Be 'dependencies.json'
+    }
+
+    It 'includes correct summary counters' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.summary.success | Should -Be $true
+        $result.summary.successCount | Should -Be 2
+        $result.summary.failureCount | Should -Be 0
+        $result.summary.totalRepositories | Should -Be 2
+    }
+
+    It 'includes repository entries with correct fields' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.repositories.Count | Should -Be 2
+
+        foreach ($repo in $result.repositories) {
+            $repo.url | Should -Not -BeNullOrEmpty
+            $repo.path | Should -Not -BeNullOrEmpty
+            $repo.dependencyResolution | Should -BeIn @('SemVer', 'Agnostic')
+            $repo.status | Should -BeIn @('success', 'failed', 'skipped')
+        }
+    }
+
+    It 'populates SemVer-specific fields for SemVer repos' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $semVerRepo = $result.repositories | Where-Object { $_.dependencyResolution -eq 'SemVer' }
+
+        $semVerRepo | Should -Not -BeNullOrEmpty
+        $semVerRepo.tag | Should -Be 'v3.0.0'
+        $semVerRepo.selectedVersion | Should -Be '3.0.0'
+        $semVerRepo.requestedVersion | Should -Be '3.0.0'
+    }
+
+    It 'sets null for SemVer fields on Agnostic repos' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $agnosticRepo = $result.repositories | Where-Object { $_.dependencyResolution -eq 'Agnostic' }
+
+        $agnosticRepo | Should -Not -BeNullOrEmpty
+        $agnosticRepo.tag | Should -Be 'v1.0.0'
+        $agnosticRepo.requestedVersion | Should -BeNullOrEmpty
+        $agnosticRepo.selectedVersion | Should -BeNullOrEmpty
+    }
+
+    It 'includes error messages when failures occur' {
+        & (Get-Module LsiGitCheckout) {
+            $script:FailureCount = 1
+            $script:ErrorMessages = @('Repository clone failed', 'Tag not found')
+        }
+
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.summary.success | Should -Be $false
+        $result.errors.Count | Should -Be 2
+        $result.errors[0] | Should -Be 'Repository clone failed'
+    }
+
+    It 'handles empty repository dictionary' {
+        & (Get-Module LsiGitCheckout) {
+            $script:RepositoryDictionary = @{}
+            $script:SuccessCount = 0
+            $script:ProcessedDependencyFiles = @()
+        }
+
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.repositories.Count | Should -Be 0
+        $result.summary.totalRepositories | Should -Be 0
+    }
+
+    It 'includes requestedBy field for each repository' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        foreach ($repo in $result.repositories) {
+            $repo.requestedBy | Should -Not -BeNullOrEmpty -Because "every repo should have a requestedBy"
+            $repo.requestedBy | Should -Contain 'root-dependency-file'
+        }
+    }
+
+    It 'includes postCheckoutScript field when script was tracked' {
+        & (Get-Module LsiGitCheckout) {
+            $script:RepositoryDictionary['https://github.com/org/repoA.git'].PostCheckoutScript = @{
+                Configured = $true
+                ScriptPath = 'C:\test\repo-a\post-checkout.ps1'
+                Found      = $true
+                Executed   = $false
+                Status     = 'skipped'
+                Reason     = 'Disabled globally via -DisablePostCheckoutScripts'
+            }
+        }
+
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $repoWithScript = $result.repositories | Where-Object { $_.url -eq 'https://github.com/org/repoA.git' }
+        $repoWithScript.postCheckoutScript | Should -Not -BeNullOrEmpty
+        $repoWithScript.postCheckoutScript.configured | Should -Be $true
+        $repoWithScript.postCheckoutScript.found | Should -Be $true
+        $repoWithScript.postCheckoutScript.executed | Should -Be $false
+        $repoWithScript.postCheckoutScript.status | Should -Be 'skipped'
+        $repoWithScript.postCheckoutScript.reason | Should -Be 'Disabled globally via -DisablePostCheckoutScripts'
+    }
+
+    It 'sets postCheckoutScript to null when no script configured' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $repoWithout = $result.repositories | Where-Object { $_.url -eq 'https://github.com/org/repoB.git' }
+        $repoWithout.postCheckoutScript | Should -BeNullOrEmpty
+    }
+
+    It 'includes rootPostCheckoutScripts for depth-0 scripts' {
+        & (Get-Module LsiGitCheckout) {
+            $script:PostCheckoutScriptResults = @(
+                @{
+                    Configured    = $true
+                    ScriptPath    = 'C:\test\build\config\post-checkout.ps1'
+                    Found         = $false
+                    Executed      = $false
+                    Status        = 'skipped'
+                    Reason        = 'Disabled globally via -DisablePostCheckoutScripts'
+                    RepositoryUrl = ''
+                }
+            )
+        }
+
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.rootPostCheckoutScripts.Count | Should -Be 1
+        $result.rootPostCheckoutScripts[0].configured | Should -Be $true
+        $result.rootPostCheckoutScripts[0].status | Should -Be 'skipped'
+    }
+}

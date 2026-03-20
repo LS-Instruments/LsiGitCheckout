@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point). Version 8.0.0, by LS Instruments AG.
+PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point). Version 8.1.0, by LS Instruments AG.
 
 ## Running the Tool
 
@@ -11,9 +11,10 @@ PowerShell-based dependency management tool that checks out multiple Git reposit
 .\LsiGitCheckout.ps1 -InputFile "path/to/deps.json"     # custom config
 .\LsiGitCheckout.ps1 -DryRun                             # preview without executing
 .\LsiGitCheckout.ps1 -EnableDebug -EnableErrorContext     # full debug output
+.\LsiGitCheckout.ps1 -OutputFile result.json             # structured JSON output
 ```
 
-Key parameters: `-InputFile`, `-CredentialsFile`, `-DryRun`, `-EnableDebug`, `-DisableRecursion`, `-MaxDepth` (default 5), `-ApiCompatibility` (Strict|Permissive), `-DisablePostCheckoutScripts`, `-EnableErrorContext`
+Key parameters: `-InputFile`, `-CredentialsFile`, `-DryRun`, `-EnableDebug`, `-DisableRecursion`, `-MaxDepth` (default 5), `-ApiCompatibility` (Strict|Permissive), `-DisablePostCheckoutScripts`, `-EnableErrorContext`, `-OutputFile` (structured JSON results)
 
 ## Testing
 
@@ -50,6 +51,13 @@ There are 16 test JSON configs covering SemVer, Agnostic, API incompatibility, c
 - **Recursive processing**: walks dependency trees with conflict detection, max depth configurable
 - **SSH**: PuTTY/Pageant integration for authentication (`.ppk` key format)
 - **Post-checkout scripts**: optional PowerShell scripts run after successful checkouts
+- **Structured output**: `-OutputFile` writes JSON (schema 1.0.0) with per-repo results, post-checkout script tracking, and `requestedBy` parent chain
+
+## Design Decisions
+
+- **API compatibility in Agnostic mode**: In **Permissive** mode (default), version/tag conflicts during recursive checkout are resolved silently by picking the best available tag. In **Strict** mode, any tag mismatch is an error. This is controlled by `-ApiCompatibility` (CLI) or `"API Compatibility"` (per-repo JSON field).
+- **SemVer major version conflicts**: SemVer mode always rejects cross-major version incompatibilities regardless of the API compatibility setting, since different major versions imply breaking API changes by SemVer convention.
+- **PuTTY/Pageant on Windows (not OpenSSH)**: We attempted to use OpenSSH on Windows but encountered persistent issues — possibly related to Git submodule operations not properly inheriting SSH settings (exact root cause not confirmed in commit history). PuTTY with `.ppk` keys and Pageant was the only reliable solution on Windows. On Mac/Linux, OpenSSH (as bundled with Git) should work natively and is a future TODO.
 
 ## Coding Conventions
 
@@ -71,9 +79,10 @@ LsiGitCheckout.psd1      # Module manifest
 CHANGELOG.md             # Version history
 README.md                # Comprehensive user documentation
 docs/
-  developer_guide.md    # Developer setup, testing, debugging
-  comparison_guide.md    # vs Google Repo Tool
-  migration_guide.md     # Migration strategies
+  developer_guide.md            # Developer setup, testing, debugging
+  comparison_guide.md            # vs Google Repo Tool
+  migration_guide.md             # Migration strategies
+  test_repositories_reference.md # Test repo tags and dependency data
 examples/                # 7 example dependency JSON configs
 tests/                   # 16 test JSON configs + Pester test files
   LsiGitCheckout.Unit.Tests.ps1         # Unit tests (no network)

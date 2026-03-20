@@ -25,6 +25,9 @@ $script:ErrorContextEnabled = $false
 $script:DryRun = $false
 $script:EnableDebug = $false
 $script:MaxDepth = 5
+$script:OutputFile = ""
+$script:ErrorMessages = @()
+$script:PostCheckoutScriptResults = @()
 
 function Initialize-LsiGitCheckout {
     <#
@@ -49,6 +52,8 @@ function Initialize-LsiGitCheckout {
         When true, skip post-checkout script execution
     .PARAMETER EnableErrorContext
         When true, show detailed error context with stack traces
+    .PARAMETER OutputFile
+        Path to write structured JSON results file
     #>
     param(
         [Parameter(Mandatory=$true)]
@@ -61,7 +66,8 @@ function Initialize-LsiGitCheckout {
         [ValidateSet('Strict', 'Permissive')]
         [string]$ApiCompatibility = 'Permissive',
         [switch]$DisablePostCheckoutScripts,
-        [switch]$EnableErrorContext
+        [switch]$EnableErrorContext,
+        [string]$OutputFile = ""
     )
 
     $script:ScriptPath = $ScriptPath
@@ -83,6 +89,9 @@ function Initialize-LsiGitCheckout {
     $script:DryRun = [bool]$DryRun
     $script:EnableDebug = [bool]$EnableDebug
     $script:MaxDepth = $MaxDepth
+    $script:OutputFile = $OutputFile
+    $script:ErrorMessages = @()
+    $script:PostCheckoutScriptResults = @()
 
     # Initialize error file
     if (Test-Path $script:ErrorFile) {
@@ -191,6 +200,7 @@ function Write-Log {
         'Error' {
             Write-Host $logMessage -ForegroundColor Red
             Add-Content -Path $script:ErrorFile -Value $logMessage
+            $script:ErrorMessages += $Message
         }
         'Warning' {
             Write-Host $logMessage -ForegroundColor Yellow
@@ -1114,6 +1124,42 @@ function Get-CustomDependencyFilePath {
     return $fullPath
 }
 
+function Set-PostCheckoutScriptResult {
+    <#
+    .SYNOPSIS
+        Records post-checkout script tracking data in the repository dictionary
+    #>
+    param(
+        [string]$RepositoryUrl,
+        [string]$ScriptPath,
+        [bool]$Configured,
+        [bool]$Found,
+        [bool]$Executed,
+        [string]$Status,
+        [string]$Reason = $null
+    )
+
+    $scriptResult = @{
+        Configured = $Configured
+        ScriptPath = $ScriptPath
+        Found      = $Found
+        Executed   = $Executed
+        Status     = $Status
+        Reason     = $Reason
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($RepositoryUrl) -and $script:RepositoryDictionary.ContainsKey($RepositoryUrl)) {
+        $script:RepositoryDictionary[$RepositoryUrl].PostCheckoutScript = $scriptResult
+    } else {
+        # Depth-0 scripts or unknown repo — store in a separate list
+        if (-not $script:PostCheckoutScriptResults) {
+            $script:PostCheckoutScriptResults = @()
+        }
+        $scriptResult.RepositoryUrl = $RepositoryUrl
+        $script:PostCheckoutScriptResults += $scriptResult
+    }
+}
+
 function Invoke-PostCheckoutScript {
     param(
         [string]$RepoAbsolutePath,
@@ -1122,37 +1168,41 @@ function Invoke-PostCheckoutScript {
         [string]$RepositoryUrl = "",
         [string]$Tag = ""
     )
-    
-    if (-not $script:PostCheckoutScriptsEnabled) {
-        Write-Log "Post-checkout scripts are disabled, skipping script execution" -Level Debug
-        return $true
-    }
-    
+
     # Determine script location
     $scriptLocation = $RepoAbsolutePath
     if (-not [string]::IsNullOrWhiteSpace($ScriptFilePath)) {
         $scriptLocation = Join-Path $RepoAbsolutePath $ScriptFilePath
         Write-Log "Using custom post-checkout script path: $ScriptFilePath" -Level Debug
     }
-    
+
     $scriptFullPath = Join-Path $scriptLocation $ScriptFileName
     Write-Log "Looking for post-checkout script at: $scriptFullPath" -Level Debug
-    
+
+    if (-not $script:PostCheckoutScriptsEnabled) {
+        Write-Log "Post-checkout scripts are disabled, skipping script execution" -Level Debug
+        Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found (Test-Path $scriptFullPath) -Executed $false -Status 'skipped' -Reason 'Disabled globally via -DisablePostCheckoutScripts'
+        return $true
+    }
+
     if (-not (Test-Path $scriptFullPath)) {
         Write-Log "Post-checkout script not found: $scriptFullPath" -Level Warning
+        Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $false -Executed $false -Status 'skipped' -Reason "Script file not found: $scriptFullPath"
         return $false
     }
-    
+
     # Verify it's a PowerShell script
     if (-not $scriptFullPath.EndsWith('.ps1')) {
         Write-Log "Post-checkout script is not a PowerShell script (.ps1): $scriptFullPath" -Level Warning
+        Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $true -Executed $false -Status 'skipped' -Reason "Not a PowerShell script (.ps1): $scriptFullPath"
         return $false
     }
-    
+
     Write-Log "Executing post-checkout script: $scriptFullPath" -Level Info
-    
+
     if ($script:DryRun) {
         Write-Log "DRY RUN: Would execute post-checkout script: $scriptFullPath" -Level Verbose
+        Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $true -Executed $false -Status 'skipped' -Reason 'DryRun mode — script not executed'
         return $true
     }
     
@@ -1201,7 +1251,9 @@ function Invoke-PostCheckoutScript {
             } catch {
                 Write-Log "Failed to terminate timed-out process: $_" -Level Warning
             }
-            throw "Post-checkout script execution timed out after 5 minutes"
+            Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $true -Executed $true -Status 'timeout' -Reason 'Script execution timed out after 5 minutes'
+            $script:PostCheckoutScriptFailures++
+            return $false
         }
         
         # Get output and error streams
@@ -1223,33 +1275,45 @@ function Invoke-PostCheckoutScript {
         }
         
         if ($exitCode -ne 0) {
-            throw "Post-checkout script failed with exit code: $exitCode"
+            Pop-Location
+            # Clean up environment variables
+            Remove-Item Env:\LSIGIT_REPOSITORY_URL -ErrorAction SilentlyContinue
+            Remove-Item Env:\LSIGIT_REPOSITORY_PATH -ErrorAction SilentlyContinue
+            Remove-Item Env:\LSIGIT_TAG -ErrorAction SilentlyContinue
+            Remove-Item Env:\LSIGIT_SCRIPT_VERSION -ErrorAction SilentlyContinue
+
+            $script:PostCheckoutScriptFailures++
+            Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $true -Executed $true -Status 'failed' -Reason "Script exited with code: $exitCode"
+            Write-Log "Post-checkout script failed with exit code: $exitCode" -Level Error
+            return $false
         }
-        
+
         Pop-Location
-        
+
         # Clean up environment variables
         Remove-Item Env:\LSIGIT_REPOSITORY_URL -ErrorAction SilentlyContinue
         Remove-Item Env:\LSIGIT_REPOSITORY_PATH -ErrorAction SilentlyContinue
         Remove-Item Env:\LSIGIT_TAG -ErrorAction SilentlyContinue
         Remove-Item Env:\LSIGIT_SCRIPT_VERSION -ErrorAction SilentlyContinue
-        
+
         $script:PostCheckoutScriptExecutions++
+        Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $true -Executed $true -Status 'executed' -Reason $null
         Write-Log "Successfully executed post-checkout script: $scriptFullPath" -Level Info
         return $true
     }
     catch {
         Pop-Location -ErrorAction SilentlyContinue
-        
+
         # Clean up environment variables
         Remove-Item Env:\LSIGIT_REPOSITORY_URL -ErrorAction SilentlyContinue
         Remove-Item Env:\LSIGIT_REPOSITORY_PATH -ErrorAction SilentlyContinue
         Remove-Item Env:\LSIGIT_TAG -ErrorAction SilentlyContinue
         Remove-Item Env:\LSIGIT_SCRIPT_VERSION -ErrorAction SilentlyContinue
-        
+
         $script:PostCheckoutScriptFailures++
         $errorMessage = "Failed to execute post-checkout script '$scriptFullPath': $_"
         Write-Log $errorMessage -Level Error
+        Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $true -Executed $false -Status 'failed' -Reason "Script execution error: $_"
         return $false
     }
 }
@@ -1381,7 +1445,15 @@ function Update-RepositoryDictionary {
             } else {
                 # New repository - add to dictionary
                 Write-Log "First discovery of repository: $repoUrl" -Level Info
-                
+
+                # Determine calling repository URL
+                $callerUrl = if ($CallingRepositoryRootPath) {
+                    $caller = $script:RepositoryDictionary.GetEnumerator() |
+                        Where-Object { $_.Value.AbsolutePath -eq $CallingRepositoryRootPath } |
+                        Select-Object -First 1
+                    if ($caller) { $caller.Key } else { "root-dependency-file" }
+                } else { "root-dependency-file" }
+
                 $script:RepositoryDictionary[$repoUrl] = @{
                     AbsolutePath = $absoluteBasePath
                     Tag = $tag
@@ -1393,6 +1465,7 @@ function Update-RepositoryDictionary {
                     DependencyResolution = "Agnostic"
                     DependencyFilePath = $Repository.'Dependency File Path'
                     DependencyFileName = $Repository.'Dependency File Name'
+                    RequestedBy = @($callerUrl)
                 }
                 
                 Write-Log "Added new repository to dictionary: '$repoUrl' with tag: $tag" -Level Debug
@@ -1538,6 +1611,7 @@ function Update-SemVerRepository {
             DependencyResolution = "SemVer"
             VersionRegex = $versionRegex
             RequestedPatterns = @{ $callerUrl = $parsedPattern }
+            RequestedBy = @($callerUrl)
             NeedVersionParsing = $true  # Flag to parse versions after clone
             AlreadyCheckedOut = $false
             NeedCheckout = $false
@@ -2407,6 +2481,119 @@ function Read-CredentialsFile {
     }
 }
 
+function Export-CheckoutResults {
+    <#
+    .SYNOPSIS
+        Exports structured JSON results to the specified output file
+    .DESCRIPTION
+        Generates a JSON file containing execution metadata, per-repository results,
+        summary counters, processed dependency files, and error messages.
+        The file is written whenever -OutputFile is specified, even on failure.
+    .PARAMETER OutputFile
+        Path to write the JSON results file
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$OutputFile
+    )
+
+    Invoke-WithErrorContext -Context "Exporting checkout results to $OutputFile" -ScriptBlock {
+        $repositories = @()
+        foreach ($entry in $script:RepositoryDictionary.GetEnumerator()) {
+            $url = $entry.Key
+            $repo = $entry.Value
+            $mode = if ($repo.ContainsKey('DependencyResolution')) { $repo.DependencyResolution } else { 'Agnostic' }
+
+            # Determine status
+            $status = if ($repo.CheckoutFailed) { 'failed' }
+                      elseif ($repo.AlreadyCheckedOut -and -not $repo.NeedCheckout) { 'skipped' }
+                      else { 'success' }
+
+            $repoObj = [ordered]@{
+                url                  = $url
+                path                 = $repo.AbsolutePath
+                dependencyResolution = $mode
+                status               = $status
+                alreadyCheckedOut    = [bool]$repo.AlreadyCheckedOut
+                requestedBy          = if ($repo.ContainsKey('RequestedBy')) { @($repo.RequestedBy) } else { @() }
+            }
+
+            if ($mode -eq 'SemVer') {
+                $repoObj.requestedVersion = if ($repo.ContainsKey('RequestedPatterns') -and $repo.RequestedPatterns.Count -gt 0) {
+                    ($repo.RequestedPatterns.Values | ForEach-Object { $_.OriginalPattern }) -join ', '
+                } else { $null }
+                $repoObj.selectedVersion = if ($repo.ContainsKey('SelectedVersion') -and $repo.SelectedVersion) {
+                    Format-SemVersion -Version $repo.SelectedVersion
+                } else { $null }
+                $repoObj.tag = if ($repo.ContainsKey('SelectedTag')) { $repo.SelectedTag } else { $null }
+            } else {
+                $repoObj.tag = $repo.Tag
+                $repoObj.requestedVersion = $null
+                $repoObj.selectedVersion = $null
+            }
+
+            # Post-checkout script tracking
+            if ($repo.ContainsKey('PostCheckoutScript')) {
+                $pcs = $repo.PostCheckoutScript
+                $repoObj.postCheckoutScript = [ordered]@{
+                    configured = $pcs.Configured
+                    scriptPath = $pcs.ScriptPath
+                    found      = $pcs.Found
+                    executed   = $pcs.Executed
+                    status     = $pcs.Status
+                    reason     = $pcs.Reason
+                }
+            } else {
+                $repoObj.postCheckoutScript = $null
+            }
+
+            $repositories += [PSCustomObject]$repoObj
+        }
+
+        $result = [ordered]@{
+            schemaVersion            = '1.0.0'
+            metadata                 = [ordered]@{
+                toolVersion        = $script:Version
+                timestamp          = (Get-Date).ToString('o')
+                dryRun             = $script:DryRun
+                recursiveMode      = $script:RecursiveMode
+                maxDepth           = $script:MaxDepth
+                apiCompatibility   = $script:DefaultApiCompatibility
+                inputFile          = $script:DefaultDependencyFileName
+                powershellVersion  = $PSVersionTable.PSVersion.ToString()
+            }
+            summary                  = [ordered]@{
+                success            = ($script:FailureCount -eq 0)
+                successCount       = $script:SuccessCount
+                failureCount       = $script:FailureCount
+                totalRepositories  = $script:RepositoryDictionary.Count
+                postCheckoutScripts = [ordered]@{
+                    enabled    = $script:PostCheckoutScriptsEnabled
+                    executions = $script:PostCheckoutScriptExecutions
+                    failures   = $script:PostCheckoutScriptFailures
+                }
+            }
+            repositories             = @($repositories)
+            processedDependencyFiles = @($script:ProcessedDependencyFiles)
+            rootPostCheckoutScripts  = @($script:PostCheckoutScriptResults | ForEach-Object {
+                [ordered]@{
+                    configured = $_.Configured
+                    scriptPath = $_.ScriptPath
+                    found      = $_.Found
+                    executed   = $_.Executed
+                    status     = $_.Status
+                    reason     = $_.Reason
+                }
+            })
+            errors                   = @($script:ErrorMessages)
+        }
+
+        $json = $result | ConvertTo-Json -Depth 10
+        Set-Content -Path $OutputFile -Value $json -Encoding UTF8
+        Write-Log "Checkout results exported to: $OutputFile" -Level Info
+    }
+}
+
 function Show-Summary {
     $summary = @"
 ========================================
@@ -2547,5 +2734,7 @@ Export-ModuleMember -Function @(
     'Process-DependencyFile',
     'Process-RecursiveDependencies',
     'Read-CredentialsFile',
+    'Set-PostCheckoutScriptResult',
+    'Export-CheckoutResults',
     'Show-Summary'
 )

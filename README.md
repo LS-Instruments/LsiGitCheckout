@@ -97,6 +97,9 @@ In non-recursive mode, the script processes only the repositories listed in your
 
 # Enable detailed error context for debugging
 .\LsiGitCheckout.ps1 -EnableErrorContext
+
+# Export structured JSON results for CI/CD pipelines
+.\LsiGitCheckout.ps1 -OutputFile result.json
 ```
 
 ### Parameters
@@ -110,6 +113,44 @@ In non-recursive mode, the script processes only the repositories listed in your
 - `-DisableRecursion`: Disable recursive dependency processing (default: recursive mode enabled)
 - `-DisablePostCheckoutScripts`: Disable post-checkout script execution (default: post-checkout scripts enabled)
 - `-EnableErrorContext`: Enable detailed error context with stack traces (default: simple errors only)
+- `-OutputFile`: Write structured JSON results to the specified file path (for CI/CD integration)
+
+### Structured JSON Output
+
+When `-OutputFile` is specified, a JSON file is written with the results of the checkout operation. The output is guaranteed to be written even on failure, making it safe for CI/CD pipelines. Schema version: **1.0.0**.
+
+```powershell
+.\LsiGitCheckout.ps1 -InputFile deps.json -OutputFile result.json
+```
+
+**Output structure:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `schemaVersion` | string | JSON schema version (`"1.0.0"`) |
+| `metadata` | object | Execution context: `toolVersion`, `timestamp`, `dryRun`, `recursiveMode`, `maxDepth`, `apiCompatibility`, `inputFile`, `powershellVersion` |
+| `summary` | object | `success` (bool), `successCount`, `failureCount`, `totalRepositories`, `postCheckoutScripts` (enabled/executions/failures) |
+| `repositories[]` | array | Per-repository results (see below) |
+| `processedDependencyFiles[]` | array | Absolute paths of all dependency files processed |
+| `rootPostCheckoutScripts[]` | array | Post-checkout script tracking for depth-0 (root-level) scripts |
+| `errors[]` | array | Error messages collected during execution |
+
+**Repository entry fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `url` | string | Repository URL |
+| `path` | string | Absolute checkout path |
+| `dependencyResolution` | string | `"SemVer"` or `"Agnostic"` |
+| `status` | string | `"success"`, `"failed"`, or `"skipped"` |
+| `alreadyCheckedOut` | bool | Whether the repo was already at the correct version |
+| `requestedBy` | string[] | Parent repo URLs or `"root-dependency-file"` |
+| `tag` | string | Git tag checked out |
+| `requestedVersion` | string? | SemVer version pattern requested (SemVer only) |
+| `selectedVersion` | string? | SemVer version selected (SemVer only) |
+| `postCheckoutScript` | object? | Script tracking: `configured`, `scriptPath`, `found`, `executed`, `status`, `reason` (null if no script configured) |
+
+**Post-checkout script status values:** `"executed"`, `"failed"`, `"skipped"`, `"timeout"`
 
 ### Understanding Dependency Resolution Modes
 

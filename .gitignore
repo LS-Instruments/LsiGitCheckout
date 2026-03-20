@@ -8,9 +8,11 @@ repos/
 # Cloned test repositories (created by integration tests)
 tests/test-root-*/
 tests/libs/
+tests/*/test-root-*/
+tests/*/libs/
 
-# User configuration files
-dependencies.json
+# User configuration files (root only — test subdirectories have their own dependencies.json)
+/dependencies.json
 
 # SSH keys
 *.ppk

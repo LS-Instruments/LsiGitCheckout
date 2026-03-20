@@ -5,6 +5,31 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.1.0] - 2026-03-20
+
+### Added
+- **Structured JSON output** via `-OutputFile` parameter for CI/CD pipeline integration
+  - Schema version 1.0.0 with execution metadata, per-repository results, summary counters, and error messages
+  - `Export-CheckoutResults` function generates the JSON output
+  - Output is guaranteed even on failure (written in `finally` block)
+- **Post-checkout script tracking** in JSON output per repository (`postCheckoutScript` field with configured, found, executed, status, reason) and at root level (`rootPostCheckoutScripts` array)
+- **`requestedBy` field** on each repository entry showing which parent repo or dependency file requested it
+- `Test-InteractiveSession` helper to detect non-interactive environments
+- Error message collector in `Write-Log` for structured output
+- `docs/test_repositories_reference.md` — catalog of all test repo tags and their dependencies
+
+### Fixed
+- **Show-ErrorDialog pipeline leakage**: `MessageBox::Show()` return value leaked to pipeline, causing failures to be counted as successes
+- **Non-interactive GUI dialogs**: `Show-ErrorDialog` and `Show-ConfirmDialog` now skip GUI in `pwsh -NonInteractive` and CI environments
+- **SemVer version parsing in DryRun**: added guard to skip parsing when repo is not cloned
+
+### Changed
+- Integration tests now perform actual git clones (no `-DryRun`) with full recursive checkout
+- Integration tests validate structured JSON output schema, not just exit codes
+- Integration tests clean up cloned repos between runs for test isolation
+- Entry point refactored to `try/catch/finally` pattern for guaranteed output file writing
+- API incompatibility test configs now use `"Dependency File Name"` override for recursive lookup
+
 ## [8.0.0] - 2026-03-20
 
 ### Changed
