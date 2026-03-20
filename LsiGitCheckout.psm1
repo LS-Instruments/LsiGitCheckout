@@ -25,6 +25,8 @@ $script:ErrorContextEnabled = $false
 $script:DryRun = $false
 $script:EnableDebug = $false
 $script:MaxDepth = 5
+$script:OutputFile = ""
+$script:ErrorMessages = @()
 
 function Initialize-LsiGitCheckout {
     <#
@@ -49,6 +51,8 @@ function Initialize-LsiGitCheckout {
         When true, skip post-checkout script execution
     .PARAMETER EnableErrorContext
         When true, show detailed error context with stack traces
+    .PARAMETER OutputFile
+        Path to write structured JSON results file
     #>
     param(
         [Parameter(Mandatory=$true)]
@@ -61,7 +65,8 @@ function Initialize-LsiGitCheckout {
         [ValidateSet('Strict', 'Permissive')]
         [string]$ApiCompatibility = 'Permissive',
         [switch]$DisablePostCheckoutScripts,
-        [switch]$EnableErrorContext
+        [switch]$EnableErrorContext,
+        [string]$OutputFile = ""
     )
 
     $script:ScriptPath = $ScriptPath
@@ -83,6 +88,8 @@ function Initialize-LsiGitCheckout {
     $script:DryRun = [bool]$DryRun
     $script:EnableDebug = [bool]$EnableDebug
     $script:MaxDepth = $MaxDepth
+    $script:OutputFile = $OutputFile
+    $script:ErrorMessages = @()
 
     # Initialize error file
     if (Test-Path $script:ErrorFile) {
@@ -191,6 +198,7 @@ function Write-Log {
         'Error' {
             Write-Host $logMessage -ForegroundColor Red
             Add-Content -Path $script:ErrorFile -Value $logMessage
+            $script:ErrorMessages += $Message
         }
         'Warning' {
             Write-Host $logMessage -ForegroundColor Yellow
@@ -2407,6 +2415,93 @@ function Read-CredentialsFile {
     }
 }
 
+function Export-CheckoutResults {
+    <#
+    .SYNOPSIS
+        Exports structured JSON results to the specified output file
+    .DESCRIPTION
+        Generates a JSON file containing execution metadata, per-repository results,
+        summary counters, processed dependency files, and error messages.
+        The file is written whenever -OutputFile is specified, even on failure.
+    .PARAMETER OutputFile
+        Path to write the JSON results file
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$OutputFile
+    )
+
+    Invoke-WithErrorContext -Context "Exporting checkout results to $OutputFile" -ScriptBlock {
+        $repositories = @()
+        foreach ($entry in $script:RepositoryDictionary.GetEnumerator()) {
+            $url = $entry.Key
+            $repo = $entry.Value
+            $mode = if ($repo.ContainsKey('DependencyResolution')) { $repo.DependencyResolution } else { 'Agnostic' }
+
+            # Determine status
+            $status = if ($repo.CheckoutFailed) { 'failed' }
+                      elseif ($repo.AlreadyCheckedOut -and -not $repo.NeedCheckout) { 'skipped' }
+                      else { 'success' }
+
+            $repoObj = [ordered]@{
+                url                  = $url
+                path                 = $repo.AbsolutePath
+                dependencyResolution = $mode
+                status               = $status
+                alreadyCheckedOut    = [bool]$repo.AlreadyCheckedOut
+            }
+
+            if ($mode -eq 'SemVer') {
+                $repoObj.requestedVersion = if ($repo.ContainsKey('RequestedPatterns') -and $repo.RequestedPatterns.Count -gt 0) {
+                    ($repo.RequestedPatterns.Values | ForEach-Object { $_.OriginalPattern }) -join ', '
+                } else { $null }
+                $repoObj.selectedVersion = if ($repo.ContainsKey('SelectedVersion') -and $repo.SelectedVersion) {
+                    Format-SemVersion -Version $repo.SelectedVersion
+                } else { $null }
+                $repoObj.tag = if ($repo.ContainsKey('SelectedTag')) { $repo.SelectedTag } else { $null }
+            } else {
+                $repoObj.tag = $repo.Tag
+                $repoObj.requestedVersion = $null
+                $repoObj.selectedVersion = $null
+            }
+
+            $repositories += [PSCustomObject]$repoObj
+        }
+
+        $result = [ordered]@{
+            schemaVersion            = '1.0.0'
+            metadata                 = [ordered]@{
+                toolVersion        = $script:Version
+                timestamp          = (Get-Date).ToString('o')
+                dryRun             = $script:DryRun
+                recursiveMode      = $script:RecursiveMode
+                maxDepth           = $script:MaxDepth
+                apiCompatibility   = $script:DefaultApiCompatibility
+                inputFile          = $script:DefaultDependencyFileName
+                powershellVersion  = $PSVersionTable.PSVersion.ToString()
+            }
+            summary                  = [ordered]@{
+                success            = ($script:FailureCount -eq 0)
+                successCount       = $script:SuccessCount
+                failureCount       = $script:FailureCount
+                totalRepositories  = $script:RepositoryDictionary.Count
+                postCheckoutScripts = [ordered]@{
+                    enabled    = $script:PostCheckoutScriptsEnabled
+                    executions = $script:PostCheckoutScriptExecutions
+                    failures   = $script:PostCheckoutScriptFailures
+                }
+            }
+            repositories             = @($repositories)
+            processedDependencyFiles = @($script:ProcessedDependencyFiles)
+            errors                   = @($script:ErrorMessages)
+        }
+
+        $json = $result | ConvertTo-Json -Depth 10
+        Set-Content -Path $OutputFile -Value $json -Encoding UTF8
+        Write-Log "Checkout results exported to: $OutputFile" -Level Info
+    }
+}
+
 function Show-Summary {
     $summary = @"
 ========================================
@@ -2547,5 +2642,6 @@ Export-ModuleMember -Function @(
     'Process-DependencyFile',
     'Process-RecursiveDependencies',
     'Read-CredentialsFile',
+    'Export-CheckoutResults',
     'Show-Summary'
 )

@@ -13,7 +13,7 @@ PowerShell-based dependency management tool that checks out multiple Git reposit
 .\LsiGitCheckout.ps1 -EnableDebug -EnableErrorContext     # full debug output
 ```
 
-Key parameters: `-InputFile`, `-CredentialsFile`, `-DryRun`, `-EnableDebug`, `-DisableRecursion`, `-MaxDepth` (default 5), `-ApiCompatibility` (Strict|Permissive), `-DisablePostCheckoutScripts`, `-EnableErrorContext`
+Key parameters: `-InputFile`, `-CredentialsFile`, `-DryRun`, `-EnableDebug`, `-DisableRecursion`, `-MaxDepth` (default 5), `-ApiCompatibility` (Strict|Permissive), `-DisablePostCheckoutScripts`, `-EnableErrorContext`, `-OutputFile` (structured JSON results)
 
 ## Testing
 

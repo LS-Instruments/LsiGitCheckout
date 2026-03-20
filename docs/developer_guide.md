@@ -114,11 +114,15 @@ Covers: `Parse-VersionPattern`, `Test-SemVerCompatibility`, `Get-CompatibleVersi
 
 ### Integration Tests
 
-Runs `LsiGitCheckout.ps1` with `-DryRun` against all 16 test JSON configurations and asserts expected exit codes. Requires network access to GitHub.
+Runs `LsiGitCheckout.ps1` against all 16 test JSON configurations with actual git clones and recursive dependency processing. Validates both exit codes and structured JSON output (schema, metadata, repository entries, summary counters). Requires network access to GitHub.
+
+Each test starts from a clean state — cloned test repositories are removed between runs. Tests use `-OutputFile` to generate JSON results and validate the output schema.
 
 ```powershell
 pwsh -Command "Invoke-Pester ./tests/LsiGitCheckout.Integration.Tests.ps1 -Output Detailed"
 ```
+
+> **Note:** Integration tests take longer (~2-3 minutes) because they perform actual git clones. No `-DryRun` is used so the full recursive checkout flow is exercised.
 
 ### All Tests
 

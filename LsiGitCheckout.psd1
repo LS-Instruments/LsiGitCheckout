@@ -45,6 +45,7 @@
         'Process-DependencyFile',
         'Process-RecursiveDependencies',
         'Read-CredentialsFile',
+        'Export-CheckoutResults',
         'Show-Summary'
     )
 
