@@ -576,14 +576,37 @@ function Validate-DependencyConfiguration {
     }
 }
 
+function Test-InteractiveSession {
+    <#
+    .SYNOPSIS
+        Checks if the current session is interactive (can show GUI dialogs)
+    .DESCRIPTION
+        Returns $false when running under pwsh -NonInteractive or in a non-user-interactive
+        environment (e.g., CI pipelines, automated tests, services).
+    #>
+    if (-not [Environment]::UserInteractive) {
+        return $false
+    }
+    # Check if PowerShell was launched with -NonInteractive
+    $cmdArgs = [Environment]::GetCommandLineArgs()
+    if ($cmdArgs -contains '-NonInteractive') {
+        return $false
+    }
+    return $true
+}
+
 function Show-ErrorDialog {
     param(
         [string]$Title = "Git Error",
         [string]$Message
     )
-    
+
+    if (-not (Test-InteractiveSession)) {
+        return
+    }
+
     Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.MessageBox]::Show($Message, $Title, 'OK', 'Error')
+    $null = [System.Windows.Forms.MessageBox]::Show($Message, $Title, 'OK', 'Error')
 }
 
 function Show-ConfirmDialog {
@@ -591,7 +614,11 @@ function Show-ConfirmDialog {
         [string]$Title = "Confirmation Required",
         [string]$Message
     )
-    
+
+    if (-not (Test-InteractiveSession)) {
+        return $true
+    }
+
     Add-Type -AssemblyName System.Windows.Forms
     $result = [System.Windows.Forms.MessageBox]::Show($Message, $Title, 'YesNo', 'Question')
     return $result -eq 'Yes'
@@ -1777,13 +1804,15 @@ function Invoke-GitCheckout {
         }
         
         # Handle SemVer version parsing for new repositories
-        if ($script:RecursiveMode -and 
+        # Skip in DryRun mode — version parsing requires a cloned repository with git tags
+        if (-not $script:DryRun -and
+            $script:RecursiveMode -and
             $script:RepositoryDictionary.ContainsKey($repoUrl) -and
             $script:RepositoryDictionary[$repoUrl].ContainsKey('NeedVersionParsing') -and
             $script:RepositoryDictionary[$repoUrl].NeedVersionParsing) {
-            
+
             Write-Log "Parsing SemVer versions for newly cloned repository" -Level Info
-            
+
             Push-Location $absoluteBasePath
             try {
                 $repoDict = $script:RepositoryDictionary[$repoUrl]

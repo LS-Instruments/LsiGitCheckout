@@ -5,6 +5,10 @@ LsiGitCheckout_Errors.txt
 # Repository directories
 repos/
 
+# Cloned test repositories (created by integration tests)
+tests/test-root-*/
+tests/libs/
+
 # User configuration files
 dependencies.json
 
