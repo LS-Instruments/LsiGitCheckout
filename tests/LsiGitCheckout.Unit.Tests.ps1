@@ -418,6 +418,7 @@ Describe 'Export-CheckoutResults' {
                     AlreadyCheckedOut = $true
                     NeedCheckout = $false
                     CheckoutFailed = $false
+                    RequestedBy = @('root-dependency-file')
                 }
                 'https://github.com/org/repoB.git' = @{
                     AbsolutePath = 'C:\test\repo-b'
@@ -430,6 +431,7 @@ Describe 'Export-CheckoutResults' {
                     RequestedPatterns = @{
                         'root-dependency-file' = @{ OriginalPattern = '3.0.0'; Type = 'LowestApplicable' }
                     }
+                    RequestedBy = @('root-dependency-file')
                 }
             }
         }
@@ -536,6 +538,17 @@ Describe 'Export-CheckoutResults' {
         $result = Get-Content $outputFile -Raw | ConvertFrom-Json
         $result.repositories.Count | Should -Be 0
         $result.summary.totalRepositories | Should -Be 0
+    }
+
+    It 'includes requestedBy field for each repository' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        foreach ($repo in $result.repositories) {
+            $repo.requestedBy | Should -Not -BeNullOrEmpty -Because "every repo should have a requestedBy"
+            $repo.requestedBy | Should -Contain 'root-dependency-file'
+        }
     }
 
     It 'includes postCheckoutScript field when script was tracked' {

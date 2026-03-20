@@ -1445,7 +1445,15 @@ function Update-RepositoryDictionary {
             } else {
                 # New repository - add to dictionary
                 Write-Log "First discovery of repository: $repoUrl" -Level Info
-                
+
+                # Determine calling repository URL
+                $callerUrl = if ($CallingRepositoryRootPath) {
+                    $caller = $script:RepositoryDictionary.GetEnumerator() |
+                        Where-Object { $_.Value.AbsolutePath -eq $CallingRepositoryRootPath } |
+                        Select-Object -First 1
+                    if ($caller) { $caller.Key } else { "root-dependency-file" }
+                } else { "root-dependency-file" }
+
                 $script:RepositoryDictionary[$repoUrl] = @{
                     AbsolutePath = $absoluteBasePath
                     Tag = $tag
@@ -1457,6 +1465,7 @@ function Update-RepositoryDictionary {
                     DependencyResolution = "Agnostic"
                     DependencyFilePath = $Repository.'Dependency File Path'
                     DependencyFileName = $Repository.'Dependency File Name'
+                    RequestedBy = @($callerUrl)
                 }
                 
                 Write-Log "Added new repository to dictionary: '$repoUrl' with tag: $tag" -Level Debug
@@ -1602,6 +1611,7 @@ function Update-SemVerRepository {
             DependencyResolution = "SemVer"
             VersionRegex = $versionRegex
             RequestedPatterns = @{ $callerUrl = $parsedPattern }
+            RequestedBy = @($callerUrl)
             NeedVersionParsing = $true  # Flag to parse versions after clone
             AlreadyCheckedOut = $false
             NeedCheckout = $false
@@ -2505,6 +2515,7 @@ function Export-CheckoutResults {
                 dependencyResolution = $mode
                 status               = $status
                 alreadyCheckedOut    = [bool]$repo.AlreadyCheckedOut
+                requestedBy          = if ($repo.ContainsKey('RequestedBy')) { @($repo.RequestedBy) } else { @() }
             }
 
             if ($mode -eq 'SemVer') {
