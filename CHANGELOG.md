@@ -5,9 +5,27 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [8.1.0] - 2026-03-20
+## [8.0.0] - Unreleased
+
+### Changed
+
+- **BREAKING**: Requires PowerShell 7.6 LTS or later (previously 5.1). PowerShell 7.6 installs side-by-side with Windows PowerShell 5.1.
+- Refactored monolithic script into module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point)
+- Post-checkout scripts now execute via `pwsh` instead of `powershell.exe`
+- Replaced verbose null-check patterns with `??` null-coalescing operator
+- Entry point refactored to `try/catch/finally` pattern for guaranteed output file writing
+- Integration tests now perform actual git clones (no `-DryRun`) with full recursive checkout
+- Integration tests validate structured JSON output schema, not just exit codes
+- Integration tests clean up cloned repos between runs for test isolation
+- API incompatibility test configs now use `"Dependency File Name"` override for recursive lookup
 
 ### Added
+
+- `LsiGitCheckout.psm1` module file containing all function definitions
+- `LsiGitCheckout.psd1` module manifest
+- `Initialize-LsiGitCheckout` function for module state initialization
+- Automated unit tests using Pester 5.x (`tests/LsiGitCheckout.Unit.Tests.ps1`)
+- Automated integration tests for all 16 test configs (`tests/LsiGitCheckout.Integration.Tests.ps1`)
 - **Structured JSON output** via `-OutputFile` parameter for CI/CD pipeline integration
   - Schema version 1.0.0 with execution metadata, per-repository results, summary counters, and error messages
   - `Export-CheckoutResults` function generates the JSON output
@@ -19,31 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/test_repositories_reference.md` — catalog of all test repo tags and their dependencies
 
 ### Fixed
+
 - **Show-ErrorDialog pipeline leakage**: `MessageBox::Show()` return value leaked to pipeline, causing failures to be counted as successes
 - **Non-interactive GUI dialogs**: `Show-ErrorDialog` and `Show-ConfirmDialog` now skip GUI in `pwsh -NonInteractive` and CI environments
 - **SemVer version parsing in DryRun**: added guard to skip parsing when repo is not cloned
-
-### Changed
-- Integration tests now perform actual git clones (no `-DryRun`) with full recursive checkout
-- Integration tests validate structured JSON output schema, not just exit codes
-- Integration tests clean up cloned repos between runs for test isolation
-- Entry point refactored to `try/catch/finally` pattern for guaranteed output file writing
-- API incompatibility test configs now use `"Dependency File Name"` override for recursive lookup
-
-## [8.0.0] - 2026-03-20
-
-### Changed
-- **BREAKING**: Requires PowerShell 7.6 LTS or later (previously 5.1). PowerShell 7.6 installs side-by-side with Windows PowerShell 5.1.
-- Refactored monolithic script into module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point)
-- Post-checkout scripts now execute via `pwsh` instead of `powershell.exe`
-- Replaced verbose null-check patterns with `??` null-coalescing operator
-
-### Added
-- `LsiGitCheckout.psm1` module file containing all function definitions
-- `LsiGitCheckout.psd1` module manifest
-- `Initialize-LsiGitCheckout` function for module state initialization
-- Automated unit tests using Pester 5.x (`tests/LsiGitCheckout.Unit.Tests.ps1`)
-- Automated integration tests for all 16 test configs (`tests/LsiGitCheckout.Integration.Tests.ps1`)
 
 ## [7.1.0] - 2025-09-02
 
