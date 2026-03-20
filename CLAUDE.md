@@ -57,6 +57,7 @@ There are 16 test JSON configs covering SemVer, Agnostic, API incompatibility, c
 
 - **API compatibility in Agnostic mode**: In **Permissive** mode (default), version/tag conflicts during recursive checkout are resolved silently by picking the best available tag. In **Strict** mode, any tag mismatch is an error. This is controlled by `-ApiCompatibility` (CLI) or `"API Compatibility"` (per-repo JSON field).
 - **SemVer major version conflicts**: SemVer mode always rejects cross-major version incompatibilities regardless of the API compatibility setting, since different major versions imply breaking API changes by SemVer convention.
+- **PuTTY/Pageant on Windows (not OpenSSH)**: We attempted to use OpenSSH on Windows but encountered persistent issues — possibly related to Git submodule operations not properly inheriting SSH settings (exact root cause not confirmed in commit history). PuTTY with `.ppk` keys and Pageant was the only reliable solution on Windows. On Mac/Linux, OpenSSH (as bundled with Git) should work natively and is a future TODO.
 
 ## Coding Conventions
 
