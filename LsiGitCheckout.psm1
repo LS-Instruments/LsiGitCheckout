@@ -1738,9 +1738,8 @@ function Invoke-GitCheckout {
     $wasNewClone = $false
     $wasActualCheckout = $false
     
-    # Check if we should skip this repository (already checked out with compatible API)
-    if ($script:RecursiveMode) {
-        $checkoutResult = Update-RepositoryDictionary -Repository $Repository -DependencyFilePath $DependencyFilePath -CallingRepositoryRootPath $CallingRepositoryRootPath
+    # Track repository in dictionary and check if we should skip (already checked out with compatible API)
+    $checkoutResult = Update-RepositoryDictionary -Repository $Repository -DependencyFilePath $DependencyFilePath -CallingRepositoryRootPath $CallingRepositoryRootPath
         if ($checkoutResult -eq $true) {
             Write-Log "Skipping repository '$repoUrl' - already checked out with compatible API" -Level Info
             return $true
@@ -1819,8 +1818,7 @@ function Invoke-GitCheckout {
             }
         }
         # Otherwise, continue with normal checkout process
-    }
-    
+
     Write-Log "Processing repository: $repoUrl" -Level Info
     Write-Log "Base Path: $basePath" -Level Verbose
     Write-Log "Tag: $tag" -Level Verbose
@@ -1978,7 +1976,6 @@ function Invoke-GitCheckout {
         # Handle SemVer version parsing for new repositories
         # Skip in DryRun mode — version parsing requires a cloned repository with git tags
         if (-not $script:DryRun -and
-            $script:RecursiveMode -and
             $script:RepositoryDictionary.ContainsKey($repoUrl) -and
             $script:RepositoryDictionary[$repoUrl].ContainsKey('NeedVersionParsing') -and
             $script:RepositoryDictionary[$repoUrl].NeedVersionParsing) {
@@ -2036,8 +2033,7 @@ function Invoke-GitCheckout {
         }
         
         # For SemVer repositories that need checkout to different version
-        if ($script:RecursiveMode -and 
-            $script:RepositoryDictionary.ContainsKey($repoUrl) -and
+        if ($script:RepositoryDictionary.ContainsKey($repoUrl) -and
             $script:RepositoryDictionary[$repoUrl].ContainsKey('DependencyResolution') -and
             $script:RepositoryDictionary[$repoUrl].DependencyResolution -eq "SemVer") {
             
