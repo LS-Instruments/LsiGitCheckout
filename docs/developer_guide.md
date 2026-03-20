@@ -89,13 +89,15 @@ The `LsiGitCheckout.code-workspace` file provides:
 ## Project Structure
 
 ```text
-LsiGitCheckout.ps1       # Entry point (~230 lines) — params, module import, main flow
-LsiGitCheckout.psm1      # Module (~2520 lines) — all 36 function definitions
+LsiGitCheckout.ps1       # Entry point (~260 lines) — params, module import, main flow
+LsiGitCheckout.psm1      # Module (~2700 lines) — all function definitions
 LsiGitCheckout.psd1      # Module manifest — metadata, exported functions
 tests/
-  LsiGitCheckout.Unit.Tests.ps1         # Unit tests (no network required)
-  LsiGitCheckout.Integration.Tests.ps1  # Integration tests (needs network)
-  *.json                                # 16 test dependency configurations
+  LsiGitCheckout.Unit.Tests.ps1         # 60 unit tests (no network required)
+  LsiGitCheckout.Integration.Tests.ps1  # 17 integration tests (needs network)
+  semver-basic/dependencies.json        # Test configs in subdirectories
+  agnostic-recursive/dependencies.json  # (16 subdirectories total)
+  api-incompatibility-*/dependencies.json
 ```
 
 The entry point script imports the module, calls `Initialize-LsiGitCheckout` to set module state from CLI parameters, then runs the main logic. All functions live in the `.psm1` file using `$script:` scoped variables for shared state.
@@ -110,19 +112,21 @@ Fast tests covering pure and near-pure functions. No network or git operations r
 pwsh -Command "Invoke-Pester ./tests/LsiGitCheckout.Unit.Tests.ps1 -Output Detailed"
 ```
 
-Covers: `Parse-VersionPattern`, `Test-SemVerCompatibility`, `Get-CompatibleVersionsForPattern`, `Select-VersionFromIntersection`, `Get-SemVersionIntersection`, `Format-SemVersion`, `Get-TagIntersection`, `Get-HostnameFromUrl`, `Validate-DependencyConfiguration`, `Get-AbsoluteBasePath`.
+Covers: `Parse-VersionPattern`, `Test-SemVerCompatibility`, `Get-CompatibleVersionsForPattern`, `Select-VersionFromIntersection`, `Get-SemVersionIntersection`, `Format-SemVersion`, `Get-TagIntersection`, `Get-HostnameFromUrl`, `Validate-DependencyConfiguration`, `Get-AbsoluteBasePath`, `Export-CheckoutResults`.
 
 ### Integration Tests
 
-Runs `LsiGitCheckout.ps1` against all 16 test JSON configurations with actual git clones and recursive dependency processing. Validates both exit codes and structured JSON output (schema, metadata, repository entries, summary counters). Requires network access to GitHub.
+Runs `LsiGitCheckout.ps1` against 17 test cases (16 configs, one run twice with different `-ApiCompatibility`) with actual git clones and full recursive dependency processing. Validates exit codes, structured JSON output (schema, metadata, summary), and **the exact tag checked out for each repository**. Requires network access to GitHub.
 
-Each test starts from a clean state — cloned test repositories are removed between runs. Tests use `-OutputFile` to generate JSON results and validate the output schema.
+Each test starts from a clean state — cloned test repositories are removed between runs. Tests use `-OutputFile` to generate JSON results and validate the output against expected per-repo tags.
 
 ```powershell
 pwsh -Command "Invoke-Pester ./tests/LsiGitCheckout.Integration.Tests.ps1 -Output Detailed"
 ```
 
-> **Note:** Integration tests take longer (~2-3 minutes) because they perform actual git clones. No `-DryRun` is used so the full recursive checkout flow is exercised.
+> **Note:** Integration tests take ~3 minutes because they perform actual git clones. No `-DryRun` is used so the full recursive checkout flow is exercised.
+
+> **Important:** Integration tests depend on 5 external GitHub test repos. Do not modify those repos without updating the test expectations. See [testing_infrastructure.md](testing_infrastructure.md) for full details.
 
 ### All Tests
 
@@ -139,7 +143,7 @@ The workspace includes pre-configured launch profiles accessible from the **Run 
 | **Run Unit Tests** | Runs unit tests with debugger attached |
 | **Run Integration Tests** | Runs integration tests with debugger attached |
 | **Run All Tests** | Runs both unit and integration tests |
-| **Run Script (DryRun - SemVer)** | Runs `LsiGitCheckout.ps1 -DryRun` against `tests/dependencies_semver.json` |
+| **Run Script (DryRun - SemVer)** | Runs `LsiGitCheckout.ps1 -DryRun` against `tests/semver-basic/dependencies.json` |
 | **Run Script (Custom Config)** | Prompts for a config file path, then runs with `-DryRun` |
 
 Select a profile and press **F5** to launch. Breakpoints set in `.psm1` or `.ps1` files will be hit.
@@ -161,14 +165,20 @@ All launch profiles use `createTemporaryIntegratedConsole` to ensure a clean Pow
 **Debug logging:** The `-EnableDebug` flag writes a timestamped log file:
 
 ```powershell
-pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/dependencies_semver.json -DryRun -EnableDebug
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json -EnableDebug
 # Creates: debug_log_YYYYMMDDHHMM.txt
 ```
 
 **Error context:** The `-EnableErrorContext` flag adds stack traces and line numbers to error output:
 
 ```powershell
-pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/dependencies_semver.json -DryRun -EnableErrorContext
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json -EnableErrorContext
+```
+
+**Structured JSON output:** The `-OutputFile` flag writes machine-readable results:
+
+```powershell
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json -OutputFile result.json
 ```
 
 **Interactive breakpoints** (terminal-based, no VS Code required):
@@ -176,26 +186,31 @@ pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/dependencies_semver.json -DryRu
 ```powershell
 pwsh
 Set-PSBreakpoint -Script ./LsiGitCheckout.psm1 -Command Process-DependencyFile
-./LsiGitCheckout.ps1 -InputFile tests/dependencies_semver.json -DryRun
+./LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json
 ```
 
 ## Manual Testing
 
-Run any of the 16 test configurations individually:
+Run any of the test configurations individually:
 
 ```powershell
 # SemVer mode
-pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/dependencies_semver.json -DryRun
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json
+
+# SemVer floating versions
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/semver-floating-versions/dependencies.json
 
 # Agnostic mode with recursive dependencies
-pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/dependencies.recursive.example.json -DryRun
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/agnostic-recursive/dependencies.json
 
-# Expected failure (API incompatibility)
-pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/dependencies.API-incompatibility-test.json -DryRun
-# Exit code should be 1
+# Expected failure — SemVer API incompatibility (exit code 1)
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/api-incompatibility-semver/dependencies.json
+
+# Expected failure — Agnostic Strict mode (exit code 1)
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/api-incompatibility-agnostic/dependencies.json -ApiCompatibility Strict
 ```
 
-See the integration test file (`tests/LsiGitCheckout.Integration.Tests.ps1`) for the full test matrix with expected exit codes.
+See [testing_infrastructure.md](testing_infrastructure.md) for the full test architecture, per-test descriptions, external repo dependencies, and constraints.
 
 ## Coding Conventions
 

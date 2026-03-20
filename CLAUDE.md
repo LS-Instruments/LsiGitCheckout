@@ -33,13 +33,17 @@ Invoke-Pester ./tests/LsiGitCheckout.Integration.Tests.ps1 -Output Detailed
 
 ### Manual Testing
 
-Test configs in `tests/` can also be run manually:
+Test configs in `tests/` are organized in subdirectories, each containing a `dependencies.json`:
 
 ```powershell
-.\LsiGitCheckout.ps1 -InputFile tests/dependencies_semver.json -DryRun
+.\LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json
+.\LsiGitCheckout.ps1 -InputFile tests/agnostic-recursive/dependencies.json
+.\LsiGitCheckout.ps1 -InputFile tests/api-incompatibility-agnostic/dependencies.json -ApiCompatibility Strict
 ```
 
-There are 16 test JSON configs covering SemVer, Agnostic, API incompatibility, custom paths, post-checkout scripts, and recursive dependencies.
+There are 17 test cases across 16 test configs covering SemVer, Agnostic, API incompatibility (Permissive + Strict), custom paths, post-checkout scripts, and recursive dependencies. See `docs/testing_infrastructure.md` for the full test architecture.
+
+**Important**: Integration tests depend on 5 external GitHub test repos. Modifying those repos will break the tests. See `docs/testing_infrastructure.md` for details.
 
 ## Architecture
 
@@ -83,10 +87,14 @@ docs/
   comparison_guide.md            # vs Google Repo Tool
   migration_guide.md             # Migration strategies
   test_repositories_reference.md # Test repo tags and dependency data
+  testing_infrastructure.md      # Test architecture, constraints, and categories
 examples/                # 7 example dependency JSON configs
-tests/                   # 16 test JSON configs + Pester test files
-  LsiGitCheckout.Unit.Tests.ps1         # Unit tests (no network)
-  LsiGitCheckout.Integration.Tests.ps1  # Integration tests (needs network)
+tests/                   # Pester test files + 16 test config subdirectories
+  LsiGitCheckout.Unit.Tests.ps1         # 60 unit tests (no network)
+  LsiGitCheckout.Integration.Tests.ps1  # 17 integration tests (needs network)
+  semver-basic/dependencies.json        # Test configs in subdirectories
+  agnostic-recursive/dependencies.json  # (16 subdirectories total)
+  api-incompatibility-*/dependencies.json
 ```
 
 ## Key Domain Concepts
