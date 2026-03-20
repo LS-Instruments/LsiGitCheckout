@@ -19,28 +19,29 @@ BeforeDiscovery {
     $script:TestConfigDir = Join-Path $script:ScriptRoot 'tests'
 
     # Test matrix: config filename -> expected exit code and repository count
+    # All test configs are named dependencies.json in subdirectories so the filename
+    # propagates correctly through all recursive depth levels.
+    # ExpectedRepos = total unique repositories discovered across all depth levels.
     $script:TestCases = @(
         # SemVer mode tests - expected to succeed
-        @{ Config = 'dependencies_semver.json';                               ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer basic' }
-        @{ Config = 'dependencies_semver-floating-versions.json';             ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer floating versions' }
-        @{ Config = 'dependencies_semver-floating-versions-2.json';           ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer floating versions 2' }
-        @{ Config = 'dependencies_semver.custom-dependency-path-1.json';      ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer custom dep path 1' }
-        @{ Config = 'dependencies_semver.custom-dependency-path-2.json';      ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer custom dep path 2' }
-        @{ Config = 'dependencies_semver.post-checkout-scripts.json';         ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer post-checkout scripts' }
-        @{ Config = 'dependencies_semver.post-checkout-scripts-2.json';       ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer post-checkout scripts 2' }
-        @{ Config = 'dependencies_semver.post-checkout-scripts-depth-0.json'; ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $true;  Label = 'SemVer post-checkout depth 0' }
+        @{ Config = 'semver-basic/dependencies.json';                         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer basic' }
+        @{ Config = 'semver-floating-versions/dependencies.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer floating versions' }
+        @{ Config = 'semver-floating-versions-2/dependencies.json';           ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer floating versions 2' }
+        @{ Config = 'semver-custom-dep-path-1/dependencies.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer custom dep path 1' }
+        @{ Config = 'semver-custom-dep-path-2/dependencies.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer custom dep path 2' }
+        @{ Config = 'semver-post-checkout-scripts/dependencies.json';         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer post-checkout scripts' }
+        @{ Config = 'semver-post-checkout-scripts-2/dependencies.json';       ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer post-checkout scripts 2' }
+        @{ Config = 'semver-post-checkout-scripts-depth-0/dependencies.json'; ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $true;  Label = 'SemVer post-checkout depth 0' }
 
         # Agnostic mode tests - expected to succeed
-        @{ Config = 'dependencies.recursive.example.json';                    ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic recursive' }
-        @{ Config = 'dependencies.custom-dependency-path.json';               ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic custom dep path' }
-        @{ Config = 'dependencies.partial-API-overlap.json';                  ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic partial API overlap' }
-        @{ Config = 'dependencies.post-checkout-scripts.json';                ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic post-checkout scripts' }
-        @{ Config = 'dependencies.post-checkout-scripts-2.json';              ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic post-checkout scripts 2' }
-        @{ Config = 'dependencies.post-checkout-scripts-depth-0.json';        ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $true;  Label = 'Agnostic post-checkout depth 0' }
+        @{ Config = 'agnostic-recursive/dependencies.json';                   ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic recursive' }
+        @{ Config = 'agnostic-custom-dep-path/dependencies.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic custom dep path' }
+        @{ Config = 'agnostic-partial-api-overlap/dependencies.json';         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic partial API overlap' }
+        @{ Config = 'agnostic-post-checkout-scripts/dependencies.json';       ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic post-checkout scripts' }
+        @{ Config = 'agnostic-post-checkout-scripts-2/dependencies.json';     ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic post-checkout scripts 2' }
+        @{ Config = 'agnostic-post-checkout-scripts-depth-0/dependencies.json'; ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $true;  Label = 'Agnostic post-checkout depth 0' }
 
-        # API incompatibility tests - use subdirectories so the file is named dependencies.json
-        # and recursive lookup propagates correctly through all depth levels.
-        # Permissive mode resolves Agnostic conflicts silently; Strict mode rejects them.
+        # API incompatibility tests - Permissive resolves Agnostic conflicts; Strict rejects them.
         @{ Config = 'api-incompatibility-agnostic/dependencies.json';         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; ApiMode = 'Permissive'; Label = 'Agnostic API incompatibility (Permissive)' }
         @{ Config = 'api-incompatibility-agnostic/dependencies.json';         ExpectedExit = 1; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; ApiMode = 'Strict';     Label = 'Agnostic API incompatibility (Strict)' }
         @{ Config = 'api-incompatibility-semver/dependencies.json';           ExpectedExit = 1; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; ApiMode = 'Permissive'; Label = 'SemVer API incompatibility' }
@@ -59,16 +60,13 @@ Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
 
     BeforeEach {
         # Clean up cloned test repositories to ensure each test starts fresh
-        # Repos may be cloned under tests/ directly or under subdirectories
+        # Repos are cloned inside each test's subdirectory
         $cleanupPatterns = @('test-root-a', 'test-root-b', 'libs')
-        $searchDirs = @(
-            $script:TestConfigDir,
-            (Join-Path $script:TestConfigDir 'api-incompatibility-agnostic'),
-            (Join-Path $script:TestConfigDir 'api-incompatibility-semver')
-        )
-        foreach ($searchDir in $searchDirs) {
+        $testSubDirs = Get-ChildItem -Path $script:TestConfigDir -Directory |
+            Where-Object { Test-Path (Join-Path $_.FullName 'dependencies.json') }
+        foreach ($subDir in $testSubDirs) {
             foreach ($pattern in $cleanupPatterns) {
-                $dir = Join-Path $searchDir $pattern
+                $dir = Join-Path $subDir.FullName $pattern
                 if (Test-Path $dir) {
                     Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
                 }
@@ -119,7 +117,7 @@ Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
 
         # Summary
         $result.summary.success | Should -Be ($ExpectedExit -eq 0) -Because "summary.success should match exit code"
-        $result.summary.totalRepositories | Should -BeGreaterOrEqual $ExpectedRepos -Because "should have at least $ExpectedRepos repositories"
+        $result.summary.totalRepositories | Should -Be $ExpectedRepos -Because "should have exactly $ExpectedRepos unique repositories"
 
         # Repositories array
         $result.repositories | Should -Not -BeNullOrEmpty -Because "should have repository entries"

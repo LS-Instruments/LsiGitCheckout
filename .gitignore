@@ -5,9 +5,7 @@ LsiGitCheckout_Errors.txt
 # Repository directories
 repos/
 
-# Cloned test repositories (created by integration tests)
-tests/test-root-*/
-tests/libs/
+# Cloned test repositories (created by integration tests inside subdirectories)
 tests/*/test-root-*/
 tests/*/libs/
 
