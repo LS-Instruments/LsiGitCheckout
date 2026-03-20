@@ -213,3 +213,59 @@ Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
         }
     }
 }
+
+Describe 'SemVer with -DisableRecursion (regression #16)' -Tag 'Integration' {
+    BeforeAll {
+        $script:ScriptRoot = Split-Path $PSScriptRoot -Parent
+        $script:ScriptPath = Join-Path $script:ScriptRoot 'LsiGitCheckout.ps1'
+        $script:TestConfigDir = Join-Path $script:ScriptRoot 'tests'
+    }
+
+    BeforeEach {
+        # Clean up cloned repos from semver-basic test directory
+        $testDir = Join-Path $script:TestConfigDir 'semver-basic'
+        foreach ($pattern in @('test-root-a', 'test-root-b', 'libs')) {
+            $dir = Join-Path $testDir $pattern
+            if (Test-Path $dir) {
+                Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    It 'resolves SemVer tags correctly without recursive mode' {
+        $configPath = Join-Path $script:TestConfigDir 'semver-basic/dependencies.json'
+        $outputJson = Join-Path $TestDrive 'result_nonrecursive.json'
+
+        $output = & pwsh -NoProfile -NonInteractive -File $script:ScriptPath `
+            -InputFile $configPath `
+            -OutputFile $outputJson `
+            -DisableRecursion `
+            -DisablePostCheckoutScripts 2>&1
+        $actualExit = $LASTEXITCODE
+
+        $actualExit | Should -Be 0 -Because (
+            "SemVer with -DisableRecursion should succeed.`n" +
+            "Output (last 20 lines):`n$($output | Select-Object -Last 20 | Out-String)"
+        )
+
+        $outputJson | Should -Exist
+        $result = Get-Content $outputJson -Raw | ConvertFrom-Json
+
+        # Should only have the 2 root repos (no recursive deps)
+        $result.summary.totalRepositories | Should -Be 2
+        $result.metadata.recursiveMode | Should -Be $false
+
+        # Both repos should have resolved tags (not empty)
+        foreach ($repo in $result.repositories) {
+            $repo.tag | Should -Not -BeNullOrEmpty -Because "SemVer tag must be resolved even with -DisableRecursion (regression #16)"
+            $repo.selectedVersion | Should -Not -BeNullOrEmpty
+            $repo.status | Should -Be 'success'
+        }
+
+        # Validate specific tags
+        $rootA = $result.repositories | Where-Object { $_.url -like '*RootA*' }
+        $rootA.tag | Should -Be 'v3.0.0'
+        $rootB = $result.repositories | Where-Object { $_.url -like '*RootB*' }
+        $rootB.tag | Should -Be 'v3.0.0'
+    }
+}
