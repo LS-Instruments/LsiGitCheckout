@@ -46,11 +46,103 @@ pwsh --version
 
 ### Git
 
-Git must be installed and available on PATH.
+Git 2.x or later must be installed and available on PATH.
+
+**Windows:**
+
+```cmd
+winget install Git.Git
+```
+
+Or download from [git-scm.com](https://git-scm.com/download/win). Git for Windows bundles Git Credential Manager for HTTPS authentication.
+
+**macOS:**
+
+```bash
+# Via Xcode CLI tools (may already be installed)
+xcode-select --install
+
+# Or via Homebrew
+brew install git
+```
+
+**Linux (Ubuntu/Debian):**
+
+```bash
+sudo apt-get install git
+```
+
+**Verify:**
 
 ```bash
 git --version
 ```
+
+### Git Credential Manager (for HTTPS repos)
+
+Git Credential Manager (GCM) handles HTTPS authentication (OAuth browser flows for GitHub, Azure DevOps, etc.). On Windows it is bundled with Git for Windows. On macOS/Linux it must be installed separately.
+
+**macOS:**
+
+```bash
+brew install git-credential-manager
+git-credential-manager configure
+```
+
+**Linux:**
+
+Download the latest `.deb` or `.rpm` from the [GCM releases page](https://github.com/git-credential-manager/git-credential-manager/releases), then:
+
+```bash
+sudo dpkg -i gcm-linux_amd64.deb   # Debian/Ubuntu
+git-credential-manager configure
+```
+
+Alternatively, use a Personal Access Token (PAT) as the password when git prompts for HTTPS credentials.
+
+### SSH Setup (for SSH repos)
+
+SSH is only needed if your repositories use SSH URLs (`git@host:...` or `ssh://...`).
+
+**Windows — PuTTY/plink:**
+
+LsiGitCheckout uses PuTTY on Windows because OpenSSH has known issues with submodule SSH inheritance (see [CLAUDE.md](../CLAUDE.md) for details).
+
+1. Install PuTTY suite from [putty.org](https://www.putty.org/) — ensure `plink.exe` and `pageant.exe` are on PATH
+2. Convert OpenSSH keys to `.ppk` format using PuTTYgen
+3. Start Pageant and add your key
+4. Create `git_credentials.json` mapping hostnames to `.ppk` key paths:
+
+   ```json
+   { "github.com": "C:\\Users\\username\\.ssh\\github_key.ppk" }
+   ```
+
+**macOS/Linux — OpenSSH:**
+
+OpenSSH is bundled with the OS. LsiGitCheckout uses `GIT_SSH_COMMAND` to specify keys per-host.
+
+1. Generate or use existing OpenSSH keys (`~/.ssh/id_ed25519`, etc.)
+2. Set permissions: `chmod 600 ~/.ssh/id_ed25519`
+3. For passphrase-protected keys, load into ssh-agent before running:
+
+   ```bash
+   eval "$(ssh-agent -s)"
+   ssh-add ~/.ssh/id_ed25519
+   ```
+
+4. Create `git_credentials.json` mapping hostnames to key paths:
+
+   ```json
+   { "github.com": "/home/username/.ssh/id_ed25519" }
+   ```
+
+5. If converting from PuTTY `.ppk` keys, use PuTTYgen on Windows (**Conversions → Export OpenSSH key (force new file format)**) or:
+
+   ```bash
+   # Requires: brew install putty (macOS) or apt install putty-tools (Linux)
+   puttygen key.ppk -O private-openssh -o key_openssh
+   chmod 600 key_openssh
+   ```
 
 ### Pester 5.x (Test Framework)
 
@@ -93,8 +185,8 @@ LsiGitCheckout.ps1       # Entry point (~260 lines) — params, module import, m
 LsiGitCheckout.psm1      # Module (~2700 lines) — all function definitions
 LsiGitCheckout.psd1      # Module manifest — metadata, exported functions
 tests/
-  LsiGitCheckout.Unit.Tests.ps1         # 60 unit tests (no network required)
-  LsiGitCheckout.Integration.Tests.ps1  # 17 integration tests (needs network)
+  LsiGitCheckout.Unit.Tests.ps1         # 65 unit tests (no network required)
+  LsiGitCheckout.Integration.Tests.ps1  # 18 integration tests (needs network)
   semver-basic/dependencies.json        # Test configs in subdirectories
   agnostic-recursive/dependencies.json  # (16 subdirectories total)
   api-incompatibility-*/dependencies.json
@@ -116,7 +208,7 @@ Covers: `Parse-VersionPattern`, `Test-SemVerCompatibility`, `Get-CompatibleVersi
 
 ### Integration Tests
 
-Runs `LsiGitCheckout.ps1` against 17 test cases (16 configs, one run twice with different `-ApiCompatibility`) with actual git clones and full recursive dependency processing. Validates exit codes, structured JSON output (schema, metadata, summary), and **the exact tag checked out for each repository**. Requires network access to GitHub.
+Runs `LsiGitCheckout.ps1` against 18 test cases (16 configs with recursive mode, plus a non-recursive SemVer regression test) with actual git clones. Validates exit codes, structured JSON output (schema, metadata, summary), and **the exact tag checked out for each repository**. Requires network access to GitHub.
 
 Each test starts from a clean state — cloned test repositories are removed between runs. Tests use `-OutputFile` to generate JSON results and validate the output against expected per-repo tags.
 
