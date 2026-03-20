@@ -537,4 +537,62 @@ Describe 'Export-CheckoutResults' {
         $result.repositories.Count | Should -Be 0
         $result.summary.totalRepositories | Should -Be 0
     }
+
+    It 'includes postCheckoutScript field when script was tracked' {
+        & (Get-Module LsiGitCheckout) {
+            $script:RepositoryDictionary['https://github.com/org/repoA.git'].PostCheckoutScript = @{
+                Configured = $true
+                ScriptPath = 'C:\test\repo-a\post-checkout.ps1'
+                Found      = $true
+                Executed   = $false
+                Status     = 'skipped'
+                Reason     = 'Disabled globally via -DisablePostCheckoutScripts'
+            }
+        }
+
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $repoWithScript = $result.repositories | Where-Object { $_.url -eq 'https://github.com/org/repoA.git' }
+        $repoWithScript.postCheckoutScript | Should -Not -BeNullOrEmpty
+        $repoWithScript.postCheckoutScript.configured | Should -Be $true
+        $repoWithScript.postCheckoutScript.found | Should -Be $true
+        $repoWithScript.postCheckoutScript.executed | Should -Be $false
+        $repoWithScript.postCheckoutScript.status | Should -Be 'skipped'
+        $repoWithScript.postCheckoutScript.reason | Should -Be 'Disabled globally via -DisablePostCheckoutScripts'
+    }
+
+    It 'sets postCheckoutScript to null when no script configured' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $repoWithout = $result.repositories | Where-Object { $_.url -eq 'https://github.com/org/repoB.git' }
+        $repoWithout.postCheckoutScript | Should -BeNullOrEmpty
+    }
+
+    It 'includes rootPostCheckoutScripts for depth-0 scripts' {
+        & (Get-Module LsiGitCheckout) {
+            $script:PostCheckoutScriptResults = @(
+                @{
+                    Configured    = $true
+                    ScriptPath    = 'C:\test\build\config\post-checkout.ps1'
+                    Found         = $false
+                    Executed      = $false
+                    Status        = 'skipped'
+                    Reason        = 'Disabled globally via -DisablePostCheckoutScripts'
+                    RepositoryUrl = ''
+                }
+            )
+        }
+
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.rootPostCheckoutScripts.Count | Should -Be 1
+        $result.rootPostCheckoutScripts[0].configured | Should -Be $true
+        $result.rootPostCheckoutScripts[0].status | Should -Be 'skipped'
+    }
 }

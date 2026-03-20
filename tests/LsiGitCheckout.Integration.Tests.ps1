@@ -21,28 +21,28 @@ BeforeDiscovery {
     # Test matrix: config filename -> expected exit code and repository count
     $script:TestCases = @(
         # SemVer mode tests - expected to succeed
-        @{ Config = 'dependencies_semver.json';                               ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer'; Label = 'SemVer basic' }
-        @{ Config = 'dependencies_semver-floating-versions.json';             ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer'; Label = 'SemVer floating versions' }
-        @{ Config = 'dependencies_semver-floating-versions-2.json';           ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer'; Label = 'SemVer floating versions 2' }
-        @{ Config = 'dependencies_semver.custom-dependency-path-1.json';      ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer'; Label = 'SemVer custom dep path 1' }
-        @{ Config = 'dependencies_semver.custom-dependency-path-2.json';      ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer'; Label = 'SemVer custom dep path 2' }
-        @{ Config = 'dependencies_semver.post-checkout-scripts.json';         ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer'; Label = 'SemVer post-checkout scripts' }
-        @{ Config = 'dependencies_semver.post-checkout-scripts-2.json';       ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer'; Label = 'SemVer post-checkout scripts 2' }
-        @{ Config = 'dependencies_semver.post-checkout-scripts-depth-0.json'; ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer'; Label = 'SemVer post-checkout depth 0' }
+        @{ Config = 'dependencies_semver.json';                               ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer basic' }
+        @{ Config = 'dependencies_semver-floating-versions.json';             ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer floating versions' }
+        @{ Config = 'dependencies_semver-floating-versions-2.json';           ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer floating versions 2' }
+        @{ Config = 'dependencies_semver.custom-dependency-path-1.json';      ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer custom dep path 1' }
+        @{ Config = 'dependencies_semver.custom-dependency-path-2.json';      ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer custom dep path 2' }
+        @{ Config = 'dependencies_semver.post-checkout-scripts.json';         ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer post-checkout scripts' }
+        @{ Config = 'dependencies_semver.post-checkout-scripts-2.json';       ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer post-checkout scripts 2' }
+        @{ Config = 'dependencies_semver.post-checkout-scripts-depth-0.json'; ExpectedExit = 0; ExpectedRepos = 2; Mode = 'SemVer';   HasRootScript = $true;  Label = 'SemVer post-checkout depth 0' }
 
         # Agnostic mode tests - expected to succeed
-        @{ Config = 'dependencies.recursive.example.json';                    ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; Label = 'Agnostic recursive' }
-        @{ Config = 'dependencies.custom-dependency-path.json';               ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; Label = 'Agnostic custom dep path' }
-        @{ Config = 'dependencies.partial-API-overlap.json';                  ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; Label = 'Agnostic partial API overlap' }
-        @{ Config = 'dependencies.post-checkout-scripts.json';                ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; Label = 'Agnostic post-checkout scripts' }
-        @{ Config = 'dependencies.post-checkout-scripts-2.json';              ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; Label = 'Agnostic post-checkout scripts 2' }
-        @{ Config = 'dependencies.post-checkout-scripts-depth-0.json';        ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; Label = 'Agnostic post-checkout depth 0' }
+        @{ Config = 'dependencies.recursive.example.json';                    ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic recursive' }
+        @{ Config = 'dependencies.custom-dependency-path.json';               ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic custom dep path' }
+        @{ Config = 'dependencies.partial-API-overlap.json';                  ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic partial API overlap' }
+        @{ Config = 'dependencies.post-checkout-scripts.json';                ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic post-checkout scripts' }
+        @{ Config = 'dependencies.post-checkout-scripts-2.json';              ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic post-checkout scripts 2' }
+        @{ Config = 'dependencies.post-checkout-scripts-depth-0.json';        ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $true;  Label = 'Agnostic post-checkout depth 0' }
 
         # API incompatibility tests - recursive checkout with nested dependencies
         # TODO: These should exit 1 but current test repos + Permissive mode don't trigger a conflict.
         # Design proper test data that exercises the API incompatibility detection path.
-        @{ Config = 'dependencies.API-incompatibility-test.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; Label = 'Agnostic API incompatibility' }
-        @{ Config = 'dependencies_semver.API-incompatibility-test.json';      ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   Label = 'SemVer API incompatibility' }
+        @{ Config = 'dependencies.API-incompatibility-test.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic API incompatibility' }
+        @{ Config = 'dependencies_semver.API-incompatibility-test.json';      ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer API incompatibility' }
     )
 }
 
@@ -71,7 +71,7 @@ Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
     }
 
     It '<Label> (<Config>) exits with code <ExpectedExit>' -TestCases $script:TestCases {
-        param($Config, $ExpectedExit, $ExpectedRepos, $Mode, $Label)
+        param($Config, $ExpectedExit, $ExpectedRepos, $Mode, $HasRootScript, $Label)
 
         $configPath = Join-Path $script:TestConfigDir $Config
         $configPath | Should -Exist
@@ -130,6 +130,18 @@ Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
 
         # Processed dependency files
         $result.processedDependencyFiles | Should -Not -BeNullOrEmpty -Because "at least one dependency file should be processed"
+
+        # Post-checkout script tracking
+        $result.summary.postCheckoutScripts.enabled | Should -Be $false -Because "tests run with -DisablePostCheckoutScripts"
+
+        if ($HasRootScript) {
+            $result.rootPostCheckoutScripts | Should -Not -BeNullOrEmpty -Because "depth-0 config declares a post-checkout script"
+            foreach ($pcs in $result.rootPostCheckoutScripts) {
+                $pcs.configured | Should -Be $true
+                $pcs.status | Should -Be 'skipped'
+                $pcs.reason | Should -Be 'Disabled globally via -DisablePostCheckoutScripts'
+            }
+        }
 
         # Errors array should be empty for successful tests
         if ($ExpectedExit -eq 0) {
