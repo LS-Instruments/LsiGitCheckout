@@ -92,7 +92,7 @@ param(
 
 # Import module from same directory as this script
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Import-Module (Join-Path $scriptDir 'LsiGitCheckout.psm1') -Force
+Import-Module (Join-Path $scriptDir 'LsiGitCheckout.psm1') -Force -DisableNameChecking
 
 # Initialize module state from script parameters
 Initialize-LsiGitCheckout `

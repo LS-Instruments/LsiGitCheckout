@@ -12,7 +12,7 @@
 BeforeAll {
     # Import the module from parent directory
     $modulePath = Join-Path $PSScriptRoot '..' 'LsiGitCheckout.psm1'
-    Import-Module $modulePath -Force
+    Import-Module $modulePath -Force -DisableNameChecking
 
     # Initialize module with test-safe defaults
     Initialize-LsiGitCheckout -ScriptPath $PSScriptRoot
