@@ -38,11 +38,12 @@ BeforeDiscovery {
         @{ Config = 'dependencies.post-checkout-scripts-2.json';              ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic post-checkout scripts 2' }
         @{ Config = 'dependencies.post-checkout-scripts-depth-0.json';        ExpectedExit = 0; ExpectedRepos = 2; Mode = 'Agnostic'; HasRootScript = $true;  Label = 'Agnostic post-checkout depth 0' }
 
-        # API incompatibility tests - recursive checkout with nested dependencies
+        # API incompatibility tests - use subdirectories so the file is named dependencies.json
+        # and recursive lookup propagates correctly through all depth levels.
         # TODO: These should exit 1 but current test repos + Permissive mode don't trigger a conflict.
         # Design proper test data that exercises the API incompatibility detection path.
-        @{ Config = 'dependencies.API-incompatibility-test.json';             ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic API incompatibility' }
-        @{ Config = 'dependencies_semver.API-incompatibility-test.json';      ExpectedExit = 0; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer API incompatibility' }
+        @{ Config = 'api-incompatibility-agnostic/dependencies.json';         ExpectedExit = 0; ExpectedRepos = 5; Mode = 'Agnostic'; HasRootScript = $false; Label = 'Agnostic API incompatibility' }
+        @{ Config = 'api-incompatibility-semver/dependencies.json';           ExpectedExit = 1; ExpectedRepos = 5; Mode = 'SemVer';   HasRootScript = $false; Label = 'SemVer API incompatibility' }
     )
 }
 
@@ -58,14 +59,19 @@ Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
 
     BeforeEach {
         # Clean up cloned test repositories to ensure each test starts fresh
-        $cleanupDirs = @(
-            (Join-Path $script:TestConfigDir 'test-root-a'),
-            (Join-Path $script:TestConfigDir 'test-root-b'),
-            (Join-Path $script:TestConfigDir 'libs')
+        # Repos may be cloned under tests/ directly or under subdirectories
+        $cleanupPatterns = @('test-root-a', 'test-root-b', 'libs')
+        $searchDirs = @(
+            $script:TestConfigDir,
+            (Join-Path $script:TestConfigDir 'api-incompatibility-agnostic'),
+            (Join-Path $script:TestConfigDir 'api-incompatibility-semver')
         )
-        foreach ($dir in $cleanupDirs) {
-            if (Test-Path $dir) {
-                Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+        foreach ($searchDir in $searchDirs) {
+            foreach ($pattern in $cleanupPatterns) {
+                $dir = Join-Path $searchDir $pattern
+                if (Test-Path $dir) {
+                    Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+                }
             }
         }
     }
