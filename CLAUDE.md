@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point). Version 8.0.0 (unreleased), by LS Instruments AG.
+PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point). Version 8.0.0, by LS Instruments AG.
 
 ## Running the Tool
 

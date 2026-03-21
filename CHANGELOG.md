@@ -5,7 +5,7 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [8.0.0] - Unreleased
+## [8.0.0] - 2026-03-21
 
 ### Changed
 
@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Show-ErrorDialog pipeline leakage**: `MessageBox::Show()` return value leaked to pipeline, causing failures to be counted as successes
 - **Non-interactive GUI dialogs**: `Show-ErrorDialog` and `Show-ConfirmDialog` now skip GUI in `pwsh -NonInteractive` and CI environments
 - **SemVer version parsing in DryRun**: added guard to skip parsing when repo is not cloned
+- **SemVer version resolution with `-DisableRecursion`** (#16): version resolution was gated behind `RecursiveMode`, causing empty tags when using `-DisableRecursion` with SemVer mode
 
 ## [7.1.0] - 2025-09-02
 
