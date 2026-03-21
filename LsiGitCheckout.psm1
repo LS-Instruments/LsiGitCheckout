@@ -1,11 +1,11 @@
 # LsiGitCheckout Module
 # Contains all function definitions for LsiGitCheckout tool
-# Version 8.0.0
+# Version 8.0.1
 
 #Requires -Version 7.6
 
 # Module-scoped state variables
-$script:Version = "8.0.0"
+$script:Version = "8.0.1"
 $script:ScriptPath = ""
 $script:ErrorFile = ""
 $script:DebugLogFile = ""
@@ -226,7 +226,7 @@ function Write-Log {
     }
 }
 
-function Parse-VersionPattern {
+function ConvertTo-VersionPattern {
     <#
     .SYNOPSIS
         Parses a version pattern and determines its type and constraints
@@ -410,7 +410,7 @@ function Select-VersionFromIntersection {
     return $selected
 }
 
-function Parse-RepositoryVersions {
+function Get-RepositoryVersions {
     <#
     .SYNOPSIS
         Parses all repository tags using the specified regex pattern to extract SemVer versions
@@ -539,7 +539,7 @@ function Format-SemVersion {
     return "$($Version.Major).$($Version.Minor).$($Version.Build)"
 }
 
-function Validate-DependencyConfiguration {
+function Test-DependencyConfiguration {
     <#
     .SYNOPSIS
         Validates that repository configuration hasn't changed in incompatible ways
@@ -981,7 +981,7 @@ function Get-GitTagDates {
     }
 }
 
-function Sort-TagsByDate {
+function Resolve-TagsByDate {
     param(
         [array]$Tags,
         [hashtable]$TagDates,
@@ -1183,7 +1183,7 @@ function Get-TagUnion {
     }
     
     $allTags = @($unionSet.Keys)
-    $sortedUnion = Sort-TagsByDate -Tags $allTags -TagDates $TagDates -RepositoryUrl $RepositoryUrl -Context "union calculation"
+    $sortedUnion = Resolve-TagsByDate -Tags $allTags -TagDates $TagDates -RepositoryUrl $RepositoryUrl -Context "union calculation"
     
     Write-Log "Temporal union result: $($sortedUnion -join ', ')" -Level Debug
     return $sortedUnion
@@ -1436,7 +1436,7 @@ function Update-RepositoryDictionary {
         # If repository exists, validate configuration hasn't changed
         if ($script:RepositoryDictionary.ContainsKey($repoUrl)) {
             Invoke-WithErrorContext -Context "Validating configuration for existing repository: $repoUrl" -ScriptBlock {
-                Validate-DependencyConfiguration -NewRepo $Repository -ExistingRepo $script:RepositoryDictionary[$repoUrl]
+                Test-DependencyConfiguration -NewRepo $Repository -ExistingRepo $script:RepositoryDictionary[$repoUrl]
             }
         }
         
@@ -1514,7 +1514,7 @@ function Update-RepositoryDictionary {
                         $union
                     } elseif ($apiCompatibleTags) {
                         # Use temporal sorting for API compatible tags
-                        $sorted = Sort-TagsByDate -Tags $apiCompatibleTags -TagDates $tagDates -RepositoryUrl $repoUrl
+                        $sorted = Resolve-TagsByDate -Tags $apiCompatibleTags -TagDates $tagDates -RepositoryUrl $repoUrl
                         $sorted
                     } else {
                         @($existingTag, $tag) | Select-Object -Unique
@@ -1599,7 +1599,7 @@ function Update-SemVerRepository {
     }
     
     try {
-        $parsedPattern = Parse-VersionPattern -VersionPattern $versionPattern
+        $parsedPattern = ConvertTo-VersionPattern -VersionPattern $versionPattern
         Write-Log "Parsed version pattern '$versionPattern' as type: $($parsedPattern.Type)" -Level Debug
     }
     catch {
@@ -1987,7 +1987,7 @@ function Invoke-GitCheckout {
                 $repoDict = $script:RepositoryDictionary[$repoUrl]
                 
                 # Parse all versions from tags
-                $parseResult = Parse-RepositoryVersions -RepoPath $absoluteBasePath `
+                $parseResult = Get-RepositoryVersions -RepoPath $absoluteBasePath `
                                                        -VersionRegex $repoDict.VersionRegex
                 
                 $repoDict.ParsedVersions = $parseResult.ParsedVersions
@@ -2250,7 +2250,7 @@ function Invoke-GitCheckout {
     }
 }
 
-function Process-DependencyFile {
+function Invoke-DependencyFile {
     param(
         [string]$DependencyFilePath,
         [int]$Depth,
@@ -2458,7 +2458,7 @@ function Process-DependencyFile {
             $checkedOutRepos = @()
         }
         
-        Write-Log "Process-DependencyFile returning $($checkedOutRepos.Count) repositories for recursive processing" -Level Debug
+        Write-Log "Invoke-DependencyFile returning $($checkedOutRepos.Count) repositories for recursive processing" -Level Debug
         return ,$checkedOutRepos  # The comma ensures we return an array
     }
     catch {
@@ -2467,7 +2467,7 @@ function Process-DependencyFile {
     }
 }
 
-function Process-RecursiveDependencies {
+function Invoke-RecursiveDependencies {
     param(
         [array]$CheckedOutRepos,
         [string]$DefaultDependencyFileName,
@@ -2516,7 +2516,7 @@ function Process-RecursiveDependencies {
             # Process nested dependencies using the DEFAULT dependency file name
             # Custom dependency file settings are isolated to the current repository only
             # Pass the repository root path for correct relative path resolution
-            $newRepos = Process-DependencyFile -DependencyFilePath $customDependencyFilePath -Depth $targetDepth -CallingRepositoryRootPath $repoPath
+            $newRepos = Invoke-DependencyFile -DependencyFilePath $customDependencyFilePath -Depth $targetDepth -CallingRepositoryRootPath $repoPath
             $newlyCheckedOutRepos += $newRepos
         } else {
             Write-Log "No dependency file found at: $customDependencyFilePath" -Level Debug
@@ -2528,7 +2528,7 @@ function Process-RecursiveDependencies {
     # Recursively process newly checked out repositories
     # Use the default dependency file name for all recursive processing
     if ($newlyCheckedOutRepos.Count -gt 0) {
-        Process-RecursiveDependencies -CheckedOutRepos $newlyCheckedOutRepos -DefaultDependencyFileName $DefaultDependencyFileName -CurrentDepth $targetDepth
+        Invoke-RecursiveDependencies -CheckedOutRepos $newlyCheckedOutRepos -DefaultDependencyFileName $DefaultDependencyFileName -CurrentDepth $targetDepth
     } else {
         Write-Log "Recursive processing complete - no more nested dependencies found" -Level Info
     }
@@ -2810,14 +2810,14 @@ Export-ModuleMember -Function @(
     'Write-ErrorWithContext',
     'Invoke-WithErrorContext',
     'Write-Log',
-    'Parse-VersionPattern',
+    'ConvertTo-VersionPattern',
     'Test-SemVerCompatibility',
     'Get-CompatibleVersionsForPattern',
     'Select-VersionFromIntersection',
-    'Parse-RepositoryVersions',
+    'Get-RepositoryVersions',
     'Get-SemVersionIntersection',
     'Format-SemVersion',
-    'Validate-DependencyConfiguration',
+    'Test-DependencyConfiguration',
     'Show-ErrorDialog',
     'Show-ConfirmDialog',
     'Test-GitInstalled',
@@ -2828,7 +2828,7 @@ Export-ModuleMember -Function @(
     'Get-SshKeyForUrl',
     'Set-GitSshKey',
     'Get-GitTagDates',
-    'Sort-TagsByDate',
+    'Resolve-TagsByDate',
     'Reset-GitRepository',
     'Get-AbsoluteBasePath',
     'Get-TagIntersection',
@@ -2838,8 +2838,8 @@ Export-ModuleMember -Function @(
     'Update-RepositoryDictionary',
     'Update-SemVerRepository',
     'Invoke-GitCheckout',
-    'Process-DependencyFile',
-    'Process-RecursiveDependencies',
+    'Invoke-DependencyFile',
+    'Invoke-RecursiveDependencies',
     'Read-CredentialsFile',
     'Set-PostCheckoutScriptResult',
     'Export-CheckoutResults',

@@ -1,7 +1,7 @@
 @{
     # Module manifest for LsiGitCheckout
     RootModule        = 'LsiGitCheckout.psm1'
-    ModuleVersion     = '8.0.0'
+    ModuleVersion     = '8.0.1'
     GUID              = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     Author            = 'LS Instruments AG'
     CompanyName       = 'LS Instruments AG'
@@ -14,14 +14,14 @@
         'Write-ErrorWithContext',
         'Invoke-WithErrorContext',
         'Write-Log',
-        'Parse-VersionPattern',
+        'ConvertTo-VersionPattern',
         'Test-SemVerCompatibility',
         'Get-CompatibleVersionsForPattern',
         'Select-VersionFromIntersection',
-        'Parse-RepositoryVersions',
+        'Get-RepositoryVersions',
         'Get-SemVersionIntersection',
         'Format-SemVersion',
-        'Validate-DependencyConfiguration',
+        'Test-DependencyConfiguration',
         'Show-ErrorDialog',
         'Show-ConfirmDialog',
         'Test-GitInstalled',
@@ -32,7 +32,7 @@
         'Get-SshKeyForUrl',
         'Set-GitSshKey',
         'Get-GitTagDates',
-        'Sort-TagsByDate',
+        'Resolve-TagsByDate',
         'Reset-GitRepository',
         'Get-AbsoluteBasePath',
         'Get-TagIntersection',
@@ -42,8 +42,8 @@
         'Update-RepositoryDictionary',
         'Update-SemVerRepository',
         'Invoke-GitCheckout',
-        'Process-DependencyFile',
-        'Process-RecursiveDependencies',
+        'Invoke-DependencyFile',
+        'Invoke-RecursiveDependencies',
         'Read-CredentialsFile',
         'Set-PostCheckoutScriptResult',
         'Export-CheckoutResults',

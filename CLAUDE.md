@@ -66,7 +66,7 @@ There are 17 test cases across 16 test configs covering SemVer, Agnostic, API in
 ## Coding Conventions
 
 - **PowerShell 7.6 LTS** required (`#Requires -Version 7.6`)
-- **Function names**: PascalCase Verb-Noun (e.g., `Test-GitInstalled`, `Parse-VersionPattern`, `Get-SemVersionIntersection`)
+- **Function names**: PascalCase Verb-Noun using approved PowerShell verbs (e.g., `Test-GitInstalled`, `ConvertTo-VersionPattern`, `Get-SemVersionIntersection`)
 - **Documentation**: comment-based help blocks (`.SYNOPSIS`, `.DESCRIPTION`, `.PARAMETER`) on all functions
 - **Logging**: use `Write-Log` with levels: Info, Warning, Error, Debug, Verbose
 - **Error handling**: wrap operations in `Invoke-WithErrorContext -Context "description" -ScriptBlock { ... }`
