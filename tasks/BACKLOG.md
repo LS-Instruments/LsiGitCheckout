@@ -4,9 +4,7 @@ Planned features, enhancements, and bugs. When entered on GitHub, the issue numb
 
 ---
 
-### Integration test enhancements
-
-**GitHub issue:** not yet created
+### #18 — Extend integration tests with additional JSON output assertions
 
 Extend integration tests to assert additional fields from the JSON output:
 
