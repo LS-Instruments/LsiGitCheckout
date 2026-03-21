@@ -144,6 +144,42 @@ OpenSSH is bundled with the OS. LsiGitCheckout uses `GIT_SSH_COMMAND` to specify
    chmod 600 key_openssh
    ```
 
+### GitHub CLI (`gh`)
+
+The GitHub CLI is used to create and manage issues directly from the command line.
+
+**macOS:**
+
+```bash
+brew install gh
+```
+
+**Windows:**
+
+```cmd
+winget install GitHub.cli
+```
+
+**Linux (Ubuntu/Debian):**
+
+```bash
+sudo apt-get install gh
+```
+
+**Authenticate after install:**
+
+```bash
+gh auth login
+```
+
+Choose **GitHub.com**, **HTTPS**, and **Login with a web browser**. This opens a browser for OAuth — once approved, `gh` stores the token securely.
+
+**Verify:**
+
+```bash
+gh auth status
+```
+
 ### Pester 5.x (Test Framework)
 
 Install the Pester module inside PowerShell 7:

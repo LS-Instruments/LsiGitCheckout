@@ -106,3 +106,17 @@ tasks/
 - **Agnostic mode**: uses `"Tag"` and `"API Compatible Tags"` fields for explicit version control
 - **Repository Dictionary** (`$script:RepositoryDictionary`): central tracking structure for all repositories being processed across the dependency tree
 - **Immutable config**: once a repo's resolution mode is set, it cannot change during processing
+
+## Task & Issue Workflow
+
+Features, bugs, and enhancements are tracked in `tasks/BACKLOG.md` (planned) and `tasks/DONE.md` (completed), mirroring GitHub issues.
+
+**When the user requests a new feature or reports a bug:**
+
+1. Draft a properly formatted issue description (title + body in GitHub markdown)
+2. Ask the user for confirmation before creating
+3. Create the issue on GitHub using `gh issue create`
+4. Update `tasks/BACKLOG.md` with the issue number and description
+5. When implemented, move the entry from `BACKLOG.md` to `DONE.md` with a summary
+
+**When committing a fix or feature**, reference the GitHub issue in the commit message (`Fixes #N` or `Refs #N`)
