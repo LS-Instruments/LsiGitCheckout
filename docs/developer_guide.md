@@ -204,7 +204,7 @@ Fast tests covering pure and near-pure functions. No network or git operations r
 pwsh -Command "Invoke-Pester ./tests/LsiGitCheckout.Unit.Tests.ps1 -Output Detailed"
 ```
 
-Covers: `Parse-VersionPattern`, `Test-SemVerCompatibility`, `Get-CompatibleVersionsForPattern`, `Select-VersionFromIntersection`, `Get-SemVersionIntersection`, `Format-SemVersion`, `Get-TagIntersection`, `Get-HostnameFromUrl`, `Validate-DependencyConfiguration`, `Get-AbsoluteBasePath`, `Export-CheckoutResults`.
+Covers: `ConvertTo-VersionPattern`, `Test-SemVerCompatibility`, `Get-CompatibleVersionsForPattern`, `Select-VersionFromIntersection`, `Get-SemVersionIntersection`, `Format-SemVersion`, `Get-TagIntersection`, `Get-HostnameFromUrl`, `Test-DependencyConfiguration`, `Get-AbsoluteBasePath`, `Export-CheckoutResults`.
 
 ### Integration Tests
 
@@ -277,7 +277,7 @@ pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json 
 
 ```powershell
 pwsh
-Set-PSBreakpoint -Script ./LsiGitCheckout.psm1 -Command Process-DependencyFile
+Set-PSBreakpoint -Script ./LsiGitCheckout.psm1 -Command Invoke-DependencyFile
 ./LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json
 ```
 
@@ -309,7 +309,7 @@ See [testing_infrastructure.md](testing_infrastructure.md) for the full test arc
 See [CLAUDE.md](../CLAUDE.md) for the full coding conventions. Key points:
 
 - **PowerShell 7.6 LTS** — use `??` null-coalescing, `-AsHashtable` for JSON, etc.
-- **Function names**: `Verb-Noun` PascalCase (e.g., `Test-GitInstalled`, `Parse-VersionPattern`)
+- **Function names**: `Verb-Noun` PascalCase using approved PowerShell verbs (e.g., `Test-GitInstalled`, `ConvertTo-VersionPattern`)
 - **Logging**: always use `Write-Log` with appropriate level, never raw `Write-Host`
 - **Error handling**: wrap operations in `Invoke-WithErrorContext -Context "description" -ScriptBlock { ... }`
 - **Module state**: use `$script:` prefix for shared variables, initialize via `Initialize-LsiGitCheckout`

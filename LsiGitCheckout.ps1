@@ -46,7 +46,7 @@
     .\LsiGitCheckout.ps1 -Verbose -DisablePostCheckoutScripts
     .\LsiGitCheckout.ps1 -EnableDebug -EnableErrorContext
 .NOTES
-    Version: 8.0.0
+    Version: 8.0.1
     Last Modified: 2026-03-20
 
     Requires PowerShell 7.6 LTS or later (installs side-by-side with Windows PowerShell 5.1).
@@ -92,7 +92,7 @@ param(
 
 # Import module from same directory as this script
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Import-Module (Join-Path $scriptDir 'LsiGitCheckout.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $scriptDir 'LsiGitCheckout.psm1') -Force
 
 # Initialize module state from script parameters
 Initialize-LsiGitCheckout `
@@ -109,7 +109,7 @@ Initialize-LsiGitCheckout `
 # Main execution
 $exitCode = 0
 try {
-    Write-Log "LsiGitCheckout started - Version 8.0.0" -Level Info
+    Write-Log "LsiGitCheckout started - Version 8.0.1" -Level Info
     Write-Log "Script path: $scriptDir" -Level Debug
     Write-Log "PowerShell version: $($PSVersionTable.PSVersion)" -Level Debug
     Write-Log "Operating System: $([System.Environment]::OSVersion.VersionString)" -Level Debug
@@ -191,15 +191,15 @@ try {
     Write-Log "Starting dependency processing at depth 0" -Level Info
 
     $checkedOutRepos = Invoke-WithErrorContext -Context "Processing root dependency file" -ScriptBlock {
-        Process-DependencyFile -DependencyFilePath $InputFile -Depth 0
+        Invoke-DependencyFile -DependencyFilePath $InputFile -Depth 0
     }
 
     # Handle null return
     if ($null -eq $checkedOutRepos) {
-        Write-Log "WARNING: Process-DependencyFile returned null, initializing as empty array" -Level Warning
+        Write-Log "WARNING: Invoke-DependencyFile returned null, initializing as empty array" -Level Warning
         $checkedOutRepos = @()
     } else {
-        Write-Log "Process-DependencyFile returned type: $($checkedOutRepos.GetType().FullName)" -Level Debug
+        Write-Log "Invoke-DependencyFile returned type: $($checkedOutRepos.GetType().FullName)" -Level Debug
     }
     if ($null -eq $checkedOutRepos) {
         Write-Log "WARNING: checkedOutRepos is null!" -Level Warning
@@ -229,7 +229,7 @@ try {
         Write-Log "Entering recursive processing with $($checkedOutRepos.Count) repositories" -Level Info
         $defaultDepFileName = Split-Path -Leaf $InputFile
         Invoke-WithErrorContext -Context "Processing recursive dependencies" -ScriptBlock {
-            Process-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DefaultDependencyFileName $defaultDepFileName -CurrentDepth 0
+            Invoke-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DefaultDependencyFileName $defaultDepFileName -CurrentDepth 0
         }
     } else {
         if ($DisableRecursion) {

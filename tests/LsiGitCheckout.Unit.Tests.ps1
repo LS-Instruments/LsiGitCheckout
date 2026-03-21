@@ -12,7 +12,7 @@
 BeforeAll {
     # Import the module from parent directory
     $modulePath = Join-Path $PSScriptRoot '..' 'LsiGitCheckout.psm1'
-    Import-Module $modulePath -Force -DisableNameChecking
+    Import-Module $modulePath -Force
 
     # Initialize module with test-safe defaults
     Initialize-LsiGitCheckout -ScriptPath $PSScriptRoot
@@ -21,9 +21,9 @@ BeforeAll {
     Mock Write-Host {} -ModuleName LsiGitCheckout
 }
 
-Describe 'Parse-VersionPattern' {
+Describe 'ConvertTo-VersionPattern' {
     It 'parses exact version x.y.z as LowestApplicable' {
-        $result = Parse-VersionPattern -VersionPattern '3.2.1'
+        $result = ConvertTo-VersionPattern -VersionPattern '3.2.1'
         $result.Type | Should -Be 'LowestApplicable'
         $result.Major | Should -Be 3
         $result.Minor | Should -Be 2
@@ -32,7 +32,7 @@ Describe 'Parse-VersionPattern' {
     }
 
     It 'parses floating patch x.y.* as FloatingPatch' {
-        $result = Parse-VersionPattern -VersionPattern '2.1.*'
+        $result = ConvertTo-VersionPattern -VersionPattern '2.1.*'
         $result.Type | Should -Be 'FloatingPatch'
         $result.Major | Should -Be 2
         $result.Minor | Should -Be 1
@@ -40,7 +40,7 @@ Describe 'Parse-VersionPattern' {
     }
 
     It 'parses floating minor x.* as FloatingMinor' {
-        $result = Parse-VersionPattern -VersionPattern '5.*'
+        $result = ConvertTo-VersionPattern -VersionPattern '5.*'
         $result.Type | Should -Be 'FloatingMinor'
         $result.Major | Should -Be 5
         $result.Minor | Should -BeNullOrEmpty
@@ -48,7 +48,7 @@ Describe 'Parse-VersionPattern' {
     }
 
     It 'parses version 0.x.y correctly' {
-        $result = Parse-VersionPattern -VersionPattern '0.2.3'
+        $result = ConvertTo-VersionPattern -VersionPattern '0.2.3'
         $result.Type | Should -Be 'LowestApplicable'
         $result.Major | Should -Be 0
         $result.Minor | Should -Be 2
@@ -56,15 +56,15 @@ Describe 'Parse-VersionPattern' {
     }
 
     It 'throws on invalid pattern' {
-        { Parse-VersionPattern -VersionPattern 'abc' } | Should -Throw '*Invalid version pattern*'
+        { ConvertTo-VersionPattern -VersionPattern 'abc' } | Should -Throw '*Invalid version pattern*'
     }
 
     It 'throws on partial pattern x.y' {
-        { Parse-VersionPattern -VersionPattern '1.2' } | Should -Throw '*Invalid version pattern*'
+        { ConvertTo-VersionPattern -VersionPattern '1.2' } | Should -Throw '*Invalid version pattern*'
     }
 
     It 'throws on empty string' {
-        { Parse-VersionPattern -VersionPattern '' } | Should -Throw '*Invalid version pattern*'
+        { ConvertTo-VersionPattern -VersionPattern '' } | Should -Throw '*Invalid version pattern*'
     }
 }
 
@@ -335,7 +335,7 @@ Describe 'Get-HostnameFromUrl' {
     }
 }
 
-Describe 'Validate-DependencyConfiguration' {
+Describe 'Test-DependencyConfiguration' {
     It 'passes when no conflict exists' {
         $newRepo = [PSCustomObject]@{
             'Repository URL' = 'https://github.com/org/repo.git'
@@ -344,7 +344,7 @@ Describe 'Validate-DependencyConfiguration' {
         $existingRepo = @{
             DependencyResolution = 'SemVer'
         }
-        { Validate-DependencyConfiguration -NewRepo $newRepo -ExistingRepo $existingRepo } | Should -Not -Throw
+        { Test-DependencyConfiguration -NewRepo $newRepo -ExistingRepo $existingRepo } | Should -Not -Throw
     }
 
     It 'throws when dependency resolution mode changes' {
@@ -355,7 +355,7 @@ Describe 'Validate-DependencyConfiguration' {
         $existingRepo = @{
             DependencyResolution = 'Agnostic'
         }
-        { Validate-DependencyConfiguration -NewRepo $newRepo -ExistingRepo $existingRepo } | Should -Throw '*cannot change*'
+        { Test-DependencyConfiguration -NewRepo $newRepo -ExistingRepo $existingRepo } | Should -Throw '*cannot change*'
     }
 
     It 'throws when version regex changes for SemVer mode' {
@@ -368,7 +368,7 @@ Describe 'Validate-DependencyConfiguration' {
             DependencyResolution = 'SemVer'
             VersionRegex = '^v?(\d+)\.(\d+)\.(\d+)$'
         }
-        { Validate-DependencyConfiguration -NewRepo $newRepo -ExistingRepo $existingRepo } | Should -Throw '*cannot change*'
+        { Test-DependencyConfiguration -NewRepo $newRepo -ExistingRepo $existingRepo } | Should -Throw '*cannot change*'
     }
 
     It 'defaults to Agnostic when Dependency Resolution not specified' {
@@ -378,7 +378,7 @@ Describe 'Validate-DependencyConfiguration' {
         $existingRepo = @{
             DependencyResolution = 'Agnostic'
         }
-        { Validate-DependencyConfiguration -NewRepo $newRepo -ExistingRepo $existingRepo } | Should -Not -Throw
+        { Test-DependencyConfiguration -NewRepo $newRepo -ExistingRepo $existingRepo } | Should -Not -Throw
     }
 }
 
@@ -451,7 +451,7 @@ Describe 'Export-CheckoutResults' {
         Export-CheckoutResults -OutputFile $outputFile
 
         $result = Get-Content $outputFile -Raw | ConvertFrom-Json
-        $result.metadata.toolVersion | Should -Be '8.0.0'
+        $result.metadata.toolVersion | Should -Be '8.0.1'
         $result.metadata.recursiveMode | Should -Be $true
         $result.metadata.maxDepth | Should -Be 5
         $result.metadata.apiCompatibility | Should -Be 'Permissive'
