@@ -1172,7 +1172,11 @@ chmod 600 key_openssh
    - Check that hostname is correctly specified in git_credentials.json
    - Verify the hostname matches the repository URL
 
-4. **Git LFS errors**
+4. **"Filename too long" errors on Windows**
+   - Enable long path support: `git config --global core.longpaths true`
+   - This is common with repositories containing deeply nested paths (e.g., FPGA/Xilinx projects)
+
+5. **Git LFS errors**
    - Install Git LFS: `git lfs install`
    - Or set `"Skip LFS": true` in configuration
 
