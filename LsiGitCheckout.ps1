@@ -84,12 +84,15 @@ param(
     [switch]$DisablePostCheckoutScripts,
 
     [Parameter()]
-    [switch]$EnableErrorContext
+    [switch]$EnableErrorContext,
+
+    [Parameter()]
+    [string]$OutputFile
 )
 
 # Import module from same directory as this script
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Import-Module (Join-Path $scriptDir 'LsiGitCheckout.psm1') -Force
+Import-Module (Join-Path $scriptDir 'LsiGitCheckout.psm1') -Force -DisableNameChecking
 
 # Initialize module state from script parameters
 Initialize-LsiGitCheckout `
@@ -100,9 +103,11 @@ Initialize-LsiGitCheckout `
     -MaxDepth $MaxDepth `
     -ApiCompatibility $ApiCompatibility `
     -DisablePostCheckoutScripts:$DisablePostCheckoutScripts `
-    -EnableErrorContext:$EnableErrorContext
+    -EnableErrorContext:$EnableErrorContext `
+    -OutputFile $OutputFile
 
 # Main execution
+$exitCode = 0
 try {
     Write-Log "LsiGitCheckout started - Version 8.0.0" -Level Info
     Write-Log "Script path: $scriptDir" -Level Debug
@@ -128,6 +133,10 @@ try {
         Write-Log "Error context: DISABLED - Use -EnableErrorContext for detailed error information" -Level Debug
     }
 
+    if ($OutputFile) {
+        Write-Log "Structured output will be written to: $OutputFile" -Level Info
+    }
+
     # Calculate and log script hash in debug mode
     if ($EnableDebug) {
         $scriptContent = Get-Content -Path $MyInvocation.MyCommand.Path -Raw
@@ -149,7 +158,7 @@ try {
 
     # Check Git installation
     if (-not (Test-GitInstalled)) {
-        exit 1
+        throw "Git is not installed or not accessible in PATH"
     }
 
     # Determine input file path
@@ -175,10 +184,7 @@ try {
 
     # Check if input file exists
     if (-not (Test-Path $InputFile)) {
-        $errorMessage = "Input file not found: $InputFile"
-        Write-Log $errorMessage -Level Error
-        Show-ErrorDialog -Message $errorMessage
-        exit 1
+        throw "Input file not found: $InputFile"
     }
 
     # Process the initial dependency file with enhanced error handling
@@ -236,19 +242,27 @@ try {
     # Show summary
     Show-Summary
 
-    # Get failure count from module
+    # Determine exit code from failure count
     $failureCount = & (Get-Module LsiGitCheckout) { $script:FailureCount }
-
-    # Exit with appropriate code
     if ($failureCount -gt 0) {
-        exit 1
-    }
-    else {
-        exit 0
+        $exitCode = 1
     }
 }
 catch {
     Write-ErrorWithContext -ErrorRecord $_ -AdditionalMessage "Unexpected error in main execution"
     Show-ErrorDialog -Message $_.Exception.Message
-    exit 1
+    $exitCode = 1
 }
+finally {
+    # Write structured output if requested — guaranteed even on failure
+    if (-not [string]::IsNullOrEmpty($OutputFile)) {
+        try {
+            Export-CheckoutResults -OutputFile $OutputFile
+        }
+        catch {
+            Write-Host "Failed to write output file: $_" -ForegroundColor Red
+        }
+    }
+}
+
+exit $exitCode

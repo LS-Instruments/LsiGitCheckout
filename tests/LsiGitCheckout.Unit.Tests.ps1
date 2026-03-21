@@ -12,7 +12,7 @@
 BeforeAll {
     # Import the module from parent directory
     $modulePath = Join-Path $PSScriptRoot '..' 'LsiGitCheckout.psm1'
-    Import-Module $modulePath -Force
+    Import-Module $modulePath -Force -DisableNameChecking
 
     # Initialize module with test-safe defaults
     Initialize-LsiGitCheckout -ScriptPath $PSScriptRoot
@@ -390,6 +390,322 @@ Describe 'Get-AbsoluteBasePath' {
         } else {
             $result = Get-AbsoluteBasePath -BasePath '/tmp/repo' -DependencyFilePath '/config/deps.json'
             $result | Should -Be '/tmp/repo'
+        }
+    }
+}
+
+Describe 'Export-CheckoutResults' {
+    BeforeEach {
+        # Set up module state for testing
+        & (Get-Module LsiGitCheckout) {
+            $script:SuccessCount = 2
+            $script:FailureCount = 0
+            $script:PostCheckoutScriptExecutions = 0
+            $script:PostCheckoutScriptFailures = 0
+            $script:PostCheckoutScriptsEnabled = $false
+            $script:RecursiveMode = $true
+            $script:MaxDepth = 5
+            $script:DefaultApiCompatibility = 'Permissive'
+            $script:DefaultDependencyFileName = 'dependencies.json'
+            $script:DryRun = $false
+            $script:ProcessedDependencyFiles = @('C:\test\dependencies.json')
+            $script:ErrorMessages = @()
+            $script:RepositoryDictionary = @{
+                'https://github.com/org/repoA.git' = @{
+                    AbsolutePath = 'C:\test\repo-a'
+                    DependencyResolution = 'Agnostic'
+                    Tag = 'v1.0.0'
+                    AlreadyCheckedOut = $true
+                    NeedCheckout = $false
+                    CheckoutFailed = $false
+                    RequestedBy = @('root-dependency-file')
+                }
+                'https://github.com/org/repoB.git' = @{
+                    AbsolutePath = 'C:\test\repo-b'
+                    DependencyResolution = 'SemVer'
+                    AlreadyCheckedOut = $true
+                    NeedCheckout = $false
+                    CheckoutFailed = $false
+                    SelectedTag = 'v3.0.0'
+                    SelectedVersion = [Version]::new(3, 0, 0)
+                    RequestedPatterns = @{
+                        'root-dependency-file' = @{ OriginalPattern = '3.0.0'; Type = 'LowestApplicable' }
+                    }
+                    RequestedBy = @('root-dependency-file')
+                }
+            }
+        }
+    }
+
+    It 'writes valid JSON with correct schema version' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $outputFile | Should -Exist
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.schemaVersion | Should -Be '1.0.0'
+    }
+
+    It 'includes correct metadata' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.metadata.toolVersion | Should -Be '8.0.0'
+        $result.metadata.recursiveMode | Should -Be $true
+        $result.metadata.maxDepth | Should -Be 5
+        $result.metadata.apiCompatibility | Should -Be 'Permissive'
+        $result.metadata.inputFile | Should -Be 'dependencies.json'
+    }
+
+    It 'includes correct summary counters' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.summary.success | Should -Be $true
+        $result.summary.successCount | Should -Be 2
+        $result.summary.failureCount | Should -Be 0
+        $result.summary.totalRepositories | Should -Be 2
+    }
+
+    It 'includes repository entries with correct fields' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.repositories.Count | Should -Be 2
+
+        foreach ($repo in $result.repositories) {
+            $repo.url | Should -Not -BeNullOrEmpty
+            $repo.path | Should -Not -BeNullOrEmpty
+            $repo.dependencyResolution | Should -BeIn @('SemVer', 'Agnostic')
+            $repo.status | Should -BeIn @('success', 'failed', 'skipped')
+        }
+    }
+
+    It 'populates SemVer-specific fields for SemVer repos' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $semVerRepo = $result.repositories | Where-Object { $_.dependencyResolution -eq 'SemVer' }
+
+        $semVerRepo | Should -Not -BeNullOrEmpty
+        $semVerRepo.tag | Should -Be 'v3.0.0'
+        $semVerRepo.selectedVersion | Should -Be '3.0.0'
+        $semVerRepo.requestedVersion | Should -Be '3.0.0'
+    }
+
+    It 'sets null for SemVer fields on Agnostic repos' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $agnosticRepo = $result.repositories | Where-Object { $_.dependencyResolution -eq 'Agnostic' }
+
+        $agnosticRepo | Should -Not -BeNullOrEmpty
+        $agnosticRepo.tag | Should -Be 'v1.0.0'
+        $agnosticRepo.requestedVersion | Should -BeNullOrEmpty
+        $agnosticRepo.selectedVersion | Should -BeNullOrEmpty
+    }
+
+    It 'includes error messages when failures occur' {
+        & (Get-Module LsiGitCheckout) {
+            $script:FailureCount = 1
+            $script:ErrorMessages = @('Repository clone failed', 'Tag not found')
+        }
+
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.summary.success | Should -Be $false
+        $result.errors.Count | Should -Be 2
+        $result.errors[0] | Should -Be 'Repository clone failed'
+    }
+
+    It 'handles empty repository dictionary' {
+        & (Get-Module LsiGitCheckout) {
+            $script:RepositoryDictionary = @{}
+            $script:SuccessCount = 0
+            $script:ProcessedDependencyFiles = @()
+        }
+
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.repositories.Count | Should -Be 0
+        $result.summary.totalRepositories | Should -Be 0
+    }
+
+    It 'includes requestedBy field for each repository' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        foreach ($repo in $result.repositories) {
+            $repo.requestedBy | Should -Not -BeNullOrEmpty -Because "every repo should have a requestedBy"
+            $repo.requestedBy | Should -Contain 'root-dependency-file'
+        }
+    }
+
+    It 'includes postCheckoutScript field when script was tracked' {
+        & (Get-Module LsiGitCheckout) {
+            $script:RepositoryDictionary['https://github.com/org/repoA.git'].PostCheckoutScript = @{
+                Configured = $true
+                ScriptPath = 'C:\test\repo-a\post-checkout.ps1'
+                Found      = $true
+                Executed   = $false
+                Status     = 'skipped'
+                Reason     = 'Disabled globally via -DisablePostCheckoutScripts'
+            }
+        }
+
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $repoWithScript = $result.repositories | Where-Object { $_.url -eq 'https://github.com/org/repoA.git' }
+        $repoWithScript.postCheckoutScript | Should -Not -BeNullOrEmpty
+        $repoWithScript.postCheckoutScript.configured | Should -Be $true
+        $repoWithScript.postCheckoutScript.found | Should -Be $true
+        $repoWithScript.postCheckoutScript.executed | Should -Be $false
+        $repoWithScript.postCheckoutScript.status | Should -Be 'skipped'
+        $repoWithScript.postCheckoutScript.reason | Should -Be 'Disabled globally via -DisablePostCheckoutScripts'
+    }
+
+    It 'sets postCheckoutScript to null when no script configured' {
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $repoWithout = $result.repositories | Where-Object { $_.url -eq 'https://github.com/org/repoB.git' }
+        $repoWithout.postCheckoutScript | Should -BeNullOrEmpty
+    }
+
+    It 'includes rootPostCheckoutScripts for depth-0 scripts' {
+        & (Get-Module LsiGitCheckout) {
+            $script:PostCheckoutScriptResults = @(
+                @{
+                    Configured    = $true
+                    ScriptPath    = 'C:\test\build\config\post-checkout.ps1'
+                    Found         = $false
+                    Executed      = $false
+                    Status        = 'skipped'
+                    Reason        = 'Disabled globally via -DisablePostCheckoutScripts'
+                    RepositoryUrl = ''
+                }
+            )
+        }
+
+        $outputFile = Join-Path $TestDrive 'result.json'
+        Export-CheckoutResults -OutputFile $outputFile
+
+        $result = Get-Content $outputFile -Raw | ConvertFrom-Json
+        $result.rootPostCheckoutScripts.Count | Should -Be 1
+        $result.rootPostCheckoutScripts[0].configured | Should -Be $true
+        $result.rootPostCheckoutScripts[0].status | Should -Be 'skipped'
+    }
+}
+
+Describe 'Test-SshTransportAvailable' {
+    It 'returns true when ssh is available on this system' {
+        # On macOS/Linux, ssh should always be present
+        if (-not $IsWindows) {
+            Test-SshTransportAvailable | Should -Be $true
+        } else {
+            Set-ItResult -Skipped -Because 'this test validates OpenSSH availability on Unix'
+        }
+    }
+}
+
+Describe 'Set-GitSshKey' {
+    BeforeAll {
+        # Create a temporary OpenSSH key for testing (no passphrase)
+        $script:testKeyPath = Join-Path $TestDrive 'test_key'
+        ssh-keygen -t ed25519 -f $script:testKeyPath -N '""' -q 2>$null
+        if (-not (Test-Path $script:testKeyPath)) {
+            # Fallback: create a fake OpenSSH-format key file
+            Set-Content -Path $script:testKeyPath -Value "-----BEGIN OPENSSH PRIVATE KEY-----`ntest`n-----END OPENSSH PRIVATE KEY-----"
+        }
+
+        # Create a fake PuTTY key for rejection testing
+        $script:testPuttyKeyPath = Join-Path $TestDrive 'test_key.ppk'
+        Set-Content -Path $script:testPuttyKeyPath -Value "PuTTY-User-Key-File-3: ssh-ed25519`nfake-putty-key-content"
+    }
+
+    Context 'OpenSSH path (macOS/Linux)' {
+        BeforeAll {
+            if ($IsWindows) {
+                $script:skipUnix = $true
+            }
+        }
+
+        It 'configures GIT_SSH_COMMAND with explicit key path' {
+            if ($script:skipUnix) {
+                Set-ItResult -Skipped -Because 'OpenSSH tests only run on macOS/Linux'
+                return
+            }
+
+            # Save and clear env vars
+            $originalSshCmd = $env:GIT_SSH_COMMAND
+            $originalSsh = $env:GIT_SSH
+            $env:GIT_SSH_COMMAND = $null
+            $env:GIT_SSH = $null
+
+            try {
+                $result = Set-GitSshKey -SshKeyPath $script:testKeyPath
+                $result | Should -Be $true
+                $env:GIT_SSH_COMMAND | Should -BeLike "ssh -i *test_key* -o IdentitiesOnly=yes"
+                $env:GIT_SSH | Should -BeNullOrEmpty
+            }
+            finally {
+                $env:GIT_SSH_COMMAND = $originalSshCmd
+                $env:GIT_SSH = $originalSsh
+            }
+        }
+
+        It 'rejects PuTTY format keys' {
+            if ($script:skipUnix) {
+                Set-ItResult -Skipped -Because 'OpenSSH tests only run on macOS/Linux'
+                return
+            }
+
+            $result = Set-GitSshKey -SshKeyPath $script:testPuttyKeyPath
+            $result | Should -Be $false
+        }
+
+        It 'returns false for non-existent key file' {
+            $result = Set-GitSshKey -SshKeyPath (Join-Path $TestDrive 'nonexistent_key')
+            $result | Should -Be $false
+        }
+    }
+
+    Context 'Permission check (macOS/Linux)' {
+        It 'warns on overly permissive key file' {
+            if ($IsWindows) {
+                Set-ItResult -Skipped -Because 'Unix permission tests only run on macOS/Linux'
+                return
+            }
+
+            # Make key world-readable
+            chmod 644 $script:testKeyPath
+
+            # Save env
+            $originalSshCmd = $env:GIT_SSH_COMMAND
+            $env:GIT_SSH_COMMAND = $null
+
+            try {
+                # Should still succeed but produce a warning
+                $result = Set-GitSshKey -SshKeyPath $script:testKeyPath
+                $result | Should -Be $true
+            }
+            finally {
+                chmod 600 $script:testKeyPath
+                $env:GIT_SSH_COMMAND = $originalSshCmd
+            }
         }
     }
 }

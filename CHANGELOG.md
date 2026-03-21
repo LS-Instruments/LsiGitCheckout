@@ -5,20 +5,48 @@ All notable changes to LsiGitCheckout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [8.0.0] - 2026-03-20
+## [8.0.0] - 2026-03-21
 
 ### Changed
+
 - **BREAKING**: Requires PowerShell 7.6 LTS or later (previously 5.1). PowerShell 7.6 installs side-by-side with Windows PowerShell 5.1.
 - Refactored monolithic script into module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point)
 - Post-checkout scripts now execute via `pwsh` instead of `powershell.exe`
 - Replaced verbose null-check patterns with `??` null-coalescing operator
+- Entry point refactored to `try/catch/finally` pattern for guaranteed output file writing
+- Integration tests now perform actual git clones (no `-DryRun`) with full recursive checkout
+- Integration tests validate structured JSON output schema, not just exit codes
+- Integration tests clean up cloned repos between runs for test isolation
+- API incompatibility test configs now use `"Dependency File Name"` override for recursive lookup
 
 ### Added
+
+- **Cross-platform SSH support**: OpenSSH on macOS/Linux via `GIT_SSH_COMMAND`, PuTTY/plink on Windows
+  - `Test-SshTransportAvailable` replaces `Test-PlinkInstalled` (platform-aware)
+  - `Set-GitSshKeyOpenSsh` for Unix: validates key format, checks permissions, sets `GIT_SSH_COMMAND`
+  - `Set-GitSshKeyPlink` for Windows: existing PuTTY/Pageant logic (unchanged behavior)
+  - `Read-CredentialsFile` now warns about wrong key format for the current platform
 - `LsiGitCheckout.psm1` module file containing all function definitions
 - `LsiGitCheckout.psd1` module manifest
 - `Initialize-LsiGitCheckout` function for module state initialization
 - Automated unit tests using Pester 5.x (`tests/LsiGitCheckout.Unit.Tests.ps1`)
 - Automated integration tests for all 16 test configs (`tests/LsiGitCheckout.Integration.Tests.ps1`)
+- **Structured JSON output** via `-OutputFile` parameter for CI/CD pipeline integration
+  - Schema version 1.0.0 with execution metadata, per-repository results, summary counters, and error messages
+  - `Export-CheckoutResults` function generates the JSON output
+  - Output is guaranteed even on failure (written in `finally` block)
+- **Post-checkout script tracking** in JSON output per repository (`postCheckoutScript` field with configured, found, executed, status, reason) and at root level (`rootPostCheckoutScripts` array)
+- **`requestedBy` field** on each repository entry showing which parent repo or dependency file requested it
+- `Test-InteractiveSession` helper to detect non-interactive environments
+- Error message collector in `Write-Log` for structured output
+- `docs/test_repositories_reference.md` — catalog of all test repo tags and their dependencies
+
+### Fixed
+
+- **Show-ErrorDialog pipeline leakage**: `MessageBox::Show()` return value leaked to pipeline, causing failures to be counted as successes
+- **Non-interactive GUI dialogs**: `Show-ErrorDialog` and `Show-ConfirmDialog` now skip GUI in `pwsh -NonInteractive` and CI environments
+- **SemVer version parsing in DryRun**: added guard to skip parsing when repo is not cloned
+- **SemVer version resolution with `-DisableRecursion`** (#16): version resolution was gated behind `RecursiveMode`, causing empty tags when using `-DisableRecursion` with SemVer mode
 
 ## [7.1.0] - 2025-09-02
 

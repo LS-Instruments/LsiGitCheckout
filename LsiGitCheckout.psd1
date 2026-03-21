@@ -26,7 +26,7 @@
         'Show-ConfirmDialog',
         'Test-GitInstalled',
         'Test-GitLfsInstalled',
-        'Test-PlinkInstalled',
+        'Test-SshTransportAvailable',
         'Get-RepositoryUrl',
         'Get-HostnameFromUrl',
         'Get-SshKeyForUrl',
@@ -45,6 +45,8 @@
         'Process-DependencyFile',
         'Process-RecursiveDependencies',
         'Read-CredentialsFile',
+        'Set-PostCheckoutScriptResult',
+        'Export-CheckoutResults',
         'Show-Summary'
     )
 

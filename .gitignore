@@ -5,8 +5,14 @@ LsiGitCheckout_Errors.txt
 # Repository directories
 repos/
 
-# User configuration files
-dependencies.json
+# Cloned test repositories (created by integration tests inside subdirectories)
+tests/*/test-root-*/
+tests/*/libs/
+tests/*/correlator-driver/
+
+# User configuration files (root only — test subdirectories have their own dependencies.json)
+/dependencies.json
+git_credentials.json
 
 # SSH keys
 *.ppk

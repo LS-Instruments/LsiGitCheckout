@@ -46,11 +46,103 @@ pwsh --version
 
 ### Git
 
-Git must be installed and available on PATH.
+Git 2.x or later must be installed and available on PATH.
+
+**Windows:**
+
+```cmd
+winget install Git.Git
+```
+
+Or download from [git-scm.com](https://git-scm.com/download/win). Git for Windows bundles Git Credential Manager for HTTPS authentication.
+
+**macOS:**
+
+```bash
+# Via Xcode CLI tools (may already be installed)
+xcode-select --install
+
+# Or via Homebrew
+brew install git
+```
+
+**Linux (Ubuntu/Debian):**
+
+```bash
+sudo apt-get install git
+```
+
+**Verify:**
 
 ```bash
 git --version
 ```
+
+### Git Credential Manager (for HTTPS repos)
+
+Git Credential Manager (GCM) handles HTTPS authentication (OAuth browser flows for GitHub, Azure DevOps, etc.). On Windows it is bundled with Git for Windows. On macOS/Linux it must be installed separately.
+
+**macOS:**
+
+```bash
+brew install git-credential-manager
+git-credential-manager configure
+```
+
+**Linux:**
+
+Download the latest `.deb` or `.rpm` from the [GCM releases page](https://github.com/git-credential-manager/git-credential-manager/releases), then:
+
+```bash
+sudo dpkg -i gcm-linux_amd64.deb   # Debian/Ubuntu
+git-credential-manager configure
+```
+
+Alternatively, use a Personal Access Token (PAT) as the password when git prompts for HTTPS credentials.
+
+### SSH Setup (for SSH repos)
+
+SSH is only needed if your repositories use SSH URLs (`git@host:...` or `ssh://...`).
+
+**Windows — PuTTY/plink:**
+
+LsiGitCheckout uses PuTTY on Windows because OpenSSH has known issues with submodule SSH inheritance (see [CLAUDE.md](../CLAUDE.md) for details).
+
+1. Install PuTTY suite from [putty.org](https://www.putty.org/) — ensure `plink.exe` and `pageant.exe` are on PATH
+2. Convert OpenSSH keys to `.ppk` format using PuTTYgen
+3. Start Pageant and add your key
+4. Create `git_credentials.json` mapping hostnames to `.ppk` key paths:
+
+   ```json
+   { "github.com": "C:\\Users\\username\\.ssh\\github_key.ppk" }
+   ```
+
+**macOS/Linux — OpenSSH:**
+
+OpenSSH is bundled with the OS. LsiGitCheckout uses `GIT_SSH_COMMAND` to specify keys per-host.
+
+1. Generate or use existing OpenSSH keys (`~/.ssh/id_ed25519`, etc.)
+2. Set permissions: `chmod 600 ~/.ssh/id_ed25519`
+3. For passphrase-protected keys, load into ssh-agent before running:
+
+   ```bash
+   eval "$(ssh-agent -s)"
+   ssh-add ~/.ssh/id_ed25519
+   ```
+
+4. Create `git_credentials.json` mapping hostnames to key paths:
+
+   ```json
+   { "github.com": "/home/username/.ssh/id_ed25519" }
+   ```
+
+5. If converting from PuTTY `.ppk` keys, use PuTTYgen on Windows (**Conversions → Export OpenSSH key (force new file format)**) or:
+
+   ```bash
+   # Requires: brew install putty (macOS) or apt install putty-tools (Linux)
+   puttygen key.ppk -O private-openssh -o key_openssh
+   chmod 600 key_openssh
+   ```
 
 ### Pester 5.x (Test Framework)
 
@@ -89,13 +181,15 @@ The `LsiGitCheckout.code-workspace` file provides:
 ## Project Structure
 
 ```text
-LsiGitCheckout.ps1       # Entry point (~230 lines) — params, module import, main flow
-LsiGitCheckout.psm1      # Module (~2520 lines) — all 36 function definitions
+LsiGitCheckout.ps1       # Entry point (~260 lines) — params, module import, main flow
+LsiGitCheckout.psm1      # Module (~2700 lines) — all function definitions
 LsiGitCheckout.psd1      # Module manifest — metadata, exported functions
 tests/
-  LsiGitCheckout.Unit.Tests.ps1         # Unit tests (no network required)
-  LsiGitCheckout.Integration.Tests.ps1  # Integration tests (needs network)
-  *.json                                # 16 test dependency configurations
+  LsiGitCheckout.Unit.Tests.ps1         # 65 unit tests (no network required)
+  LsiGitCheckout.Integration.Tests.ps1  # 18 integration tests (needs network)
+  semver-basic/dependencies.json        # Test configs in subdirectories
+  agnostic-recursive/dependencies.json  # (16 subdirectories total)
+  api-incompatibility-*/dependencies.json
 ```
 
 The entry point script imports the module, calls `Initialize-LsiGitCheckout` to set module state from CLI parameters, then runs the main logic. All functions live in the `.psm1` file using `$script:` scoped variables for shared state.
@@ -110,15 +204,21 @@ Fast tests covering pure and near-pure functions. No network or git operations r
 pwsh -Command "Invoke-Pester ./tests/LsiGitCheckout.Unit.Tests.ps1 -Output Detailed"
 ```
 
-Covers: `Parse-VersionPattern`, `Test-SemVerCompatibility`, `Get-CompatibleVersionsForPattern`, `Select-VersionFromIntersection`, `Get-SemVersionIntersection`, `Format-SemVersion`, `Get-TagIntersection`, `Get-HostnameFromUrl`, `Validate-DependencyConfiguration`, `Get-AbsoluteBasePath`.
+Covers: `Parse-VersionPattern`, `Test-SemVerCompatibility`, `Get-CompatibleVersionsForPattern`, `Select-VersionFromIntersection`, `Get-SemVersionIntersection`, `Format-SemVersion`, `Get-TagIntersection`, `Get-HostnameFromUrl`, `Validate-DependencyConfiguration`, `Get-AbsoluteBasePath`, `Export-CheckoutResults`.
 
 ### Integration Tests
 
-Runs `LsiGitCheckout.ps1` with `-DryRun` against all 16 test JSON configurations and asserts expected exit codes. Requires network access to GitHub.
+Runs `LsiGitCheckout.ps1` against 18 test cases (16 configs with recursive mode, plus a non-recursive SemVer regression test) with actual git clones. Validates exit codes, structured JSON output (schema, metadata, summary), and **the exact tag checked out for each repository**. Requires network access to GitHub.
+
+Each test starts from a clean state — cloned test repositories are removed between runs. Tests use `-OutputFile` to generate JSON results and validate the output against expected per-repo tags.
 
 ```powershell
 pwsh -Command "Invoke-Pester ./tests/LsiGitCheckout.Integration.Tests.ps1 -Output Detailed"
 ```
+
+> **Note:** Integration tests take ~3 minutes because they perform actual git clones. No `-DryRun` is used so the full recursive checkout flow is exercised.
+
+> **Important:** Integration tests depend on 5 external GitHub test repos. Do not modify those repos without updating the test expectations. See [testing_infrastructure.md](testing_infrastructure.md) for full details.
 
 ### All Tests
 
@@ -135,7 +235,7 @@ The workspace includes pre-configured launch profiles accessible from the **Run 
 | **Run Unit Tests** | Runs unit tests with debugger attached |
 | **Run Integration Tests** | Runs integration tests with debugger attached |
 | **Run All Tests** | Runs both unit and integration tests |
-| **Run Script (DryRun - SemVer)** | Runs `LsiGitCheckout.ps1 -DryRun` against `tests/dependencies_semver.json` |
+| **Run Script (DryRun - SemVer)** | Runs `LsiGitCheckout.ps1 -DryRun` against `tests/semver-basic/dependencies.json` |
 | **Run Script (Custom Config)** | Prompts for a config file path, then runs with `-DryRun` |
 
 Select a profile and press **F5** to launch. Breakpoints set in `.psm1` or `.ps1` files will be hit.
@@ -157,14 +257,20 @@ All launch profiles use `createTemporaryIntegratedConsole` to ensure a clean Pow
 **Debug logging:** The `-EnableDebug` flag writes a timestamped log file:
 
 ```powershell
-pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/dependencies_semver.json -DryRun -EnableDebug
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json -EnableDebug
 # Creates: debug_log_YYYYMMDDHHMM.txt
 ```
 
 **Error context:** The `-EnableErrorContext` flag adds stack traces and line numbers to error output:
 
 ```powershell
-pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/dependencies_semver.json -DryRun -EnableErrorContext
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json -EnableErrorContext
+```
+
+**Structured JSON output:** The `-OutputFile` flag writes machine-readable results:
+
+```powershell
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json -OutputFile result.json
 ```
 
 **Interactive breakpoints** (terminal-based, no VS Code required):
@@ -172,26 +278,31 @@ pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/dependencies_semver.json -DryRu
 ```powershell
 pwsh
 Set-PSBreakpoint -Script ./LsiGitCheckout.psm1 -Command Process-DependencyFile
-./LsiGitCheckout.ps1 -InputFile tests/dependencies_semver.json -DryRun
+./LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json
 ```
 
 ## Manual Testing
 
-Run any of the 16 test configurations individually:
+Run any of the test configurations individually:
 
 ```powershell
 # SemVer mode
-pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/dependencies_semver.json -DryRun
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json
+
+# SemVer floating versions
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/semver-floating-versions/dependencies.json
 
 # Agnostic mode with recursive dependencies
-pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/dependencies.recursive.example.json -DryRun
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/agnostic-recursive/dependencies.json
 
-# Expected failure (API incompatibility)
-pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/dependencies.API-incompatibility-test.json -DryRun
-# Exit code should be 1
+# Expected failure — SemVer API incompatibility (exit code 1)
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/api-incompatibility-semver/dependencies.json
+
+# Expected failure — Agnostic Strict mode (exit code 1)
+pwsh -File ./LsiGitCheckout.ps1 -InputFile tests/api-incompatibility-agnostic/dependencies.json -ApiCompatibility Strict
 ```
 
-See the integration test file (`tests/LsiGitCheckout.Integration.Tests.ps1`) for the full test matrix with expected exit codes.
+See [testing_infrastructure.md](testing_infrastructure.md) for the full test architecture, per-test descriptions, external repo dependencies, and constraints.
 
 ## Coding Conventions
 

@@ -1,0 +1,9 @@
+[
+  {
+	"Repository URL": "https://openproject.lsinstruments.ch/openproject/git/correlator-driver.git",
+	"Base Path": "correlator-driver",
+	"Dependency Resolution": "SemVer",
+	"Version": "6.3.4",
+	"Skip LFS": true
+  }
+]

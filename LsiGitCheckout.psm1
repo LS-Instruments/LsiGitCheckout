@@ -25,6 +25,9 @@ $script:ErrorContextEnabled = $false
 $script:DryRun = $false
 $script:EnableDebug = $false
 $script:MaxDepth = 5
+$script:OutputFile = ""
+$script:ErrorMessages = @()
+$script:PostCheckoutScriptResults = @()
 
 function Initialize-LsiGitCheckout {
     <#
@@ -49,6 +52,8 @@ function Initialize-LsiGitCheckout {
         When true, skip post-checkout script execution
     .PARAMETER EnableErrorContext
         When true, show detailed error context with stack traces
+    .PARAMETER OutputFile
+        Path to write structured JSON results file
     #>
     param(
         [Parameter(Mandatory=$true)]
@@ -61,7 +66,8 @@ function Initialize-LsiGitCheckout {
         [ValidateSet('Strict', 'Permissive')]
         [string]$ApiCompatibility = 'Permissive',
         [switch]$DisablePostCheckoutScripts,
-        [switch]$EnableErrorContext
+        [switch]$EnableErrorContext,
+        [string]$OutputFile = ""
     )
 
     $script:ScriptPath = $ScriptPath
@@ -83,6 +89,9 @@ function Initialize-LsiGitCheckout {
     $script:DryRun = [bool]$DryRun
     $script:EnableDebug = [bool]$EnableDebug
     $script:MaxDepth = $MaxDepth
+    $script:OutputFile = $OutputFile
+    $script:ErrorMessages = @()
+    $script:PostCheckoutScriptResults = @()
 
     # Initialize error file
     if (Test-Path $script:ErrorFile) {
@@ -191,6 +200,7 @@ function Write-Log {
         'Error' {
             Write-Host $logMessage -ForegroundColor Red
             Add-Content -Path $script:ErrorFile -Value $logMessage
+            $script:ErrorMessages += $Message
         }
         'Warning' {
             Write-Host $logMessage -ForegroundColor Yellow
@@ -576,14 +586,37 @@ function Validate-DependencyConfiguration {
     }
 }
 
+function Test-InteractiveSession {
+    <#
+    .SYNOPSIS
+        Checks if the current session is interactive (can show GUI dialogs)
+    .DESCRIPTION
+        Returns $false when running under pwsh -NonInteractive or in a non-user-interactive
+        environment (e.g., CI pipelines, automated tests, services).
+    #>
+    if (-not [Environment]::UserInteractive) {
+        return $false
+    }
+    # Check if PowerShell was launched with -NonInteractive
+    $cmdArgs = [Environment]::GetCommandLineArgs()
+    if ($cmdArgs -contains '-NonInteractive') {
+        return $false
+    }
+    return $true
+}
+
 function Show-ErrorDialog {
     param(
         [string]$Title = "Git Error",
         [string]$Message
     )
-    
+
+    if (-not (Test-InteractiveSession)) {
+        return
+    }
+
     Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.MessageBox]::Show($Message, $Title, 'OK', 'Error')
+    $null = [System.Windows.Forms.MessageBox]::Show($Message, $Title, 'OK', 'Error')
 }
 
 function Show-ConfirmDialog {
@@ -591,7 +624,11 @@ function Show-ConfirmDialog {
         [string]$Title = "Confirmation Required",
         [string]$Message
     )
-    
+
+    if (-not (Test-InteractiveSession)) {
+        return $true
+    }
+
     Add-Type -AssemblyName System.Windows.Forms
     $result = [System.Windows.Forms.MessageBox]::Show($Message, $Title, 'YesNo', 'Question')
     return $result -eq 'Yes'
@@ -620,13 +657,35 @@ function Test-GitLfsInstalled {
     }
 }
 
-function Test-PlinkInstalled {
+function Test-SshTransportAvailable {
+    <#
+    .SYNOPSIS
+        Tests whether the platform-appropriate SSH transport is available.
+    .DESCRIPTION
+        On Windows, checks for plink.exe (PuTTY SSH client).
+        On macOS/Linux, checks for the ssh command (OpenSSH client).
+    .OUTPUTS
+        [bool] True if SSH transport is available, False otherwise.
+    #>
     try {
-        $null = Get-Command plink.exe -ErrorAction Stop
-        return $true
+        if ($IsWindows) {
+            $null = Get-Command plink.exe -ErrorAction Stop
+            Write-Log "PuTTY plink found" -Level Debug
+            return $true
+        }
+        else {
+            $null = Get-Command ssh -ErrorAction Stop
+            Write-Log "OpenSSH client found" -Level Debug
+            return $true
+        }
     }
     catch {
-        Write-Log "Plink is not installed or not in PATH" -Level Warning
+        if ($IsWindows) {
+            Write-Log "Plink is not installed or not in PATH" -Level Warning
+        }
+        else {
+            Write-Log "OpenSSH client (ssh) is not installed or not in PATH" -Level Warning
+        }
         return $false
     }
 }
@@ -710,60 +769,136 @@ function Get-SshKeyForUrl {
 }
 
 function Set-GitSshKey {
+    <#
+    .SYNOPSIS
+        Configures Git SSH authentication for the current repository.
+    .DESCRIPTION
+        Dispatches to platform-specific SSH setup:
+        - Windows: PuTTY/plink via Set-GitSshKeyPlink
+        - macOS/Linux: OpenSSH via Set-GitSshKeyOpenSsh
+    .PARAMETER SshKeyPath
+        Path to the SSH private key file.
+    .PARAMETER RepoUrl
+        The repository URL (used for logging context).
+    .OUTPUTS
+        [bool] True if SSH was configured successfully, False otherwise.
+    #>
     param(
         [string]$SshKeyPath,
         [string]$RepoUrl = ""
     )
-    
+
     if (-not (Test-Path $SshKeyPath)) {
         Write-Log "SSH key file not found: $SshKeyPath" -Level Error
         return $false
     }
-    
-    # Check key file permissions (Windows)
-    $keyFile = Get-Item $SshKeyPath
-    $acl = Get-Acl $SshKeyPath
-    Write-Log "SSH key file permissions: $($acl.Owner)" -Level Debug
-    
-    # Check if the key is in PuTTY format
+
+    # Detect key format
     $keyContent = Get-Content $SshKeyPath -Raw -ErrorAction SilentlyContinue
     $isPuttyKey = $keyContent -match 'PuTTY-User-Key-File'
-    
-    if (-not (Test-PlinkInstalled)) {
+
+    if ($IsWindows) {
+        return Set-GitSshKeyPlink -SshKeyPath $SshKeyPath -IsPuttyKey $isPuttyKey
+    }
+    else {
+        return Set-GitSshKeyOpenSsh -SshKeyPath $SshKeyPath -IsPuttyKey $isPuttyKey
+    }
+}
+
+function Set-GitSshKeyPlink {
+    <#
+    .SYNOPSIS
+        Configures Git to use PuTTY/plink for SSH on Windows.
+    .DESCRIPTION
+        Validates the key is in PuTTY format, ensures plink.exe and Pageant are available,
+        and sets the GIT_SSH environment variable to plink.exe.
+    #>
+    param(
+        [string]$SshKeyPath,
+        [bool]$IsPuttyKey
+    )
+
+    # Check key file permissions (Windows ACL)
+    $acl = Get-Acl $SshKeyPath
+    Write-Log "SSH key file permissions: $($acl.Owner)" -Level Debug
+
+    if (-not (Test-SshTransportAvailable)) {
         Write-Log "Plink not found. Please install PuTTY or add plink.exe to PATH" -Level Error
         Show-ErrorDialog -Message "Plink.exe not found!`n`nPlease either:`n1. Install PuTTY (which includes plink)`n2. Add plink.exe to your PATH"
         return $false
     }
-    
-    if (-not $isPuttyKey) {
+
+    if (-not $IsPuttyKey) {
         Write-Log "SSH key is not in PuTTY format" -Level Error
         Show-ErrorDialog -Message "The SSH key is not in PuTTY format (.ppk).`n`nPlease convert your key to PuTTY format using PuTTYgen."
         return $false
     }
-    
+
     # Check if Pageant is running
     $pageantProcess = Get-Process pageant -ErrorAction SilentlyContinue
     if (-not $pageantProcess) {
         Write-Log "Pageant not running. Attempting to start it..." -Level Info
-        
+
         # Try to find and start Pageant
         $pageantPath = Get-Command pageant.exe -ErrorAction SilentlyContinue
         if ($pageantPath) {
             Start-Process pageant.exe
             Start-Sleep -Seconds 2
-            
+
             Show-ErrorDialog -Title "Pageant Started" -Message "Pageant has been started.`n`nPlease add your SSH key to Pageant:`n1. Right-click the Pageant icon in system tray`n2. Select 'Add Key'`n3. Browse to: $SshKeyPath`n4. Enter your passphrase`n`nThen click OK to continue."
         } else {
             Show-ErrorDialog -Message "Pageant not found. Please start Pageant and add your key before continuing."
             return $false
         }
     }
-    
+
     # Configure Git to use plink
     $plinkPath = (Get-Command plink.exe).Source
     $env:GIT_SSH = $plinkPath
     Write-Log "Configured Git to use PuTTY/plink: $plinkPath" -Level Debug
-    
+
+    return $true
+}
+
+function Set-GitSshKeyOpenSsh {
+    <#
+    .SYNOPSIS
+        Configures Git to use OpenSSH for SSH on macOS/Linux.
+    .DESCRIPTION
+        Validates the key is in OpenSSH format (rejects PuTTY .ppk keys),
+        checks file permissions, and sets GIT_SSH_COMMAND with the explicit key path.
+    #>
+    param(
+        [string]$SshKeyPath,
+        [bool]$IsPuttyKey
+    )
+
+    # Reject PuTTY keys on Unix
+    if ($IsPuttyKey) {
+        Write-Log "SSH key is in PuTTY format (.ppk), which is not supported on macOS/Linux" -Level Error
+        Write-Log "Convert with: puttygen '$SshKeyPath' -O private-openssh -o <output_path>" -Level Error
+        return $false
+    }
+
+    if (-not (Test-SshTransportAvailable)) {
+        Write-Log "OpenSSH client (ssh) not found in PATH" -Level Error
+        return $false
+    }
+
+    # Check key file permissions (Unix)
+    $fileItem = Get-Item $SshKeyPath
+    if ($null -ne $fileItem.UnixMode) {
+        $mode = $fileItem.UnixMode
+        # Warn if group or other have any permissions (should be --- for both)
+        if ($mode -match '.{4}[^\-].{2}$' -or $mode -match '.{7}[^\-]') {
+            Write-Log "SSH key file has overly permissive permissions: $mode. Run: chmod 600 '$SshKeyPath'" -Level Warning
+        }
+    }
+
+    # Set GIT_SSH_COMMAND with explicit key
+    $env:GIT_SSH_COMMAND = "ssh -i `"$SshKeyPath`" -o IdentitiesOnly=yes"
+    Write-Log "Configured Git to use OpenSSH with key: $SshKeyPath" -Level Debug
+
     return $true
 }
 
@@ -1087,6 +1222,42 @@ function Get-CustomDependencyFilePath {
     return $fullPath
 }
 
+function Set-PostCheckoutScriptResult {
+    <#
+    .SYNOPSIS
+        Records post-checkout script tracking data in the repository dictionary
+    #>
+    param(
+        [string]$RepositoryUrl,
+        [string]$ScriptPath,
+        [bool]$Configured,
+        [bool]$Found,
+        [bool]$Executed,
+        [string]$Status,
+        [string]$Reason = $null
+    )
+
+    $scriptResult = @{
+        Configured = $Configured
+        ScriptPath = $ScriptPath
+        Found      = $Found
+        Executed   = $Executed
+        Status     = $Status
+        Reason     = $Reason
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($RepositoryUrl) -and $script:RepositoryDictionary.ContainsKey($RepositoryUrl)) {
+        $script:RepositoryDictionary[$RepositoryUrl].PostCheckoutScript = $scriptResult
+    } else {
+        # Depth-0 scripts or unknown repo — store in a separate list
+        if (-not $script:PostCheckoutScriptResults) {
+            $script:PostCheckoutScriptResults = @()
+        }
+        $scriptResult.RepositoryUrl = $RepositoryUrl
+        $script:PostCheckoutScriptResults += $scriptResult
+    }
+}
+
 function Invoke-PostCheckoutScript {
     param(
         [string]$RepoAbsolutePath,
@@ -1095,37 +1266,41 @@ function Invoke-PostCheckoutScript {
         [string]$RepositoryUrl = "",
         [string]$Tag = ""
     )
-    
-    if (-not $script:PostCheckoutScriptsEnabled) {
-        Write-Log "Post-checkout scripts are disabled, skipping script execution" -Level Debug
-        return $true
-    }
-    
+
     # Determine script location
     $scriptLocation = $RepoAbsolutePath
     if (-not [string]::IsNullOrWhiteSpace($ScriptFilePath)) {
         $scriptLocation = Join-Path $RepoAbsolutePath $ScriptFilePath
         Write-Log "Using custom post-checkout script path: $ScriptFilePath" -Level Debug
     }
-    
+
     $scriptFullPath = Join-Path $scriptLocation $ScriptFileName
     Write-Log "Looking for post-checkout script at: $scriptFullPath" -Level Debug
-    
+
+    if (-not $script:PostCheckoutScriptsEnabled) {
+        Write-Log "Post-checkout scripts are disabled, skipping script execution" -Level Debug
+        Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found (Test-Path $scriptFullPath) -Executed $false -Status 'skipped' -Reason 'Disabled globally via -DisablePostCheckoutScripts'
+        return $true
+    }
+
     if (-not (Test-Path $scriptFullPath)) {
         Write-Log "Post-checkout script not found: $scriptFullPath" -Level Warning
+        Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $false -Executed $false -Status 'skipped' -Reason "Script file not found: $scriptFullPath"
         return $false
     }
-    
+
     # Verify it's a PowerShell script
     if (-not $scriptFullPath.EndsWith('.ps1')) {
         Write-Log "Post-checkout script is not a PowerShell script (.ps1): $scriptFullPath" -Level Warning
+        Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $true -Executed $false -Status 'skipped' -Reason "Not a PowerShell script (.ps1): $scriptFullPath"
         return $false
     }
-    
+
     Write-Log "Executing post-checkout script: $scriptFullPath" -Level Info
-    
+
     if ($script:DryRun) {
         Write-Log "DRY RUN: Would execute post-checkout script: $scriptFullPath" -Level Verbose
+        Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $true -Executed $false -Status 'skipped' -Reason 'DryRun mode — script not executed'
         return $true
     }
     
@@ -1174,7 +1349,9 @@ function Invoke-PostCheckoutScript {
             } catch {
                 Write-Log "Failed to terminate timed-out process: $_" -Level Warning
             }
-            throw "Post-checkout script execution timed out after 5 minutes"
+            Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $true -Executed $true -Status 'timeout' -Reason 'Script execution timed out after 5 minutes'
+            $script:PostCheckoutScriptFailures++
+            return $false
         }
         
         # Get output and error streams
@@ -1196,33 +1373,45 @@ function Invoke-PostCheckoutScript {
         }
         
         if ($exitCode -ne 0) {
-            throw "Post-checkout script failed with exit code: $exitCode"
+            Pop-Location
+            # Clean up environment variables
+            Remove-Item Env:\LSIGIT_REPOSITORY_URL -ErrorAction SilentlyContinue
+            Remove-Item Env:\LSIGIT_REPOSITORY_PATH -ErrorAction SilentlyContinue
+            Remove-Item Env:\LSIGIT_TAG -ErrorAction SilentlyContinue
+            Remove-Item Env:\LSIGIT_SCRIPT_VERSION -ErrorAction SilentlyContinue
+
+            $script:PostCheckoutScriptFailures++
+            Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $true -Executed $true -Status 'failed' -Reason "Script exited with code: $exitCode"
+            Write-Log "Post-checkout script failed with exit code: $exitCode" -Level Error
+            return $false
         }
-        
+
         Pop-Location
-        
+
         # Clean up environment variables
         Remove-Item Env:\LSIGIT_REPOSITORY_URL -ErrorAction SilentlyContinue
         Remove-Item Env:\LSIGIT_REPOSITORY_PATH -ErrorAction SilentlyContinue
         Remove-Item Env:\LSIGIT_TAG -ErrorAction SilentlyContinue
         Remove-Item Env:\LSIGIT_SCRIPT_VERSION -ErrorAction SilentlyContinue
-        
+
         $script:PostCheckoutScriptExecutions++
+        Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $true -Executed $true -Status 'executed' -Reason $null
         Write-Log "Successfully executed post-checkout script: $scriptFullPath" -Level Info
         return $true
     }
     catch {
         Pop-Location -ErrorAction SilentlyContinue
-        
+
         # Clean up environment variables
         Remove-Item Env:\LSIGIT_REPOSITORY_URL -ErrorAction SilentlyContinue
         Remove-Item Env:\LSIGIT_REPOSITORY_PATH -ErrorAction SilentlyContinue
         Remove-Item Env:\LSIGIT_TAG -ErrorAction SilentlyContinue
         Remove-Item Env:\LSIGIT_SCRIPT_VERSION -ErrorAction SilentlyContinue
-        
+
         $script:PostCheckoutScriptFailures++
         $errorMessage = "Failed to execute post-checkout script '$scriptFullPath': $_"
         Write-Log $errorMessage -Level Error
+        Set-PostCheckoutScriptResult -RepositoryUrl $RepositoryUrl -ScriptPath $scriptFullPath -Configured $true -Found $true -Executed $false -Status 'failed' -Reason "Script execution error: $_"
         return $false
     }
 }
@@ -1354,7 +1543,15 @@ function Update-RepositoryDictionary {
             } else {
                 # New repository - add to dictionary
                 Write-Log "First discovery of repository: $repoUrl" -Level Info
-                
+
+                # Determine calling repository URL
+                $callerUrl = if ($CallingRepositoryRootPath) {
+                    $caller = $script:RepositoryDictionary.GetEnumerator() |
+                        Where-Object { $_.Value.AbsolutePath -eq $CallingRepositoryRootPath } |
+                        Select-Object -First 1
+                    if ($caller) { $caller.Key } else { "root-dependency-file" }
+                } else { "root-dependency-file" }
+
                 $script:RepositoryDictionary[$repoUrl] = @{
                     AbsolutePath = $absoluteBasePath
                     Tag = $tag
@@ -1366,6 +1563,7 @@ function Update-RepositoryDictionary {
                     DependencyResolution = "Agnostic"
                     DependencyFilePath = $Repository.'Dependency File Path'
                     DependencyFileName = $Repository.'Dependency File Name'
+                    RequestedBy = @($callerUrl)
                 }
                 
                 Write-Log "Added new repository to dictionary: '$repoUrl' with tag: $tag" -Level Debug
@@ -1511,6 +1709,7 @@ function Update-SemVerRepository {
             DependencyResolution = "SemVer"
             VersionRegex = $versionRegex
             RequestedPatterns = @{ $callerUrl = $parsedPattern }
+            RequestedBy = @($callerUrl)
             NeedVersionParsing = $true  # Flag to parse versions after clone
             AlreadyCheckedOut = $false
             NeedCheckout = $false
@@ -1539,9 +1738,8 @@ function Invoke-GitCheckout {
     $wasNewClone = $false
     $wasActualCheckout = $false
     
-    # Check if we should skip this repository (already checked out with compatible API)
-    if ($script:RecursiveMode) {
-        $checkoutResult = Update-RepositoryDictionary -Repository $Repository -DependencyFilePath $DependencyFilePath -CallingRepositoryRootPath $CallingRepositoryRootPath
+    # Track repository in dictionary and check if we should skip (already checked out with compatible API)
+    $checkoutResult = Update-RepositoryDictionary -Repository $Repository -DependencyFilePath $DependencyFilePath -CallingRepositoryRootPath $CallingRepositoryRootPath
         if ($checkoutResult -eq $true) {
             Write-Log "Skipping repository '$repoUrl' - already checked out with compatible API" -Level Info
             return $true
@@ -1620,8 +1818,7 @@ function Invoke-GitCheckout {
             }
         }
         # Otherwise, continue with normal checkout process
-    }
-    
+
     Write-Log "Processing repository: $repoUrl" -Level Info
     Write-Log "Base Path: $basePath" -Level Verbose
     Write-Log "Tag: $tag" -Level Verbose
@@ -1777,13 +1974,14 @@ function Invoke-GitCheckout {
         }
         
         # Handle SemVer version parsing for new repositories
-        if ($script:RecursiveMode -and 
+        # Skip in DryRun mode — version parsing requires a cloned repository with git tags
+        if (-not $script:DryRun -and
             $script:RepositoryDictionary.ContainsKey($repoUrl) -and
             $script:RepositoryDictionary[$repoUrl].ContainsKey('NeedVersionParsing') -and
             $script:RepositoryDictionary[$repoUrl].NeedVersionParsing) {
-            
+
             Write-Log "Parsing SemVer versions for newly cloned repository" -Level Info
-            
+
             Push-Location $absoluteBasePath
             try {
                 $repoDict = $script:RepositoryDictionary[$repoUrl]
@@ -1835,8 +2033,7 @@ function Invoke-GitCheckout {
         }
         
         # For SemVer repositories that need checkout to different version
-        if ($script:RecursiveMode -and 
-            $script:RepositoryDictionary.ContainsKey($repoUrl) -and
+        if ($script:RepositoryDictionary.ContainsKey($repoUrl) -and
             $script:RepositoryDictionary[$repoUrl].ContainsKey('DependencyResolution') -and
             $script:RepositoryDictionary[$repoUrl].DependencyResolution -eq "SemVer") {
             
@@ -2360,13 +2557,26 @@ function Read-CredentialsFile {
         
         Write-Log "Loaded SSH credentials for $($credentialsHash.Count) host(s)" -Level Info
         
-        # Validate all SSH key files exist
+        # Validate all SSH key files exist and check format for current platform
         foreach ($hostname in $credentialsHash.Keys) {
+            # Skip comment keys
+            if ($hostname.StartsWith('_')) { continue }
+
             $keyPath = $credentialsHash[$hostname]
             if (-not (Test-Path $keyPath)) {
                 Write-Log "Warning: SSH key file not found for $hostname : $keyPath" -Level Warning
             } else {
                 Write-Log "Found SSH key for $hostname : $keyPath" -Level Debug
+
+                # Advisory format check
+                $keyContent = Get-Content $keyPath -Raw -ErrorAction SilentlyContinue
+                $isPutty = $keyContent -match 'PuTTY-User-Key-File'
+                if ($IsWindows -and -not $isPutty) {
+                    Write-Log "SSH key for $hostname does not appear to be in PuTTY format (.ppk) — required on Windows" -Level Warning
+                }
+                elseif (-not $IsWindows -and $isPutty) {
+                    Write-Log "SSH key for $hostname is in PuTTY format (.ppk) — not supported on macOS/Linux. Convert with: puttygen '$keyPath' -O private-openssh -o <output_path>" -Level Warning
+                }
             }
         }
         
@@ -2375,6 +2585,119 @@ function Read-CredentialsFile {
     catch {
         Write-Log "Failed to parse credentials file: $_" -Level Error
         return @{}
+    }
+}
+
+function Export-CheckoutResults {
+    <#
+    .SYNOPSIS
+        Exports structured JSON results to the specified output file
+    .DESCRIPTION
+        Generates a JSON file containing execution metadata, per-repository results,
+        summary counters, processed dependency files, and error messages.
+        The file is written whenever -OutputFile is specified, even on failure.
+    .PARAMETER OutputFile
+        Path to write the JSON results file
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$OutputFile
+    )
+
+    Invoke-WithErrorContext -Context "Exporting checkout results to $OutputFile" -ScriptBlock {
+        $repositories = @()
+        foreach ($entry in $script:RepositoryDictionary.GetEnumerator()) {
+            $url = $entry.Key
+            $repo = $entry.Value
+            $mode = if ($repo.ContainsKey('DependencyResolution')) { $repo.DependencyResolution } else { 'Agnostic' }
+
+            # Determine status
+            $status = if ($repo.CheckoutFailed) { 'failed' }
+                      elseif ($repo.AlreadyCheckedOut -and -not $repo.NeedCheckout) { 'skipped' }
+                      else { 'success' }
+
+            $repoObj = [ordered]@{
+                url                  = $url
+                path                 = $repo.AbsolutePath
+                dependencyResolution = $mode
+                status               = $status
+                alreadyCheckedOut    = [bool]$repo.AlreadyCheckedOut
+                requestedBy          = if ($repo.ContainsKey('RequestedBy')) { @($repo.RequestedBy) } else { @() }
+            }
+
+            if ($mode -eq 'SemVer') {
+                $repoObj.requestedVersion = if ($repo.ContainsKey('RequestedPatterns') -and $repo.RequestedPatterns.Count -gt 0) {
+                    ($repo.RequestedPatterns.Values | ForEach-Object { $_.OriginalPattern }) -join ', '
+                } else { $null }
+                $repoObj.selectedVersion = if ($repo.ContainsKey('SelectedVersion') -and $repo.SelectedVersion) {
+                    Format-SemVersion -Version $repo.SelectedVersion
+                } else { $null }
+                $repoObj.tag = if ($repo.ContainsKey('SelectedTag')) { $repo.SelectedTag } else { $null }
+            } else {
+                $repoObj.tag = $repo.Tag
+                $repoObj.requestedVersion = $null
+                $repoObj.selectedVersion = $null
+            }
+
+            # Post-checkout script tracking
+            if ($repo.ContainsKey('PostCheckoutScript')) {
+                $pcs = $repo.PostCheckoutScript
+                $repoObj.postCheckoutScript = [ordered]@{
+                    configured = $pcs.Configured
+                    scriptPath = $pcs.ScriptPath
+                    found      = $pcs.Found
+                    executed   = $pcs.Executed
+                    status     = $pcs.Status
+                    reason     = $pcs.Reason
+                }
+            } else {
+                $repoObj.postCheckoutScript = $null
+            }
+
+            $repositories += [PSCustomObject]$repoObj
+        }
+
+        $result = [ordered]@{
+            schemaVersion            = '1.0.0'
+            metadata                 = [ordered]@{
+                toolVersion        = $script:Version
+                timestamp          = (Get-Date).ToString('o')
+                dryRun             = $script:DryRun
+                recursiveMode      = $script:RecursiveMode
+                maxDepth           = $script:MaxDepth
+                apiCompatibility   = $script:DefaultApiCompatibility
+                inputFile          = $script:DefaultDependencyFileName
+                powershellVersion  = $PSVersionTable.PSVersion.ToString()
+            }
+            summary                  = [ordered]@{
+                success            = ($script:FailureCount -eq 0)
+                successCount       = $script:SuccessCount
+                failureCount       = $script:FailureCount
+                totalRepositories  = $script:RepositoryDictionary.Count
+                postCheckoutScripts = [ordered]@{
+                    enabled    = $script:PostCheckoutScriptsEnabled
+                    executions = $script:PostCheckoutScriptExecutions
+                    failures   = $script:PostCheckoutScriptFailures
+                }
+            }
+            repositories             = @($repositories)
+            processedDependencyFiles = @($script:ProcessedDependencyFiles)
+            rootPostCheckoutScripts  = @($script:PostCheckoutScriptResults | ForEach-Object {
+                [ordered]@{
+                    configured = $_.Configured
+                    scriptPath = $_.ScriptPath
+                    found      = $_.Found
+                    executed   = $_.Executed
+                    status     = $_.Status
+                    reason     = $_.Reason
+                }
+            })
+            errors                   = @($script:ErrorMessages)
+        }
+
+        $json = $result | ConvertTo-Json -Depth 10
+        Set-Content -Path $OutputFile -Value $json -Encoding UTF8
+        Write-Log "Checkout results exported to: $OutputFile" -Level Info
     }
 }
 
@@ -2499,7 +2822,7 @@ Export-ModuleMember -Function @(
     'Show-ConfirmDialog',
     'Test-GitInstalled',
     'Test-GitLfsInstalled',
-    'Test-PlinkInstalled',
+    'Test-SshTransportAvailable',
     'Get-RepositoryUrl',
     'Get-HostnameFromUrl',
     'Get-SshKeyForUrl',
@@ -2518,5 +2841,7 @@ Export-ModuleMember -Function @(
     'Process-DependencyFile',
     'Process-RecursiveDependencies',
     'Read-CredentialsFile',
+    'Set-PostCheckoutScriptResult',
+    'Export-CheckoutResults',
     'Show-Summary'
 )
