@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point). Version 8.0.0, by LS Instruments AG.
+PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point). Version 8.0.1, by LS Instruments AG.
 
 ## Running the Tool
 
@@ -91,10 +91,13 @@ docs/
 examples/                # 7 example dependency JSON configs
 tests/                   # Pester test files + 16 test config subdirectories
   LsiGitCheckout.Unit.Tests.ps1         # 65 unit tests (no network)
-  LsiGitCheckout.Integration.Tests.ps1  # 17 integration tests (needs network)
+  LsiGitCheckout.Integration.Tests.ps1  # 18 integration tests (needs network)
   semver-basic/dependencies.json        # Test configs in subdirectories
   agnostic-recursive/dependencies.json  # (16 subdirectories total)
   api-incompatibility-*/dependencies.json
+tasks/
+  BACKLOG.md               # Planned features, enhancements, bugs
+  DONE.md                  # All completed GitHub issues with summaries
 ```
 
 ## Key Domain Concepts
