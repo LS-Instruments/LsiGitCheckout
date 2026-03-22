@@ -16,7 +16,7 @@ Extend integration tests to assert additional fields from the JSON output:
 
 ---
 
-### Split README.md into smaller documentation files
+### #19 — Split README.md into smaller documentation files
 
 The large README.md (~600 lines) may prevent Google from indexing the GitHub repo page. Split detailed sections into separate files under `docs/`, keeping only overview content in README.md.
 
