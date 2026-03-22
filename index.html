@@ -3,13 +3,392 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="0; url=https://github.com/LS-Instruments/LsiGitCheckout">
     <title>LsiGitCheckout — Multi-Repository Git Dependency Manager</title>
-    <meta name="description" content="PowerShell tool for managing multi-repository Git projects with SemVer dependency resolution, recursive checkout, cross-platform SSH, and API compatibility checking.">
-    <meta name="keywords" content="git, dependency management, powershell, semver, multi-repo, recursive dependencies, cross-platform, ssh, automation">
+    <meta name="description" content="PowerShell tool for managing multi-repository Git projects with SemVer dependency resolution, recursive checkout, cross-platform SSH, and API compatibility checking. By LS Instruments AG.">
+    <meta name="keywords" content="git, dependency management, powershell, semver, multi-repo, recursive dependencies, cross-platform, ssh, automation, devops, version control">
     <link rel="canonical" href="https://github.com/LS-Instruments/LsiGitCheckout">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --accent-hover: #79c0ff;
+            --green: #3fb950;
+            --purple: #bc8cff;
+            --orange: #d29922;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+        header {
+            border-bottom: 1px solid var(--border);
+            padding: 24px 0;
+        }
+        .header-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: var(--text);
+        }
+        .logo svg { flex-shrink: 0; }
+        .logo h1 { font-size: 24px; font-weight: 600; }
+        .logo span { color: var(--text-muted); font-size: 14px; font-weight: 400; }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: background 0.15s;
+        }
+        .btn-primary {
+            background: #238636;
+            color: #fff;
+            border: 1px solid rgba(240,246,252,0.1);
+        }
+        .btn-primary:hover { background: #2ea043; }
+        .btn-secondary {
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: #1c2128; }
+        .hero {
+            padding: 48px 0;
+            text-align: center;
+        }
+        .hero h2 {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        .hero p {
+            font-size: 18px;
+            color: var(--text-muted);
+            max-width: 700px;
+            margin: 0 auto 32px;
+        }
+        .badges {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 32px;
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 500;
+            border: 1px solid var(--border);
+            background: var(--surface);
+        }
+        .badge-green { color: var(--green); border-color: #23863633; }
+        .badge-blue { color: var(--accent); border-color: #58a6ff33; }
+        .badge-purple { color: var(--purple); border-color: #bc8cff33; }
+        .badge-orange { color: var(--orange); border-color: #d2992233; }
+        .code-block {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px 20px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 14px;
+            text-align: left;
+            max-width: 600px;
+            margin: 0 auto;
+            overflow-x: auto;
+        }
+        .code-block .comment { color: var(--text-muted); }
+        .code-block .cmd { color: var(--green); }
+        .features {
+            padding: 48px 0;
+            border-top: 1px solid var(--border);
+        }
+        .features h3 {
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        .feature-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .feature-card h4 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .feature-card p {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+        .platforms {
+            padding: 48px 0;
+            border-top: 1px solid var(--border);
+        }
+        .platforms h3 {
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 10px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .quick-start {
+            padding: 48px 0;
+            border-top: 1px solid var(--border);
+        }
+        .quick-start h3 {
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .step {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .step-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #58a6ff22;
+            color: var(--accent);
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        .step h4 { font-size: 15px; margin-bottom: 8px; }
+        .step code {
+            background: var(--bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .step p { font-size: 14px; color: var(--text-muted); }
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 24px 0;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+        footer a { color: var(--accent); text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
+        @media (max-width: 600px) {
+            .hero h2 { font-size: 24px; }
+            .hero p { font-size: 16px; }
+            .feature-grid, .steps { grid-template-columns: 1fr; }
+        }
+    </style>
 </head>
 <body>
-    <p>Redirecting to <a href="https://github.com/LS-Instruments/LsiGitCheckout">LsiGitCheckout on GitHub</a>...</p>
+    <header>
+        <div class="container header-inner">
+            <a href="https://github.com/LS-Instruments/LsiGitCheckout" class="logo">
+                <svg width="32" height="32" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+                <div>
+                    <h1>LsiGitCheckout</h1>
+                    <span>by LS Instruments AG</span>
+                </div>
+            </a>
+            <div>
+                <a href="https://github.com/LS-Instruments/LsiGitCheckout" class="btn btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+                    View on GitHub
+                </a>
+                <a href="https://github.com/LS-Instruments/LsiGitCheckout/releases/latest" class="btn btn-secondary">Download</a>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="container">
+                <h2>Multi-Repository Git Dependency Manager</h2>
+                <p>A PowerShell tool that checks out multiple Git repositories to specified versions with recursive dependency resolution, SemVer support, cross-platform SSH, and API compatibility checking.</p>
+                <div class="badges">
+                    <span class="badge badge-green">PowerShell 7.6 LTS</span>
+                    <span class="badge badge-blue">Cross-Platform</span>
+                    <span class="badge badge-purple">SemVer</span>
+                    <span class="badge badge-orange">v8.0.1</span>
+                </div>
+                <div class="code-block">
+                    <span class="comment"># Clone and checkout dependencies to specified versions</span><br>
+                    <span class="cmd">pwsh ./LsiGitCheckout.ps1 -InputFile dependencies.json</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="features">
+            <div class="container">
+                <h3>Features</h3>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h4>SemVer Dependency Resolution</h4>
+                        <p>Automatic version resolution with floating version patterns (x.y.*, x.*). Cross-major version conflicts are rejected by convention.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>Recursive Dependencies</h4>
+                        <p>Walk dependency trees with configurable max depth, conflict detection, and API compatibility checking in Strict or Permissive mode.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>Cross-Platform SSH</h4>
+                        <p>PuTTY/Pageant on Windows, OpenSSH on macOS/Linux. Same credential file format, platform-appropriate transport. Handles HTTPS repos with SSH submodules.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>Structured JSON Output</h4>
+                        <p>Machine-readable results via <code>-OutputFile</code> with per-repo status, requestedBy parent chain, and post-checkout script tracking.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>Post-Checkout Scripts</h4>
+                        <p>Execute PowerShell scripts after successful checkouts for integration with external build systems and dependency managers.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>Automated Testing</h4>
+                        <p>65 unit tests and 18 integration tests with Pester 5.x. Full coverage of SemVer parsing, version compatibility, and all test configurations.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="platforms">
+            <div class="container">
+                <h3>Supported Platforms</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Component</th>
+                            <th>Windows</th>
+                            <th>macOS</th>
+                            <th>Linux</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>PowerShell</td>
+                            <td>7.6 LTS (side-by-side with 5.1)</td>
+                            <td>7.6 LTS</td>
+                            <td>7.6 LTS</td>
+                        </tr>
+                        <tr>
+                            <td>SSH Transport</td>
+                            <td>PuTTY/plink + Pageant (.ppk)</td>
+                            <td>OpenSSH (bundled)</td>
+                            <td>OpenSSH (bundled)</td>
+                        </tr>
+                        <tr>
+                            <td>HTTPS Auth</td>
+                            <td>Git Credential Manager</td>
+                            <td>Git Credential Manager</td>
+                            <td>GCM or PAT</td>
+                        </tr>
+                        <tr>
+                            <td>Git LFS</td>
+                            <td>Optional</td>
+                            <td>Optional</td>
+                            <td>Optional</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="quick-start">
+            <div class="container">
+                <h3>Quick Start</h3>
+                <div class="steps">
+                    <div class="step">
+                        <div class="step-num">1</div>
+                        <h4>Create a dependency file</h4>
+                        <p>Define your repositories, versions, and resolution mode in a JSON configuration file.</p>
+                    </div>
+                    <div class="step">
+                        <div class="step-num">2</div>
+                        <h4>Configure SSH credentials</h4>
+                        <p>Map hostnames to SSH key paths in <code>git_credentials.json</code>. Supports both PuTTY and OpenSSH key formats.</p>
+                    </div>
+                    <div class="step">
+                        <div class="step-num">3</div>
+                        <h4>Run the checkout</h4>
+                        <p>Execute <code>pwsh ./LsiGitCheckout.ps1 -InputFile dependencies.json</code> and all repositories are cloned, checked out to the right version, with submodules initialized.</p>
+                    </div>
+                </div>
+                <div style="text-align:center">
+                    <a href="https://github.com/LS-Instruments/LsiGitCheckout#readme" class="btn btn-primary">Read the Full Documentation</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>LsiGitCheckout is developed by <a href="https://www.lsinstruments.ch">LS Instruments AG</a> &middot; <a href="https://github.com/LS-Instruments/LsiGitCheckout">Source on GitHub</a> &middot; <a href="https://github.com/LS-Instruments/LsiGitCheckout/releases">Releases</a></p>
+        </div>
+    </footer>
 </body>
 </html>
