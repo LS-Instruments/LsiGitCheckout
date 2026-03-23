@@ -1,6 +1,8 @@
 # LsiGitCheckout
 
-A PowerShell script for managing multiple Git repositories with support for tags, SSH authentication via PuTTY, Git LFS, and submodules. Features advanced recursive dependency resolution with API compatibility checking, Semantic Versioning (SemVer) support with floating versions, flexible compatibility modes, intelligent automatic tag temporal sorting, custom dependency file configurations, and post-checkout PowerShell script execution for integration with external dependency management systems.
+A cross-platform Git dependency management tool that automates cloning, checking out, and version-pinning of multiple repositories from a single JSON configuration. Designed for multi-repo projects where teams need reproducible builds without the complexity of git submodules or monorepo tooling.
+
+LsiGitCheckout resolves recursive dependencies across repository trees, supports both Semantic Versioning (SemVer) and tag-based version pinning, and handles SSH authentication (PuTTY on Windows, OpenSSH on macOS/Linux), Git LFS, and post-checkout script execution.
 
 ## Table of Contents
 
@@ -26,22 +28,21 @@ A PowerShell script for managing multiple Git repositories with support for tags
 
 ## Features
 
-- **Batch Operations**: Clone or update multiple Git repositories from a single JSON configuration file
-- **Tag Support**: Automatically checkout specific tags for each repository
-- **Cross-Platform SSH**: PuTTY/Pageant on Windows, OpenSSH on macOS/Linux
+- **Clone and Checkout**: Automatically clone and checkout multiple Git repositories to pinned versions from a single JSON configuration
+- **Version Pinning**: Pin repositories to exact tags or SemVer ranges for reproducible builds across your team
+- **Recursive Dependency Resolution**: Discover and resolve nested repository dependencies with API compatibility checking — an alternative to git submodules for multi-repo projects
+- **Dependency Resolution Modes**: Choose between SemVer (Semantic Versioning with floating versions) and Agnostic (explicit tag-based) resolution
+- **Floating Versions**: SemVer floating version patterns (x.y.\*, x.\*) for automatic latest compatible version selection
+- **Cross-Platform SSH**: PuTTY/Pageant on Windows, OpenSSH on macOS/Linux — automated git authentication per host
 - **Secure Credentials Management**: SSH keys stored separately from repository configuration
 - **Submodule Support**: Handles Git submodules with automatic per-host SSH key lookup
 - **Git LFS Support**: Optional Git LFS content management with skip functionality
 - **Smart Reset**: Automatically resets repositories to clean state before checkout
-- **Error Handling**: Comprehensive logging and user-friendly error dialogs
-- **Dry Run Mode**: Preview operations without making changes
-- **Recursive Dependencies**: Discover and process nested repository dependencies with API compatibility checking
-- **Dependency Resolution Modes**: Choose between SemVer (Semantic Versioning with floating versions) and Agnostic (explicit tag-based) resolution
-- **Floating Versions**: Support for SemVer floating version patterns (x.y.\*, x.\*) for automatic latest version selection
+- **Structured JSON Output**: Machine-readable results with per-repo status, dependency chains, and error details for CI/CD integration
+- **Dry Run Mode**: Preview clone and checkout operations without making changes
 - **Flexible Compatibility Modes**: Choose between Strict and Permissive API compatibility modes for Agnostic mode
-- **Intelligent Tag Temporal Sorting**: Always-on automatic chronological tag ordering using actual git tag dates with optimized performance
 - **Custom Dependency Files**: Support for different project structures and naming conventions with proper isolation
-- **Post-Checkout Scripts**: Execute PowerShell scripts after successful repository checkouts for integration with external dependency management systems, including support for root-level execution
+- **Post-Checkout Scripts**: Execute PowerShell scripts after successful repository checkouts for integration with external dependency management systems
 
 ## Supported Platforms
 
