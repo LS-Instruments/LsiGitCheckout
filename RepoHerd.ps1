@@ -1,7 +1,7 @@
 #Requires -Version 7.6
 <#
 .SYNOPSIS
-    LsiGitCheckout - Checks out a collection of Git repositories to specified tags
+    RepoHerd - Checks out a collection of Git repositories to specified tags
 .DESCRIPTION
     This script reads a JSON configuration file and checks out multiple Git repositories
     to their specified tags. It supports both HTTPS and SSH URLs, handles Git LFS,
@@ -39,12 +39,12 @@
     Enables detailed error context output including stack traces and line numbers.
     By default, only simple error messages are shown. Use this for advanced debugging.
 .EXAMPLE
-    .\LsiGitCheckout.ps1
-    .\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
-    .\LsiGitCheckout.ps1 -DisableRecursion -MaxDepth 10
-    .\LsiGitCheckout.ps1 -InputFile "repos.json" -EnableDebug -ApiCompatibility Strict
-    .\LsiGitCheckout.ps1 -Verbose -DisablePostCheckoutScripts
-    .\LsiGitCheckout.ps1 -EnableDebug -EnableErrorContext
+    .\RepoHerd.ps1
+    .\RepoHerd.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
+    .\RepoHerd.ps1 -DisableRecursion -MaxDepth 10
+    .\RepoHerd.ps1 -InputFile "repos.json" -EnableDebug -ApiCompatibility Strict
+    .\RepoHerd.ps1 -Verbose -DisablePostCheckoutScripts
+    .\RepoHerd.ps1 -EnableDebug -EnableErrorContext
 .NOTES
     Version: 8.0.1
     Last Modified: 2026-03-20
@@ -92,10 +92,10 @@ param(
 
 # Import module from same directory as this script
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Import-Module (Join-Path $scriptDir 'LsiGitCheckout.psm1') -Force
+Import-Module (Join-Path $scriptDir 'RepoHerd.psm1') -Force
 
 # Initialize module state from script parameters
-Initialize-LsiGitCheckout `
+Initialize-RepoHerd `
     -ScriptPath $scriptDir `
     -DryRun:$DryRun `
     -EnableDebug:$EnableDebug `
@@ -109,7 +109,7 @@ Initialize-LsiGitCheckout `
 # Main execution
 $exitCode = 0
 try {
-    Write-Log "LsiGitCheckout started - Version 8.0.1" -Level Info
+    Write-Log "RepoHerd started - Version 8.0.1" -Level Info
     Write-Log "Script path: $scriptDir" -Level Debug
     Write-Log "PowerShell version: $($PSVersionTable.PSVersion)" -Level Debug
     Write-Log "Operating System: $([System.Environment]::OSVersion.VersionString)" -Level Debug
@@ -169,7 +169,7 @@ try {
 
     # Store the dependency file name for recursive processing
     # Access module internals for setting the default dependency file name
-    & (Get-Module LsiGitCheckout) { $script:DefaultDependencyFileName = $args[0] } (Split-Path -Leaf $InputFile)
+    & (Get-Module RepoHerd) { $script:DefaultDependencyFileName = $args[0] } (Split-Path -Leaf $InputFile)
     Write-Log "Default dependency file name for recursive processing: $(Split-Path -Leaf $InputFile)" -Level Debug
 
     # Determine credentials file path
@@ -180,7 +180,7 @@ try {
 
     # Read SSH credentials
     $sshCreds = Read-CredentialsFile -FilePath $CredentialsFile
-    & (Get-Module LsiGitCheckout) { $script:SshCredentials = $args[0] } $sshCreds
+    & (Get-Module RepoHerd) { $script:SshCredentials = $args[0] } $sshCreds
 
     # Check if input file exists
     if (-not (Test-Path $InputFile)) {
@@ -243,7 +243,7 @@ try {
     Show-Summary
 
     # Determine exit code from failure count
-    $failureCount = & (Get-Module LsiGitCheckout) { $script:FailureCount }
+    $failureCount = & (Get-Module RepoHerd) { $script:FailureCount }
     if ($failureCount -gt 0) {
         $exitCode = 1
     }

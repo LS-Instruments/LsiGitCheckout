@@ -1,6 +1,6 @@
 @{
-    # Module manifest for LsiGitCheckout
-    RootModule        = 'LsiGitCheckout.psm1'
+    # Module manifest for RepoHerd
+    RootModule        = 'RepoHerd.psm1'
     ModuleVersion     = '8.0.1'
     GUID              = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     Author            = 'LS Instruments AG'
@@ -10,7 +10,7 @@
     PowerShellVersion = '7.6'
 
     FunctionsToExport = @(
-        'Initialize-LsiGitCheckout',
+        'Initialize-RepoHerd',
         'Write-ErrorWithContext',
         'Invoke-WithErrorContext',
         'Write-Log',
@@ -57,7 +57,7 @@
     PrivateData = @{
         PSData = @{
             Tags       = @('Git', 'Dependency', 'SemVer', 'Checkout')
-            ProjectUri = 'https://github.com/LS-Instruments/LsiGitCheckout'
+            ProjectUri = 'https://github.com/LS-Instruments/RepoHerd'
         }
     }
 }

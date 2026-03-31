@@ -1,4 +1,4 @@
-# LsiGitCheckout — Completed Issues
+# RepoHerd — Completed Issues
 
 All implemented features and fixes, ordered by issue number.
 
@@ -86,10 +86,10 @@ Execute PowerShell scripts after successful repository checkouts for integration
 
 ### #8 — Migration guide and tool comparison documentation
 
-Added comprehensive documentation for adopting LsiGitCheckout in existing projects.
+Added comprehensive documentation for adopting RepoHerd in existing projects.
 
 - `docs/migration_guide.md`: bottom-up migration strategy with step-by-step example using 6 repositories, directory structure visualization, semantic versioning compliance guidance
-- `docs/comparison_guide.md`: LsiGitCheckout vs Google's Repo Tool, covering architecture differences, use cases, and decision criteria
+- `docs/comparison_guide.md`: RepoHerd vs Google's Repo Tool, covering architecture differences, use cases, and decision criteria
 
 ---
 
@@ -163,7 +163,7 @@ Added comprehensive documentation for the floating versions functionality introd
 
 **Breaking change:** Requires PowerShell 7.6 LTS (installs side-by-side with Windows PowerShell 5.1).
 
-- **Module refactor**: Split monolithic `LsiGitCheckout.ps1` (2750 lines) into `LsiGitCheckout.psm1` + `LsiGitCheckout.psd1` with slim entry point script. `Initialize-LsiGitCheckout` for module state initialization. PS 7.6 syntax: `??` null-coalescing operator, `pwsh` for post-checkout scripts.
+- **Module refactor**: Split monolithic `RepoHerd.ps1` (2750 lines) into `RepoHerd.psm1` + `RepoHerd.psd1` with slim entry point script. `Initialize-RepoHerd` for module state initialization. PS 7.6 syntax: `??` null-coalescing operator, `pwsh` for post-checkout scripts.
 - **Automated testing**: 65 unit tests (Pester 5.x, no network, <1s) + 18 integration tests (~96s) against live GitHub test repos with per-repository tag validation. All test configs moved to named subdirectories (`tests/<name>/dependencies.json`).
 - **Structured JSON output**: New `-OutputFile` parameter writes machine-readable results (schema 1.0.0) with execution metadata, per-repo status, summary counters, `requestedBy` parent chain, post-checkout script tracking.
 - **Cross-platform SSH**: PuTTY/plink on Windows (`.ppk`), OpenSSH via `GIT_SSH_COMMAND` on macOS/Linux. Same credential file format, different key types. Validated with HTTPS parent + SSH submodule on custom port scenario on both platforms.
@@ -177,6 +177,25 @@ Added comprehensive documentation for the floating versions functionality introd
 **Bug**: `Update-RepositoryDictionary`, `Parse-RepositoryVersions`, and `SelectedTag` lookup in `Invoke-GitCheckout` were all gated behind `if ($script:RecursiveMode)`. When `-DisableRecursion` sets `RecursiveMode = false`, the entire SemVer resolution pipeline was skipped, producing an empty tag passed to `git checkout`.
 
 **Fix**: Removed `$script:RecursiveMode` gates from version resolution conditions. `RecursiveMode` now only controls whether nested dependency files are followed, not whether version resolution runs for the current level. Regression test added.
+
+---
+
+### #19 — Split README.md into smaller documentation files
+
+Reduced README.md from 1404 to 575 lines (59% reduction) to improve Google indexing. Detailed sections extracted to `docs/`:
+
+- `semver_mode.md` — SemVer version resolution details
+- `agnostic_mode.md` — Agnostic mode and API compatibility
+- `choosing_modes.md` — Comparison of dependency resolution modes
+- `custom_dependency_files.md` — Custom dependency file configuration
+- `post_checkout_scripts.md` — Post-checkout script execution
+- `security_best_practices.md` — Credentials and SSH security
+- `ssh_setup.md` — SSH setup for Windows and macOS/Linux
+- `troubleshooting.md` — Common issues and debugging
+- `version_migration.md` — Version-to-version upgrade guide
+- `advanced_topics.md` — Links to migration and comparison guides
+
+README retains: features, platform setup, installation, basic/advanced usage, and brief summaries linking to each extracted doc. Also includes a GitHub Pages landing page (`index.html`) with SEO metadata.
 
 ---
 

@@ -3,14 +3,14 @@
 
 <#
 .SYNOPSIS
-    Integration tests for LsiGitCheckout - runs the script against all test configs
+    Integration tests for RepoHerd - runs the script against all test configs
 .DESCRIPTION
-    Executes LsiGitCheckout.ps1 against each of the 16 test JSON configs and asserts
+    Executes RepoHerd.ps1 against each of the 16 test JSON configs and asserts
     the expected exit code and structured JSON output. Tests perform actual git clones
     with recursive dependency processing to exercise the full checkout flow including
     API compatibility checks. Requires network access to GitHub test repos.
 
-    Run with: Invoke-Pester ./tests/LsiGitCheckout.Integration.Tests.ps1 -Output Detailed
+    Run with: Invoke-Pester ./tests/RepoHerd.Integration.Tests.ps1 -Output Detailed
     Skip with: Use -ExcludeTag 'Integration' to skip when no network is available
 #>
 
@@ -83,10 +83,10 @@ BeforeDiscovery {
     )
 }
 
-Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
+Describe 'RepoHerd Integration Tests' -Tag 'Integration' {
     BeforeAll {
         $script:ScriptRoot = Split-Path $PSScriptRoot -Parent
-        $script:ScriptPath = Join-Path $script:ScriptRoot 'LsiGitCheckout.ps1'
+        $script:ScriptPath = Join-Path $script:ScriptRoot 'RepoHerd.ps1'
         $script:TestConfigDir = Join-Path $script:ScriptRoot 'tests'
 
         # Verify the script exists
@@ -217,7 +217,7 @@ Describe 'LsiGitCheckout Integration Tests' -Tag 'Integration' {
 Describe 'SemVer with -DisableRecursion (regression #16)' -Tag 'Integration' {
     BeforeAll {
         $script:ScriptRoot = Split-Path $PSScriptRoot -Parent
-        $script:ScriptPath = Join-Path $script:ScriptRoot 'LsiGitCheckout.ps1'
+        $script:ScriptPath = Join-Path $script:ScriptRoot 'RepoHerd.ps1'
         $script:TestConfigDir = Join-Path $script:ScriptRoot 'tests'
     }
 

@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LsiGitCheckout — Multi-Repository Git Dependency Manager</title>
+    <title>RepoHerd — Multi-Repository Git Dependency Manager</title>
     <meta name="description" content="Clone and checkout multiple Git repositories to pinned versions with automated dependency resolution. A cross-platform PowerShell tool for multi-repo version pinning, reproducible builds, and recursive dependency management. Alternative to git submodules for managing shared libraries.">
     <meta name="keywords" content="git clone multiple repositories, git dependency manager, version pinning, reproducible builds, powershell git automation, multi-repo, dependency resolution, semver, recursive dependencies, cross-platform, ssh, git submodule alternative, monorepo alternative, devops, version control">
-    <link rel="canonical" href="https://github.com/LS-Instruments/LsiGitCheckout">
+    <link rel="canonical" href="https://github.com/LS-Instruments/RepoHerd">
     <style>
         :root {
             --bg: #0d1117;
@@ -249,19 +249,19 @@
 <body>
     <header>
         <div class="container header-inner">
-            <a href="https://github.com/LS-Instruments/LsiGitCheckout" class="logo">
+            <a href="https://github.com/LS-Instruments/RepoHerd" class="logo">
                 <svg width="32" height="32" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
                 <div>
-                    <h1>LsiGitCheckout</h1>
+                    <h1>RepoHerd</h1>
                     <span>by LS Instruments AG</span>
                 </div>
             </a>
             <div>
-                <a href="https://github.com/LS-Instruments/LsiGitCheckout" class="btn btn-primary">
+                <a href="https://github.com/LS-Instruments/RepoHerd" class="btn btn-primary">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
                     View on GitHub
                 </a>
-                <a href="https://github.com/LS-Instruments/LsiGitCheckout/releases/latest" class="btn btn-secondary">Download</a>
+                <a href="https://github.com/LS-Instruments/RepoHerd/releases/latest" class="btn btn-secondary">Download</a>
             </div>
         </div>
     </header>
@@ -279,7 +279,7 @@
                 </div>
                 <div class="code-block">
                     <span class="comment"># Clone and checkout dependencies to specified versions</span><br>
-                    <span class="cmd">pwsh ./LsiGitCheckout.ps1 -InputFile dependencies.json</span>
+                    <span class="cmd">pwsh ./RepoHerd.ps1 -InputFile dependencies.json</span>
                 </div>
             </div>
         </section>
@@ -375,11 +375,11 @@
                     <div class="step">
                         <div class="step-num">3</div>
                         <h4>Run the checkout</h4>
-                        <p>Execute <code>pwsh ./LsiGitCheckout.ps1 -InputFile dependencies.json</code> and all repositories are cloned, checked out to the right version, with submodules initialized.</p>
+                        <p>Execute <code>pwsh ./RepoHerd.ps1 -InputFile dependencies.json</code> and all repositories are cloned, checked out to the right version, with submodules initialized.</p>
                     </div>
                 </div>
                 <div style="text-align:center">
-                    <a href="https://github.com/LS-Instruments/LsiGitCheckout#readme" class="btn btn-primary">Read the Full Documentation</a>
+                    <a href="https://github.com/LS-Instruments/RepoHerd#readme" class="btn btn-primary">Read the Full Documentation</a>
                 </div>
             </div>
         </section>
@@ -387,7 +387,7 @@
 
     <footer>
         <div class="container">
-            <p>LsiGitCheckout is developed by <a href="https://www.lsinstruments.ch">LS Instruments AG</a> &middot; <a href="https://github.com/LS-Instruments/LsiGitCheckout">Source on GitHub</a> &middot; <a href="https://github.com/LS-Instruments/LsiGitCheckout/releases">Releases</a></p>
+            <p>RepoHerd is developed by <a href="https://www.lsinstruments.ch">LS Instruments AG</a> &middot; <a href="https://github.com/LS-Instruments/RepoHerd">Source on GitHub</a> &middot; <a href="https://github.com/LS-Instruments/RepoHerd/releases">Releases</a></p>
         </div>
     </footer>
 </body>

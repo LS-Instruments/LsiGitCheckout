@@ -50,7 +50,7 @@
       "LSIGIT_REPOSITORY_URL - The repository URL that was checked out",
       "LSIGIT_REPOSITORY_PATH - Absolute path to the repository on disk", 
       "LSIGIT_TAG - The git tag that was checked out",
-      "LSIGIT_SCRIPT_VERSION - Version of LsiGitCheckout executing the script"
+      "LSIGIT_SCRIPT_VERSION - Version of RepoHerd executing the script"
     ],
     "common_use_cases": [
       "npm install for Node.js projects",

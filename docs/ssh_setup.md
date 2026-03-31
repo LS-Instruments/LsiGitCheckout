@@ -4,7 +4,7 @@
 
 ## SSH Setup on Windows
 
-LsiGitCheckout uses PuTTY/plink for SSH on Windows.
+RepoHerd uses PuTTY/plink for SSH on Windows.
 
 1. **Convert OpenSSH keys to PuTTY format**:
    - Open PuTTYgen
@@ -25,7 +25,7 @@ LsiGitCheckout uses PuTTY/plink for SSH on Windows.
 
 ## SSH Setup on macOS/Linux
 
-LsiGitCheckout uses OpenSSH (bundled with Git or the OS) on macOS and Linux. No additional tools are required.
+RepoHerd uses OpenSSH (bundled with Git or the OS) on macOS and Linux. No additional tools are required.
 
 1. **Use standard OpenSSH keys** (e.g., `id_ed25519`, `id_rsa`):
 
@@ -55,9 +55,9 @@ LsiGitCheckout uses OpenSSH (bundled with Git or the OS) on macOS and Linux. No 
    ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes git@github.com
    ```
 
-**Note**: If your key has a passphrase and you are running in a non-interactive/CI environment, either use a passphrase-less deploy key or pre-load the key into `ssh-agent` before running LsiGitCheckout.
+**Note**: If your key has a passphrase and you are running in a non-interactive/CI environment, either use a passphrase-less deploy key or pre-load the key into `ssh-agent` before running RepoHerd.
 
-**Passphrase-protected keys**: If your key has a passphrase, load it into `ssh-agent` before running LsiGitCheckout so it doesn't prompt during git operations:
+**Passphrase-protected keys**: If your key has a passphrase, load it into `ssh-agent` before running RepoHerd so it doesn't prompt during git operations:
 
 ```bash
 eval "$(ssh-agent -s)"

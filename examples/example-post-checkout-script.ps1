@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Complete Post-Checkout Script for LsiGitCheckout
+    Complete Post-Checkout Script for RepoHerd
 .DESCRIPTION
     This script demonstrates comprehensive post-checkout functionality including
     GUI dialogs, package manager detection, and environment setup.
@@ -10,7 +10,7 @@
     - $env:LSIGIT_REPOSITORY_URL: The repository URL that was checked out
     - $env:LSIGIT_REPOSITORY_PATH: Absolute path to the repository on disk
     - $env:LSIGIT_TAG: The git tag that was checked out
-    - $env:LSIGIT_SCRIPT_VERSION: Version of LsiGitCheckout executing the script
+    - $env:LSIGIT_SCRIPT_VERSION: Version of RepoHerd executing the script
 #>
 
 # Add required assemblies for Windows Forms
@@ -28,7 +28,7 @@ function Show-PostCheckoutDialog {
     
     # Create the form
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "LsiGitCheckout - Post-Checkout Complete"
+    $form.Text = "RepoHerd - Post-Checkout Complete"
     $form.Size = New-Object System.Drawing.Size(500, 450)  # Increased height from 400 to 450
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
@@ -60,7 +60,7 @@ Repository Information:
 URL: $RepositoryUrl
 Path: $RepositoryPath
 Tag: $Tag
-LsiGitCheckout Version: $ScriptVersion
+RepoHerd Version: $ScriptVersion
 
 Post-Checkout Actions Performed:
 ================================
@@ -131,16 +131,16 @@ Click 'Continue' to close this dialog and complete the checkout process.
 
 # Main script execution
 try {
-    Write-Host "=== LsiGitCheckout Post-Checkout Script Started ===" -ForegroundColor Green
+    Write-Host "=== RepoHerd Post-Checkout Script Started ===" -ForegroundColor Green
     Write-Host "Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
     Write-Host ""
     
-    # Display environment variables provided by LsiGitCheckout
+    # Display environment variables provided by RepoHerd
     Write-Host "Repository Context:" -ForegroundColor Yellow
     Write-Host "  Repository URL: $env:LSIGIT_REPOSITORY_URL"
     Write-Host "  Repository Path: $env:LSIGIT_REPOSITORY_PATH"
     Write-Host "  Git Tag: $env:LSIGIT_TAG"
-    Write-Host "  LsiGitCheckout Version: $env:LSIGIT_SCRIPT_VERSION"
+    Write-Host "  RepoHerd Version: $env:LSIGIT_SCRIPT_VERSION"
     Write-Host ""
     
     # Verify we're in the correct directory
@@ -242,7 +242,7 @@ try {
         CheckoutTimestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         RepositoryUrl = $env:LSIGIT_REPOSITORY_URL
         Tag = $env:LSIGIT_TAG
-        LsiGitCheckoutVersion = $env:LSIGIT_SCRIPT_VERSION
+        RepoHerdVersion = $env:LSIGIT_SCRIPT_VERSION
         WorkingDirectory = $currentLocation.Path
         PostCheckoutScriptExecuted = $true
     }

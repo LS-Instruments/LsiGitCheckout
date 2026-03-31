@@ -1,13 +1,13 @@
 # Testing Infrastructure
 
-This document describes how the LsiGitCheckout automated test suite is designed, how it depends on external GitHub repositories, and what constraints must be respected when maintaining it.
+This document describes how the RepoHerd automated test suite is designed, how it depends on external GitHub repositories, and what constraints must be respected when maintaining it.
 
 ## Overview
 
 The test suite consists of two layers:
 
-- **Unit tests** (`tests/LsiGitCheckout.Unit.Tests.ps1`) — 60 tests covering pure functions. No network, no git operations. Fast (~2 seconds).
-- **Integration tests** (`tests/LsiGitCheckout.Integration.Tests.ps1`) — 17 tests that perform actual git clones with full recursive dependency resolution. Require network access to GitHub. Slower (~3 minutes).
+- **Unit tests** (`tests/RepoHerd.Unit.Tests.ps1`) — 60 tests covering pure functions. No network, no git operations. Fast (~2 seconds).
+- **Integration tests** (`tests/RepoHerd.Integration.Tests.ps1`) — 17 tests that perform actual git clones with full recursive dependency resolution. Require network access to GitHub. Slower (~3 minutes).
 
 Both require [Pester 5.x](https://pester.dev/) (PowerShell test framework):
 
@@ -19,7 +19,7 @@ Install-Module Pester -Force -MinimumVersion 5.0 -Scope CurrentUser
 
 ### Real checkouts, not mocks
 
-Integration tests execute `LsiGitCheckout.ps1` as a child process (`pwsh -NonInteractive`) against real GitHub repositories. No mocking, no DryRun. Each test:
+Integration tests execute `RepoHerd.ps1` as a child process (`pwsh -NonInteractive`) against real GitHub repositories. No mocking, no DryRun. Each test:
 
 1. **Cleans up** cloned repos from previous runs (`BeforeEach`)
 2. **Executes** the script with a test config and `-OutputFile` for structured JSON output
@@ -154,10 +154,10 @@ If test repo changes are necessary, you must:
 
 ```powershell
 # Unit tests only (fast, no network)
-Invoke-Pester ./tests/LsiGitCheckout.Unit.Tests.ps1 -Output Detailed
+Invoke-Pester ./tests/RepoHerd.Unit.Tests.ps1 -Output Detailed
 
 # Integration tests only (requires network)
-Invoke-Pester ./tests/LsiGitCheckout.Integration.Tests.ps1 -Output Detailed
+Invoke-Pester ./tests/RepoHerd.Integration.Tests.ps1 -Output Detailed
 
 # All tests
 Invoke-Pester ./tests/ -Output Detailed

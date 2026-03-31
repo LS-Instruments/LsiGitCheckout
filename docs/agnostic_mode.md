@@ -90,13 +90,13 @@ When the same repository is encountered multiple times with different compatibil
 
 ```powershell
 # Set default to Strict for production environments
-.\LsiGitCheckout.ps1 -ApiCompatibility Strict
+.\RepoHerd.ps1 -ApiCompatibility Strict
 
 # Use Permissive for development (default behavior)
-.\LsiGitCheckout.ps1
+.\RepoHerd.ps1
 
 # Disable recursive mode if only processing single dependency file
-.\LsiGitCheckout.ps1 -DisableRecursion
+.\RepoHerd.ps1 -DisableRecursion
 ```
 
 ## Version Management Rules

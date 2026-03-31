@@ -1,8 +1,8 @@
-# LsiGitCheckout
+# RepoHerd
 
 A cross-platform Git dependency management tool that automates cloning, checking out, and version-pinning of multiple repositories from a single JSON configuration. Designed for multi-repo projects where teams need reproducible builds without the complexity of git submodules or monorepo tooling.
 
-LsiGitCheckout resolves recursive dependencies across repository trees, supports both Semantic Versioning (SemVer) and tag-based version pinning, and handles SSH authentication (PuTTY on Windows, OpenSSH on macOS/Linux), Git LFS, and post-checkout script execution.
+RepoHerd resolves recursive dependencies across repository trees, supports both Semantic Versioning (SemVer) and tag-based version pinning, and handles SSH authentication (PuTTY on Windows, OpenSSH on macOS/Linux), Git LFS, and post-checkout script execution.
 
 ## Table of Contents
 
@@ -80,7 +80,7 @@ LsiGitCheckout resolves recursive dependencies across repository trees, supports
 
 4. **SSH setup** (only if accessing repositories via SSH URLs):
 
-   LsiGitCheckout uses PuTTY/plink on Windows. See [SSH Setup](docs/ssh_setup.md).
+   RepoHerd uses PuTTY/plink on Windows. See [SSH Setup](docs/ssh_setup.md).
 
 ### macOS
 
@@ -160,13 +160,13 @@ LsiGitCheckout resolves recursive dependencies across repository trees, supports
 
 ## Installation
 
-1. Download `LsiGitCheckout.ps1`, `LsiGitCheckout.psm1`, and `LsiGitCheckout.psd1` to the same directory
+1. Download `RepoHerd.ps1`, `RepoHerd.psm1`, and `RepoHerd.psd1` to the same directory
 2. Create `dependencies.json` with your repository configuration
 3. Create `git_credentials.json` with your SSH key mappings (if using SSH repositories)
 4. Run with `pwsh`:
 
    ```bash
-   pwsh ./LsiGitCheckout.ps1 -InputFile dependencies.json
+   pwsh ./RepoHerd.ps1 -InputFile dependencies.json
    ```
 
 ## Basic Usage (Non-Recursive)
@@ -179,34 +179,34 @@ In non-recursive mode, the script processes only the repositories listed in your
 
 ```powershell
 # Use default settings (recursive mode and intelligent tag sorting enabled by default)
-.\LsiGitCheckout.ps1
+.\RepoHerd.ps1
 
 # Specify custom JSON files
-.\LsiGitCheckout.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
+.\RepoHerd.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
 
 # Enable debug logging
-.\LsiGitCheckout.ps1 -EnableDebug
+.\RepoHerd.ps1 -EnableDebug
 
 # Dry run mode (preview without changes)
-.\LsiGitCheckout.ps1 -DryRun
+.\RepoHerd.ps1 -DryRun
 
 # Verbose output
-.\LsiGitCheckout.ps1 -Verbose
+.\RepoHerd.ps1 -Verbose
 
 # Set default API compatibility mode (applies only to Agnostic mode repositories)
-.\LsiGitCheckout.ps1 -ApiCompatibility Strict
+.\RepoHerd.ps1 -ApiCompatibility Strict
 
 # Disable recursive mode (non-recursive mode)
-.\LsiGitCheckout.ps1 -DisableRecursion
+.\RepoHerd.ps1 -DisableRecursion
 
 # Disable post-checkout script execution
-.\LsiGitCheckout.ps1 -DisablePostCheckoutScripts
+.\RepoHerd.ps1 -DisablePostCheckoutScripts
 
 # Enable detailed error context for debugging
-.\LsiGitCheckout.ps1 -EnableErrorContext
+.\RepoHerd.ps1 -EnableErrorContext
 
 # Export structured JSON results for CI/CD pipelines
-.\LsiGitCheckout.ps1 -OutputFile result.json
+.\RepoHerd.ps1 -OutputFile result.json
 ```
 
 ### Parameters
@@ -227,7 +227,7 @@ In non-recursive mode, the script processes only the repositories listed in your
 When `-OutputFile` is specified, a JSON file is written with the results of the checkout operation. The output is guaranteed to be written even on failure, making it safe for CI/CD pipelines. Schema version: **1.0.0**.
 
 ```powershell
-.\LsiGitCheckout.ps1 -InputFile deps.json -OutputFile result.json
+.\RepoHerd.ps1 -InputFile deps.json -OutputFile result.json
 ```
 
 **Output structure:**
@@ -261,7 +261,7 @@ When `-OutputFile` is specified, a JSON file is written with the results of the 
 
 ### Understanding Dependency Resolution Modes
 
-LsiGitCheckout provides two approaches for determining which git tag to checkout for each repository. Both modes examine the available git tags in each repository to make their selection decisions.
+RepoHerd provides two approaches for determining which git tag to checkout for each repository. Both modes examine the available git tags in each repository to make their selection decisions.
 
 #### SemVer Mode (Recommended)
 
@@ -469,19 +469,19 @@ Maps hostnames to SSH key file paths. The key format depends on your platform:
 
 ```powershell
 # Default behavior (recursive mode enabled with intelligent tag sorting)
-.\LsiGitCheckout.ps1
+.\RepoHerd.ps1
 
 # Disable recursive mode for simple single-file processing
-.\LsiGitCheckout.ps1 -DisableRecursion
+.\RepoHerd.ps1 -DisableRecursion
 
 # Customize recursive behavior
-.\LsiGitCheckout.ps1 -MaxDepth 10
+.\RepoHerd.ps1 -MaxDepth 10
 
 # Use strict compatibility mode for Agnostic mode repositories
-.\LsiGitCheckout.ps1 -ApiCompatibility Strict
+.\RepoHerd.ps1 -ApiCompatibility Strict
 
 # Disable post-checkout scripts
-.\LsiGitCheckout.ps1 -DisablePostCheckoutScripts
+.\RepoHerd.ps1 -DisablePostCheckoutScripts
 ```
 
 ### Recursion and Discovering Common Dependencies
@@ -519,7 +519,7 @@ At this point, the script must determine:
 
 ## Dependency Resolution Modes
 
-LsiGitCheckout provides two powerful approaches to solve the dependency resolution problem:
+RepoHerd provides two powerful approaches to solve the dependency resolution problem:
 
 1. **SemVer Mode**: Automatically resolves compatible versions based on Semantic Versioning 2.0.0 rules with floating version support
 2. **Agnostic Mode**: Uses explicit "API Compatible Tags" lists with intelligent intersection/union algorithms
@@ -555,11 +555,11 @@ Common issues and solutions, debug mode instructions, and enhanced error context
 
 ## Version Migration Guide
 
-Step-by-step instructions for upgrading between LsiGitCheckout versions (6.2.x to 7.0.0, 7.0.0 to 7.1.0). For details, see [Version Migration Guide](docs/version_migration.md).
+Step-by-step instructions for upgrading between RepoHerd versions (6.2.x to 7.0.0, 7.0.0 to 7.1.0). For details, see [Version Migration Guide](docs/version_migration.md).
 
 ## Advanced Topics
 
-Links to in-depth guides on migrating dependency trees to LsiGitCheckout and tool comparisons. For details, see [Advanced Topics](docs/advanced_topics.md).
+Links to in-depth guides on migrating dependency trees to RepoHerd and tool comparisons. For details, see [Advanced Topics](docs/advanced_topics.md).
 
 ## License
 

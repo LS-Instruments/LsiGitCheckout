@@ -1,15 +1,15 @@
 # Migration and Dependency Management Guide
 
-This guide covers advanced scenarios for migrating existing projects to LsiGitCheckout and managing shared dependencies over time. Both SemVer mode (automatic semantic versioning with floating versions) and Agnostic mode (explicit API Compatible Tags) approaches are covered.
+This guide covers advanced scenarios for migrating existing projects to RepoHerd and managing shared dependencies over time. Both SemVer mode (automatic semantic versioning with floating versions) and Agnostic mode (explicit API Compatible Tags) approaches are covered.
 
 ## Table of Contents
 
-- [Migrating Existing Dependency Trees to LsiGitCheckout (SemVer Mode)](#migrating-existing-dependency-trees-to-lsigitcheckout-semver-mode)
-- [Migrating Existing Dependency Trees to LsiGitCheckout (Agnostic Mode)](#migrating-existing-dependency-trees-to-lsigitcheckout-agnostic-mode)
+- [Migrating Existing Dependency Trees to RepoHerd (SemVer Mode)](#migrating-existing-dependency-trees-to-lsigitcheckout-semver-mode)
+- [Migrating Existing Dependency Trees to RepoHerd (Agnostic Mode)](#migrating-existing-dependency-trees-to-lsigitcheckout-agnostic-mode)
 - [Handling Shared Dependencies Version Changes (SemVer Mode)](#handling-shared-dependencies-version-changes-semver-mode)
 - [Handling Shared Dependencies Version Changes (Agnostic Mode)](#handling-shared-dependencies-version-changes-agnostic-mode)
 
-## Migrating Existing Dependency Trees to LsiGitCheckout (SemVer Mode)
+## Migrating Existing Dependency Trees to RepoHerd (SemVer Mode)
 
 The migration process for SemVer mode follows a bottom-up approach leveraging Semantic Versioning 2.0.0 rules with floating version specifications for automatic compatibility resolution.
 
@@ -96,7 +96,7 @@ MyApplication/                         # MyApplication (v0.9.2) - currently chec
 
 The migration process will create new semantic version tags for each repository (except leaf dependencies):
 
-- **MyApplication**: existing `v0.9.2` → needs new tag `v1.0.0` (major release with LsiGitCheckout)
+- **MyApplication**: existing `v0.9.2` → needs new tag `v1.0.0` (major release with RepoHerd)
 - **UserInterface**: existing `v4.1.3` → needs new tag `v4.2.0` (minor release with dependencies)  
 - **BusinessLogic**: existing `v4.5.1` → needs new tag `v4.6.0` (minor release)
 - **DataAccess**: existing `v2.2.5` → needs new tag `v2.3.0` (minor release with dependencies)
@@ -145,7 +145,7 @@ Create `dependencies.json` with SemVer floating version configuration:
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout SemVer dependencies configuration with floating versions"
+git commit -m "Add RepoHerd SemVer dependencies configuration with floating versions"
 git tag v2.3.0  # Minor version bump, compatible with v2.2.5
 git push origin v2.3.0
 ```
@@ -175,7 +175,7 @@ Create `dependencies.json` with SemVer floating version configuration:
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout SemVer dependencies configuration with floating versions"
+git commit -m "Add RepoHerd SemVer dependencies configuration with floating versions"
 git tag v3.1.0  # Minor version bump, compatible with v3.0.8
 git push origin v3.1.0
 ```
@@ -207,7 +207,7 @@ Create `dependencies.json` with SemVer floating version configuration:
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout SemVer dependencies configuration with floating versions"
+git commit -m "Add RepoHerd SemVer dependencies configuration with floating versions"
 git tag v4.2.0  # Minor version bump, compatible with v4.1.3
 git push origin v4.2.0
 ```
@@ -243,14 +243,14 @@ Create `dependencies.json` with SemVer floating version configuration:
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout SemVer dependencies configuration with floating versions"
+git commit -m "Add RepoHerd SemVer dependencies configuration with floating versions"
 git tag v4.6.0  # Minor version bump - API compatible with v4.5.1
 git push origin v4.6.0
 ```
 
 #### Step 4: Configure Root Project (MyApplication) - SemVer Mode with Floating Versions
 
-**Current tag**: `v0.9.2` → **New tag**: `v1.0.0` (major version bump for significant migration to LsiGitCheckout)
+**Current tag**: `v0.9.2` → **New tag**: `v1.0.0` (major version bump for significant migration to RepoHerd)
 
 ```powershell
 Set-Location ..\MyApplication
@@ -279,14 +279,14 @@ Create `dependencies.json` with SemVer floating version configuration:
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout SemVer dependencies configuration with floating versions - Major migration to semantic dependency management"
+git commit -m "Add RepoHerd SemVer dependencies configuration with floating versions - Major migration to semantic dependency management"
 git tag v1.0.0  # Major version for significant architectural change
 git push origin v1.0.0
 ```
 
 ### Updated SemVer Dependency Tree After Migration with Floating Versions
 
-Here's the dependency tree showing both **old tags** (existing) and **new SemVer tags** (with LsiGitCheckout SemVer floating version support):
+Here's the dependency tree showing both **old tags** (existing) and **new SemVer tags** (with RepoHerd SemVer floating version support):
 
 ```
                     MyApplication
@@ -324,13 +324,13 @@ Set-Location C:\workspace\test-semver-floating-migration
 New-Item -ItemType Directory -Name "test-semver-floating-migration" -Force
 Set-Location test-semver-floating-migration
 
-# Clone and run LsiGitCheckout on your root project
+# Clone and run RepoHerd on your root project
 git clone https://github.com/yourorg/MyApplication.git
 Set-Location MyApplication
-git checkout v1.0.0  # Use the new tag with LsiGitCheckout SemVer floating version support
+git checkout v1.0.0  # Use the new tag with RepoHerd SemVer floating version support
 
-# Run LsiGitCheckout (assumes script is in PATH or current directory)
-.\LsiGitCheckout.ps1
+# Run RepoHerd (assumes script is in PATH or current directory)
+.\RepoHerd.ps1
 
 # Verify all dependencies were cloned recursively with correct versions
 Get-ChildItem modules\      # Should show user-interface and business-logic
@@ -355,7 +355,7 @@ git describe --tags  # Should show v1.2.0 (single shared location)
 #### Advantages of SemVer Migration with Floating Versions
 
 1. **No API Compatible Tags Maintenance**: The script automatically determines compatible versions using SemVer rules and floating version ranges as opposed to Agnostic mode where one has to maintain the API Compatible Tags
-2. **Automatic Dependency Updates**: When new compatible versions are released, they are automatically used on the next LsiGitCheckout run
+2. **Automatic Dependency Updates**: When new compatible versions are released, they are automatically used on the next RepoHerd run
 3. **Simplified Future Updates**: Adding new compatible versions requires no configuration changes
 4. **Clear Compatibility Rules**: SemVer 2.0.0 rules with floating version syntax provide consistent, predictable compatibility behavior
 5. **True Set-and-Forget**: Once configured, the dependency tree automatically stays up-to-date with compatible releases
@@ -404,9 +404,9 @@ Once your SemVer dependency tree with floating versions is migrated:
 
 The SemVer migration approach with floating versions provides sophisticated dependency management benefits while significantly reducing configuration complexity and completely eliminating maintenance overhead through automatic compatibility resolution and updates.
 
-## Migrating Existing Dependency Trees to LsiGitCheckout (Agnostic Mode)
+## Migrating Existing Dependency Trees to RepoHerd (Agnostic Mode)
 
-If you already have a complex project with multiple Git repositories forming a dependency tree, you can migrate to LsiGitCheckout using Agnostic mode by working systematically from the bottom up. This approach provides maximum control over version compatibility relationships through explicit API Compatible Tags lists.
+If you already have a complex project with multiple Git repositories forming a dependency tree, you can migrate to RepoHerd using Agnostic mode by working systematically from the bottom up. This approach provides maximum control over version compatibility relationships through explicit API Compatible Tags lists.
 
 ### Agnostic Migration Strategy: Bottom-Up Approach with Explicit Compatibility
 
@@ -491,7 +491,7 @@ MyApplication/                         # MyApplication (v0.9.2) - currently chec
 
 The migration process will create new tags for each repository (except leaf dependencies):
 
-- **MyApplication**: existing `v0.9.2` → needs new tag `v1.0.0` (major release with LsiGitCheckout)
+- **MyApplication**: existing `v0.9.2` → needs new tag `v1.0.0` (major release with RepoHerd)
 - **UserInterface**: existing `v4.1.3` → needs new tag `v4.2.0` (minor release with dependencies)  
 - **BusinessLogic**: existing `v4.5.1` → needs new tag `v4.6.0` (minor release, not v5.0.0!)
 - **DataAccess**: existing `v2.2.5` → needs new tag `v2.3.0` (minor release with dependencies)
@@ -513,11 +513,11 @@ git tag --list  # Verify v1.2.0 exists
 Now we start adding `dependencies.json` files with explicit API Compatible Tags, beginning with repositories that depend directly on leaf nodes.
 
 **Important Note About API Compatible Tags During Agnostic Migration:**
-During the migration process, we set "API Compatible Tags" to empty arrays. This is because any older tags (like the existing v2.2.5, v3.0.8, etc.) correspond to commits that lack `dependencies.json` files. Including these older tags would risk LsiGitCheckout checking out versions without dependency configuration, breaking the recursive dependency resolution.
+During the migration process, we set "API Compatible Tags" to empty arrays. This is because any older tags (like the existing v2.2.5, v3.0.8, etc.) correspond to commits that lack `dependencies.json` files. Including these older tags would risk RepoHerd checking out versions without dependency configuration, breaking the recursive dependency resolution.
 
 **In normal future use**, you should populate "API Compatible Tags" with versions that:
 - Are truly API-compatible with your current tag
-- **Also contain the `dependencies.json` file** with proper LsiGitCheckout configuration
+- **Also contain the `dependencies.json` file** with proper RepoHerd configuration
 
 ##### Configure DataAccess (Agnostic Mode)
 
@@ -542,7 +542,7 @@ Create `dependencies.json` with explicit API Compatible Tags:
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout Agnostic mode dependencies configuration with explicit API Compatible Tags"
+git commit -m "Add RepoHerd Agnostic mode dependencies configuration with explicit API Compatible Tags"
 git tag v2.3.0  # Minor version bump, compatible with v2.2.5
 git push origin v2.3.0
 ```
@@ -570,7 +570,7 @@ Create `dependencies.json` with explicit API Compatible Tags:
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout Agnostic mode dependencies configuration with explicit API Compatible Tags"
+git commit -m "Add RepoHerd Agnostic mode dependencies configuration with explicit API Compatible Tags"
 git tag v3.1.0  # Minor version bump, compatible with v3.0.8
 git push origin v3.1.0
 ```
@@ -600,7 +600,7 @@ Create `dependencies.json` with explicit API Compatible Tags:
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout Agnostic mode dependencies configuration with explicit API Compatible Tags"
+git commit -m "Add RepoHerd Agnostic mode dependencies configuration with explicit API Compatible Tags"
 git tag v4.2.0  # Minor version bump, compatible with v4.1.3
 git push origin v4.2.0
 ```
@@ -634,14 +634,14 @@ Create `dependencies.json` with explicit API Compatible Tags:
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout Agnostic mode dependencies configuration with explicit API Compatible Tags"
+git commit -m "Add RepoHerd Agnostic mode dependencies configuration with explicit API Compatible Tags"
 git tag v4.6.0  # Minor version bump - API compatible with v4.5.1
 git push origin v4.6.0
 ```
 
 #### Step 4: Configure Root Project (MyApplication) - Agnostic Mode
 
-**Current tag**: `v0.9.2` → **New tag**: `v1.0.0` (major version bump for significant migration to LsiGitCheckout)
+**Current tag**: `v0.9.2` → **New tag**: `v1.0.0` (major version bump for significant migration to RepoHerd)
 
 ```powershell
 Set-Location ..\MyApplication
@@ -668,14 +668,14 @@ Create `dependencies.json` with explicit API Compatible Tags:
 Commit and tag:
 ```powershell
 git add dependencies.json
-git commit -m "Add LsiGitCheckout Agnostic mode dependencies configuration with explicit API Compatible Tags - Major migration to dependency management"
+git commit -m "Add RepoHerd Agnostic mode dependencies configuration with explicit API Compatible Tags - Major migration to dependency management"
 git tag v1.0.0  # Major version for significant architectural change
 git push origin v1.0.0
 ```
 
 ### Updated Agnostic Dependency Tree After Migration
 
-Here's the dependency tree showing both **old tags** (existing) and **new tags** (with LsiGitCheckout Agnostic mode support):
+Here's the dependency tree showing both **old tags** (existing) and **new tags** (with RepoHerd Agnostic mode support):
 
 ```
                     MyApplication
@@ -708,13 +708,13 @@ Set-Location C:\workspace\test-agnostic-migration
 New-Item -ItemType Directory -Name "test-agnostic-migration" -Force
 Set-Location test-agnostic-migration
 
-# Clone and run LsiGitCheckout on your root project
+# Clone and run RepoHerd on your root project
 git clone https://github.com/yourorg/MyApplication.git
 Set-Location MyApplication
-git checkout v1.0.0  # Use the new tag with LsiGitCheckout Agnostic mode support
+git checkout v1.0.0  # Use the new tag with RepoHerd Agnostic mode support
 
-# Run LsiGitCheckout (assumes script is in PATH or current directory)
-.\LsiGitCheckout.ps1
+# Run RepoHerd (assumes script is in PATH or current directory)
+.\RepoHerd.ps1
 
 # Verify all dependencies were cloned recursively with correct versions
 Get-ChildItem modules\      # Should show user-interface and business-logic
@@ -741,14 +741,14 @@ git describe --tags  # Should show v1.2.0 (single shared location)
 When filling out the "API Compatible Tags" field **after Agnostic migration**, consider:
 
 1. **Breaking Changes**: Only include versions that are truly API-compatible
-2. **LsiGitCheckout Compatibility**: **Only include tags that also contain `dependencies.json` files**
+2. **RepoHerd Compatibility**: **Only include tags that also contain `dependencies.json` files**
 3. **Testing History**: Look at which versions have been tested together
 4. **Git History**: Use `git log --oneline` to review what changed between versions
 5. **Semantic Versioning**: If you follow semver, patch and minor versions are typically compatible
 
 **Migration-Specific Note**: During the initial Agnostic migration, we use empty "API Compatible Tags" arrays because older tags lack `dependencies.json` files. As you continue development and create new compatible versions, you can populate these arrays with tags that both:
 - Are API-compatible with your current version
-- Contain proper LsiGitCheckout configuration
+- Contain proper RepoHerd configuration
 
 Example for future updates:
 ```powershell
@@ -771,7 +771,7 @@ When a repository depends on multiple others that might conflict:
 After completing Agnostic migration:
 1. **Test recursive cloning** from a clean workspace
 2. **Verify build compatibility** with the fetched dependencies  
-3. **Check dependency resolution** - LsiGitCheckout should handle any conflicts gracefully
+3. **Check dependency resolution** - RepoHerd should handle any conflicts gracefully
 4. **Document the migration** for your team
 
 ### Next Steps for Agnostic Migration
@@ -780,10 +780,10 @@ Once your Agnostic dependency tree is migrated:
 - Explore [recursive mode and dependency resolution modes](../README.md#advanced-usage-recursive-mode) for configuration options
 - Review [API compatibility modes](../README.md#api-compatibility-modes) to optimize conflict resolution  
 - Set up [SSH authentication](../README.md#ssh-setup-with-putty) if using private repositories
-- Configure your build system to use the LsiGitCheckout-managed dependencies
+- Configure your build system to use the RepoHerd-managed dependencies
 - Consider adding [post-checkout scripts](../README.md#post-checkout-scripts) for automated dependency installation
 
-The bottom-up Agnostic migration approach ensures that your entire dependency tree becomes manageable through LsiGitCheckout while maintaining maximum control over version compatibility relationships as your project evolves.
+The bottom-up Agnostic migration approach ensures that your entire dependency tree becomes manageable through RepoHerd while maintaining maximum control over version compatibility relationships as your project evolves.
 
 ### SemVer vs Agnostic Migration Comparison
 
@@ -818,7 +818,7 @@ Once you have migrated your dependency tree to SemVer mode with floating version
 
 ### Starting Point: Post-SemVer Migration Dependency Tree with Floating Versions
 
-After completing the SemVer migration example with floating versions, we have this dependency tree with SemVer LsiGitCheckout support:
+After completing the SemVer migration example with floating versions, we have this dependency tree with SemVer RepoHerd support:
 
 ```
                     MyApplication
@@ -840,7 +840,7 @@ After completing the SemVer migration example with floating versions, we have th
                           v1.2.0 (leaf)
 ```
 
-All repositories except DatabaseUtils contain `dependencies.json` files with SemVer floating version LsiGitCheckout configuration.
+All repositories except DatabaseUtils contain `dependencies.json` files with SemVer floating version RepoHerd configuration.
 
 ### Scenario 1: SemVer Compatible Update (v1.2.0 → v1.2.1) - The True Power of Floating Versions
 
@@ -854,7 +854,7 @@ Let's assume DatabaseUtils releases a patch version v1.2.1 that follows semantic
 
 1. **DatabaseUtils**: Release v1.2.1 (patch version)
 2. **All dependent repositories**: **No changes needed whatsoever**
-3. **Next LsiGitCheckout run**: Automatically uses v1.2.1 when available
+3. **Next RepoHerd run**: Automatically uses v1.2.1 when available
 
 **Result**: The entire dependency tree automatically benefits from the bug fixes in v1.2.1 without any manual configuration updates.
 
@@ -868,13 +868,13 @@ Set-Location C:\workspace\my-application
 Set-Location MyApplication
 
 # Before the update - check current versions
-.\LsiGitCheckout.ps1 -Verbose
+.\RepoHerd.ps1 -Verbose
 # This shows DatabaseUtils v1.2.0 being used
 
 # DatabaseUtils team releases v1.2.1 (patch version) - no config changes needed anywhere
 
-# Run LsiGitCheckout again
-.\LsiGitCheckout.ps1 -Verbose
+# Run RepoHerd again
+.\RepoHerd.ps1 -Verbose
 # This now automatically uses DatabaseUtils v1.2.1 throughout the entire tree!
 
 # Verify the update
@@ -925,8 +925,8 @@ Now let's assume DatabaseUtils releases v2.0.0 with breaking API changes. SemVer
 ```powershell
 # DatabaseUtils releases v2.0.0 with breaking changes
 
-# Run LsiGitCheckout - still uses v1.2.1 (or latest v1.x)
-.\LsiGitCheckout.ps1 -Verbose
+# Run RepoHerd - still uses v1.2.1 (or latest v1.x)
+.\RepoHerd.ps1 -Verbose
 # Output shows: "Using DatabaseUtils v1.2.1 (blocked from v2.0.0 by 1.2.* constraint)"
 
 # The entire tree continues to work with v1.2.x until explicit updates
@@ -1014,8 +1014,8 @@ Now that the direct dependencies have been updated, the updates can propagate up
 ```powershell
 Set-Location ..\BusinessLogic
 
-# Run LsiGitCheckout to see automatic updates
-.\LsiGitCheckout.ps1 -Verbose
+# Run RepoHerd to see automatic updates
+.\RepoHerd.ps1 -Verbose
 # Shows: DataAccess v2.4.0 (2.* allows this), CommonControls v3.2.0 (3.* allows this)
 # Transitively now uses DatabaseUtils v2.0.0!
 ```
@@ -1038,7 +1038,7 @@ git push origin v4.7.0
 Set-Location ..\UserInterface
 
 # UserInterface automatically benefits from CommonControls v3.2.0
-.\LsiGitCheckout.ps1 -Verbose
+.\RepoHerd.ps1 -Verbose
 # Shows: CommonControls v3.2.0 (3.* allows this)
 # Transitively now uses DatabaseUtils v2.0.0!
 ```
@@ -1053,7 +1053,7 @@ Again, no configuration changes needed.
 Set-Location ..\MyApplication
 
 # MyApplication automatically benefits from all updates
-.\LsiGitCheckout.ps1 -Verbose
+.\RepoHerd.ps1 -Verbose
 # Shows: UserInterface v4.2.0 (still compatible), BusinessLogic v4.7.0 (4.* allows this)
 # Entire tree now uses DatabaseUtils v2.0.0!
 ```
@@ -1124,10 +1124,10 @@ When BusinessLogic tries to use both dependencies:
 
 ```powershell
 Set-Location BusinessLogic
-.\LsiGitCheckout.ps1 -Verbose
+.\RepoHerd.ps1 -Verbose
 ```
 
-**LsiGitCheckout automatically detects the version conflict and reports:**
+**RepoHerd automatically detects the version conflict and reports:**
 
 ```
 SemVer conflict for repository 'https://github.com/yourorg/DatabaseUtils.git':
@@ -1234,11 +1234,11 @@ This clear error message helps teams coordinate their updates appropriately.
 
 ## Handling Shared Dependencies Version Changes (Agnostic Mode)
 
-Once you have successfully migrated your dependency tree to LsiGitCheckout using Agnostic mode, you'll need to manage version changes in shared dependencies over time. This section demonstrates how to handle both API-compatible updates and API-breaking changes using explicit API Compatible Tags lists, with the dependency tree from the Agnostic migration example.
+Once you have successfully migrated your dependency tree to RepoHerd using Agnostic mode, you'll need to manage version changes in shared dependencies over time. This section demonstrates how to handle both API-compatible updates and API-breaking changes using explicit API Compatible Tags lists, with the dependency tree from the Agnostic migration example.
 
 ### Starting Point: Post-Agnostic Migration Dependency Tree
 
-After completing the Agnostic migration example, we have this dependency tree with LsiGitCheckout support:
+After completing the Agnostic migration example, we have this dependency tree with RepoHerd support:
 
 ```
                     MyApplication
@@ -1260,7 +1260,7 @@ After completing the Agnostic migration example, we have this dependency tree wi
                             v1.2.0
 ```
 
-All repositories except DatabaseUtils contain `dependencies.json` files with Agnostic mode LsiGitCheckout configuration.
+All repositories except DatabaseUtils contain `dependencies.json` files with Agnostic mode RepoHerd configuration.
 
 ### Scenario 1: API-Compatible Update (v1.2.0 → v1.2.1)
 
@@ -1442,7 +1442,7 @@ git push origin v1.0.1
 
 **Key Benefits of This Agnostic Approach:**
 - All new tags are API-compatible with their predecessors
-- LsiGitCheckout will intelligently resolve to the latest compatible versions
+- RepoHerd will intelligently resolve to the latest compatible versions
 - Gradual rollout is possible by updating dependencies incrementally
 - Rollback is easy due to preserved API compatibility
 
@@ -1687,14 +1687,14 @@ MyApplication: v1.0.1 → v1.1.0 (minor - benefits from improvements)
 - **API Compatible Tags**: Previous versions included in compatibility arrays
 - **Rollback**: Easy due to preserved backward compatibility
 - **Deployment**: Can be done incrementally
-- **LsiGitCheckout Behavior**: Automatically resolves to latest compatible versions
+- **RepoHerd Behavior**: Automatically resolves to latest compatible versions
 
 #### Dependency Breaking Updates with Enhanced Capabilities (v1.2.1 → v2.0.0)
 - **Version Bumps**: Minor versions when APIs don't change, major versions only when APIs change
 - **API Compatible Tags**: Empty for the breaking dependency, but preserved for non-breaking dependents
 - **Rollback**: Requires coordinated rollback, but easier than full API breaks
 - **Deployment**: Can be coordinated but less risky than full API breaking changes
-- **LsiGitCheckout Behavior**: Mix of automatic resolution (for API-compatible dependents) and explicit choices (for breaking dependency)
+- **RepoHerd Behavior**: Mix of automatic resolution (for API-compatible dependents) and explicit choices (for breaking dependency)
 
 ### Best Practices for Agnostic Shared Dependency Updates
 
@@ -1736,7 +1736,7 @@ MyApplication: v1.0.1 → v1.1.0 (minor - benefits from improvements)
 
 1. **Unit test all changes** in each repository
 2. **Integration test the complete tree** after updates
-3. **Verify LsiGitCheckout resolution** works as expected
+3. **Verify RepoHerd resolution** works as expected
 4. **Test rollback scenarios** for both compatible and breaking changes
 5. **Validate in staging environments** before production deployment
 

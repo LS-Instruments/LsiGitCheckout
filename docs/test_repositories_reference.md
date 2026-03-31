@@ -1,6 +1,6 @@
 # Test Repositories Reference
 
-This document catalogs all GitHub test repositories used by LsiGitCheckout integration tests, their available tags, and the `dependencies.json` content at each tag.
+This document catalogs all GitHub test repositories used by RepoHerd integration tests, their available tags, and the `dependencies.json` content at each tag.
 
 > **Auto-generated on 2026-03-20** from the LS-Instruments GitHub organization.
 

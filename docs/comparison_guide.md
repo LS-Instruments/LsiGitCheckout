@@ -1,25 +1,25 @@
 # Tool Comparison Guide
 
-This guide compares LsiGitCheckout with other tools in the dependency management ecosystem to help you choose the right tool for your specific needs.
+This guide compares RepoHerd with other tools in the dependency management ecosystem to help you choose the right tool for your specific needs.
 
 ## Table of Contents
 
-- [LsiGitCheckout vs Google's Repo Tool](#lsigitcheckout-vs-googles-repo-tool)
-- [LsiGitCheckout vs Traditional Package Managers](#lsigitcheckout-vs-traditional-package-managers)
+- [RepoHerd vs Google's Repo Tool](#lsigitcheckout-vs-googles-repo-tool)
+- [RepoHerd vs Traditional Package Managers](#lsigitcheckout-vs-traditional-package-managers)
 
-## LsiGitCheckout vs Google's Repo Tool
+## RepoHerd vs Google's Repo Tool
 
-Both LsiGitCheckout and Google's repo tool address the challenge of managing multiple Git repositories, but they take different approaches and serve different use cases. This comparison helps you choose the right tool for your project needs.
+Both RepoHerd and Google's repo tool address the challenge of managing multiple Git repositories, but they take different approaches and serve different use cases. This comparison helps you choose the right tool for your project needs.
 
 ### Overview
 
-**LsiGitCheckout** is a PowerShell-based tool designed for Windows development environments, featuring sophisticated dependency resolution with SemVer floating versions, automatic compatibility checking, and intelligent tag temporal sorting.
+**RepoHerd** is a PowerShell-based tool designed for Windows development environments, featuring sophisticated dependency resolution with SemVer floating versions, automatic compatibility checking, and intelligent tag temporal sorting.
 
 **Google's repo tool** is a Python command-line utility originally developed for the Android Open Source Project (AOSP), designed to manage hundreds of repositories with XML-based manifests.
 
 ### Configuration Format
 
-| Feature | LsiGitCheckout | Google's Repo Tool |
+| Feature | RepoHerd | Google's Repo Tool |
 |---------|----------------|-------------------|
 | **Configuration Format** | JSON (`dependencies.json`) | XML (`manifest.xml`) |
 | **Schema Validation** | Human-readable JSON structure | XML DTD with formal specification |
@@ -28,7 +28,7 @@ Both LsiGitCheckout and Google's repo tool address the challenge of managing mul
 
 ### Platform Support
 
-| Feature | LsiGitCheckout | Google's Repo Tool |
+| Feature | RepoHerd | Google's Repo Tool |
 |---------|----------------|-------------------|
 | **Operating System** | Windows (PowerShell) | Linux, macOS, Windows (Python) |
 | **SSH Authentication** | PuTTY/Pageant integration | Standard SSH keys |
@@ -37,7 +37,7 @@ Both LsiGitCheckout and Google's repo tool address the challenge of managing mul
 
 ### Dependency Management
 
-| Feature | LsiGitCheckout | Google's Repo Tool |
+| Feature | RepoHerd | Google's Repo Tool |
 |---------|----------------|-------------------|
 | **Recursive Dependencies** | Advanced with SemVer floating versions and API compatibility | Basic recursive via includes |
 | **Version Conflict Resolution** | Automatic SemVer compatibility with floating patterns (x.y.\*, x.\*) | Last manifest wins |
@@ -48,7 +48,7 @@ Both LsiGitCheckout and Google's repo tool address the challenge of managing mul
 
 ### Scalability and Performance
 
-| Feature | LsiGitCheckout | Google's Repo Tool |
+| Feature | RepoHerd | Google's Repo Tool |
 |---------|----------------|-------------------|
 | **Repository Scale** | Optimized for moderate complexity (10s-100s) | Proven with massive scale (1000s like AOSP) |
 | **Performance** | SemVer parsing and tag date fetching only when needed | Optimized for large-scale operations |
@@ -57,7 +57,7 @@ Both LsiGitCheckout and Google's repo tool address the challenge of managing mul
 
 ### Use Case Suitability
 
-#### Choose LsiGitCheckout When:
+#### Choose RepoHerd When:
 - **Windows Development Environment**: Your team primarily uses Windows with PowerShell
 - **SemVer-Based Projects**: Your repositories follow semantic versioning and you want automatic dependency updates
 - **Floating Version Management**: You need automatic updates for compatible versions (patches/minors) without manual configuration
@@ -81,7 +81,7 @@ Both LsiGitCheckout and Google's repo tool address the challenge of managing mul
 
 ### Technical Comparison
 
-#### Strengths of LsiGitCheckout
+#### Strengths of RepoHerd
 - **Advanced SemVer Support**: Floating version patterns (x.y.\*, x.\*) with automatic compatibility resolution
 - **Zero-Maintenance Updates**: Compatible versions flow automatically without configuration changes
 - **Windows-Native**: Seamless integration with Windows development workflows
@@ -99,7 +99,7 @@ Both LsiGitCheckout and Google's repo tool address the challenge of managing mul
 - **Community Support**: Large user base and extensive community resources
 - **Build Integration**: Deep integration with Android build systems
 
-#### Limitations of LsiGitCheckout
+#### Limitations of RepoHerd
 - **Windows Dependency**: Limited to PowerShell environments
 - **Scale Limitations**: Not tested at Google's repo tool scale (1000+ repositories)
 - **Community Size**: Smaller user base compared to repo tool
@@ -117,14 +117,14 @@ Both LsiGitCheckout and Google's repo tool address the challenge of managing mul
 
 ### Migration Considerations
 
-#### From Repo Tool to LsiGitCheckout
+#### From Repo Tool to RepoHerd
 - Convert XML manifests to JSON format with SemVer floating versions
 - Implement SemVer tagging discipline across repositories
 - Set up PuTTY/Pageant for SSH authentication on Windows
 - Review and optimize recursive dependency structures
 - Configure floating version patterns for automatic updates
 
-#### From LsiGitCheckout to Repo Tool
+#### From RepoHerd to Repo Tool
 - Convert JSON configurations to XML manifests
 - Flatten SemVer floating patterns to fixed version references
 - Implement manual tag ordering in manifests
@@ -133,19 +133,19 @@ Both LsiGitCheckout and Google's repo tool address the challenge of managing mul
 
 ### Conclusion
 
-Both tools excel in their intended environments. **LsiGitCheckout** provides modern dependency management with SemVer floating versions ideal for Windows-based development scenarios requiring automatic updates and sophisticated compatibility resolution, while **Google's repo tool** offers proven scalability and cross-platform support for large-scale projects with simpler dependency needs.
+Both tools excel in their intended environments. **RepoHerd** provides modern dependency management with SemVer floating versions ideal for Windows-based development scenarios requiring automatic updates and sophisticated compatibility resolution, while **Google's repo tool** offers proven scalability and cross-platform support for large-scale projects with simpler dependency needs.
 
 The choice depends on your specific requirements:
-- For SemVer-based projects needing automatic dependency updates in Windows environments, choose **LsiGitCheckout**
+- For SemVer-based projects needing automatic dependency updates in Windows environments, choose **RepoHerd**
 - For large-scale, cross-platform projects with manual dependency management needs, choose **Google's repo tool**
 
 Consider hybrid approaches where both tools might serve different aspects of a complex development ecosystem.
 
-## LsiGitCheckout vs Traditional Package Managers
+## RepoHerd vs Traditional Package Managers
 
 ### Understanding the Fundamental Difference
 
-Traditional package managers (npm, NuGet, Maven, pip) work with **packaged artifacts** - pre-built, versioned bundles of code that are published to registries. LsiGitCheckout takes a radically different approach by working directly with **source repositories** at specific git tags, with SemVer floating versions providing automatic compatibility similar to traditional package managers.
+Traditional package managers (npm, NuGet, Maven, pip) work with **packaged artifacts** - pre-built, versioned bundles of code that are published to registries. RepoHerd takes a radically different approach by working directly with **source repositories** at specific git tags, with SemVer floating versions providing automatic compatibility similar to traditional package managers.
 
 This fundamental difference leads to distinct advantages and trade-offs that make each approach suitable for different scenarios.
 
@@ -159,7 +159,7 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
 - Following established ecosystem conventions
 - Building simple applications with straightforward dependencies
 
-#### Use LsiGitCheckout When:
+#### Use RepoHerd When:
 - Managing source-level dependencies across teams
 - Working with private repositories or mixed public/private code
 - Requiring precise control over versions and compatibility
@@ -175,7 +175,7 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
 - Supporting custom project structures and naming conventions
 - Integrating with multiple dependency management systems via post-checkout scripts
 
-### Key Advantages of LsiGitCheckout
+### Key Advantages of RepoHerd
 
 1. **Source-Level Transparency**: Complete visibility into all dependency code
 2. **Debugging Power**: Step through dependency code, set breakpoints anywhere
@@ -204,7 +204,7 @@ This fundamental difference leads to distinct advantages and trade-offs that mak
 
 ### SemVer Mode Features
 
-LsiGitCheckout's SemVer mode with floating versions provides automatic dependency management:
+RepoHerd's SemVer mode with floating versions provides automatic dependency management:
 
 #### Automatic Updates Like Package Managers
 ```json
@@ -245,7 +245,7 @@ Agnostic mode is suitable when you need maximum control over every version compa
 
 ### Target Users and Organizations
 
-#### Primary Target Users for LsiGitCheckout:
+#### Primary Target Users for RepoHerd:
 
 1. **Enterprise Development Teams**
    - Managing proprietary code alongside open-source
@@ -279,7 +279,7 @@ Agnostic mode is suitable when you need maximum control over every version compa
 
 Many successful projects combine both approaches:
 - Use npm/NuGet for stable, third-party libraries
-- Use LsiGitCheckout with SemVer floating versions for internal dependencies and actively developed components
+- Use RepoHerd with SemVer floating versions for internal dependencies and actively developed components
 - Use post-checkout scripts to automatically install package manager dependencies
 - Maintain clear boundaries between packaged and source dependencies
 - Apply different compatibility modes based on environment (SemVer for most, Agnostic for complex cases)
@@ -295,7 +295,7 @@ This leverages the convenience of package managers for commodity dependencies wh
 - Creating a .NET application using common NuGet libraries
 - Developing a Python project with well-known pip packages
 
-**Perfect for LsiGitCheckout with SemVer:**
+**Perfect for RepoHerd with SemVer:**
 - Financial trading system with proprietary components requiring automatic security updates
 - Medical device software requiring FDA compliance with controlled dependency updates
 - Large enterprise with shared internal libraries needing automatic compatible updates
@@ -369,4 +369,4 @@ New-Item -ItemType Directory -Path "logs", "temp", "artifacts" -Force
 Write-Host "Global setup completed - ready for repository processing"
 ```
 
-This makes LsiGitCheckout suitable for a much broader range of projects, especially those requiring both dependency automation and source-level control.
+This makes RepoHerd suitable for a much broader range of projects, especially those requiring both dependency automation and source-level control.

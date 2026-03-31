@@ -77,7 +77,7 @@
 Enable detailed logging to troubleshoot issues:
 
 ```powershell
-.\LsiGitCheckout.ps1 -EnableDebug -Verbose
+.\RepoHerd.ps1 -EnableDebug -Verbose
 ```
 
 Check the generated debug log file for:
@@ -100,7 +100,7 @@ Check the generated debug log file for:
 For advanced debugging, enable detailed error context:
 
 ```powershell
-.\LsiGitCheckout.ps1 -EnableDebug -EnableErrorContext
+.\RepoHerd.ps1 -EnableDebug -EnableErrorContext
 ```
 
 This provides:

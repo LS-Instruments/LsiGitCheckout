@@ -2,7 +2,7 @@
 
 > [← Back to README](../README.md)
 
-This guide covers migration steps between LsiGitCheckout versions. For migrating existing dependency trees *to* LsiGitCheckout, see the [Migration and Dependency Management Guide](migration_guide.md).
+This guide covers migration steps between RepoHerd versions. For migrating existing dependency trees *to* RepoHerd, see the [Migration and Dependency Management Guide](migration_guide.md).
 
 ## From Version 7.0.0 to 7.1.0
 

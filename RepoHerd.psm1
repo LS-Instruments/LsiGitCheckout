@@ -1,5 +1,5 @@
-# LsiGitCheckout Module
-# Contains all function definitions for LsiGitCheckout tool
+# RepoHerd Module
+# Contains all function definitions for RepoHerd tool
 # Version 8.0.1
 
 #Requires -Version 7.6
@@ -29,7 +29,7 @@ $script:OutputFile = ""
 $script:ErrorMessages = @()
 $script:PostCheckoutScriptResults = @()
 
-function Initialize-LsiGitCheckout {
+function Initialize-RepoHerd {
     <#
     .SYNOPSIS
         Initializes module state from entry point parameters
@@ -71,7 +71,7 @@ function Initialize-LsiGitCheckout {
     )
 
     $script:ScriptPath = $ScriptPath
-    $script:ErrorFile = Join-Path $ScriptPath "LsiGitCheckout_Errors.txt"
+    $script:ErrorFile = Join-Path $ScriptPath "RepoHerd_Errors.txt"
     $script:DebugLogFile = Join-Path $ScriptPath ("debug_log_{0}.txt" -f (Get-Date -Format "yyyyMMddHHmm"))
     $script:SuccessCount = 0
     $script:FailureCount = 0
@@ -2704,7 +2704,7 @@ function Export-CheckoutResults {
 function Show-Summary {
     $summary = @"
 ========================================
-LsiGitCheckout Execution Summary
+RepoHerd Execution Summary
 ========================================
 Script Version: $($script:Version)
 Successful: $($script:SuccessCount)
@@ -2806,7 +2806,7 @@ Failed: $($script:FailureCount)
 
 # Export all public functions
 Export-ModuleMember -Function @(
-    'Initialize-LsiGitCheckout',
+    'Initialize-RepoHerd',
     'Write-ErrorWithContext',
     'Invoke-WithErrorContext',
     'Write-Log',

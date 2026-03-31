@@ -48,22 +48,22 @@ When a post-checkout script executes, it receives the following environment vari
 - **`$env:LSIGIT_REPOSITORY_URL`**: The repository URL that was checked out
 - **`$env:LSIGIT_REPOSITORY_PATH`**: Absolute path to the repository on disk
 - **`$env:LSIGIT_TAG`**: The git tag that was checked out
-- **`$env:LSIGIT_SCRIPT_VERSION`**: Version of LsiGitCheckout executing the script
+- **`$env:LSIGIT_SCRIPT_VERSION`**: Version of RepoHerd executing the script
 
 ## Command Line Control
 
 ```powershell
 # Default behavior (post-checkout scripts enabled)
-.\LsiGitCheckout.ps1
+.\RepoHerd.ps1
 
 # Disable post-checkout script execution
-.\LsiGitCheckout.ps1 -DisablePostCheckoutScripts
+.\RepoHerd.ps1 -DisablePostCheckoutScripts
 
 # Debug script execution with detailed logging
-.\LsiGitCheckout.ps1 -EnableDebug -Verbose
+.\RepoHerd.ps1 -EnableDebug -Verbose
 
 # Dry run shows what scripts would be executed
-.\LsiGitCheckout.ps1 -DryRun
+.\RepoHerd.ps1 -DryRun
 ```
 
 ## Example Use Cases

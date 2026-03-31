@@ -1,17 +1,17 @@
-# CLAUDE.md — LsiGitCheckout
+# CLAUDE.md — RepoHerd
 
 ## Project Overview
 
-PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `LsiGitCheckout.psm1` (functions) + `LsiGitCheckout.ps1` (entry point). Version 8.0.1, by LS Instruments AG.
+PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `RepoHerd.psm1` (functions) + `RepoHerd.ps1` (entry point). Version 8.0.1, by LS Instruments AG.
 
 ## Running the Tool
 
 ```powershell
-.\LsiGitCheckout.ps1                                    # defaults to dependencies.json
-.\LsiGitCheckout.ps1 -InputFile "path/to/deps.json"     # custom config
-.\LsiGitCheckout.ps1 -DryRun                             # preview without executing
-.\LsiGitCheckout.ps1 -EnableDebug -EnableErrorContext     # full debug output
-.\LsiGitCheckout.ps1 -OutputFile result.json             # structured JSON output
+.\RepoHerd.ps1                                    # defaults to dependencies.json
+.\RepoHerd.ps1 -InputFile "path/to/deps.json"     # custom config
+.\RepoHerd.ps1 -DryRun                             # preview without executing
+.\RepoHerd.ps1 -EnableDebug -EnableErrorContext     # full debug output
+.\RepoHerd.ps1 -OutputFile result.json             # structured JSON output
 ```
 
 Key parameters: `-InputFile`, `-CredentialsFile`, `-DryRun`, `-EnableDebug`, `-DisableRecursion`, `-MaxDepth` (default 5), `-ApiCompatibility` (Strict|Permissive), `-DisablePostCheckoutScripts`, `-EnableErrorContext`, `-OutputFile` (structured JSON results)
@@ -25,10 +25,10 @@ Key parameters: `-InputFile`, `-CredentialsFile`, `-DryRun`, `-EnableDebug`, `-D
 Install-Module Pester -Force -MinimumVersion 5.0
 
 # Unit tests — fast, no network required
-Invoke-Pester ./tests/LsiGitCheckout.Unit.Tests.ps1 -Output Detailed
+Invoke-Pester ./tests/RepoHerd.Unit.Tests.ps1 -Output Detailed
 
 # Integration tests — requires network access to GitHub test repos
-Invoke-Pester ./tests/LsiGitCheckout.Integration.Tests.ps1 -Output Detailed
+Invoke-Pester ./tests/RepoHerd.Integration.Tests.ps1 -Output Detailed
 ```
 
 ### Manual Testing
@@ -36,9 +36,9 @@ Invoke-Pester ./tests/LsiGitCheckout.Integration.Tests.ps1 -Output Detailed
 Test configs in `tests/` are organized in subdirectories, each containing a `dependencies.json`:
 
 ```powershell
-.\LsiGitCheckout.ps1 -InputFile tests/semver-basic/dependencies.json
-.\LsiGitCheckout.ps1 -InputFile tests/agnostic-recursive/dependencies.json
-.\LsiGitCheckout.ps1 -InputFile tests/api-incompatibility-agnostic/dependencies.json -ApiCompatibility Strict
+.\RepoHerd.ps1 -InputFile tests/semver-basic/dependencies.json
+.\RepoHerd.ps1 -InputFile tests/agnostic-recursive/dependencies.json
+.\RepoHerd.ps1 -InputFile tests/api-incompatibility-agnostic/dependencies.json -ApiCompatibility Strict
 ```
 
 There are 17 test cases across 16 test configs covering SemVer, Agnostic, API incompatibility (Permissive + Strict), custom paths, post-checkout scripts, and recursive dependencies. See `docs/testing_infrastructure.md` for the full test architecture.
@@ -47,9 +47,9 @@ There are 17 test cases across 16 test configs covering SemVer, Agnostic, API in
 
 ## Architecture
 
-- **Module**: `LsiGitCheckout.psm1` — all function definitions (~35 functions)
-- **Entry point**: `LsiGitCheckout.ps1` — param block, module import, initialization, main execution
-- **Manifest**: `LsiGitCheckout.psd1` — module metadata, exported functions
+- **Module**: `RepoHerd.psm1` — all function definitions (~35 functions)
+- **Entry point**: `RepoHerd.ps1` — param block, module import, initialization, main execution
+- **Manifest**: `RepoHerd.psd1` — module metadata, exported functions
 - **Two dependency resolution modes**: SemVer (recommended, automatic version resolution) and Agnostic (explicit tag-based)
 - **Configuration**: JSON files — `dependencies.json` for repos, `git_credentials.json` for SSH keys
 - **Recursive processing**: walks dependency trees with conflict detection, max depth configurable
@@ -71,15 +71,15 @@ There are 17 test cases across 16 test configs covering SemVer, Agnostic, API in
 - **Logging**: use `Write-Log` with levels: Info, Warning, Error, Debug, Verbose
 - **Error handling**: wrap operations in `Invoke-WithErrorContext -Context "description" -ScriptBlock { ... }`
 - **Module state**: `$script:` prefix for module-scoped variables (e.g., `$script:RepositoryDictionary`, `$script:DryRun`)
-- **Initialization**: call `Initialize-LsiGitCheckout` to set module state from entry point parameters
+- **Initialization**: call `Initialize-RepoHerd` to set module state from entry point parameters
 - **CHANGELOG**: follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format with SemVer versioning
 
 ## Project Structure
 
 ```
-LsiGitCheckout.ps1       # Entry point script (~230 lines)
-LsiGitCheckout.psm1      # Module with all functions (~2520 lines)
-LsiGitCheckout.psd1      # Module manifest
+RepoHerd.ps1       # Entry point script (~230 lines)
+RepoHerd.psm1      # Module with all functions (~2520 lines)
+RepoHerd.psd1      # Module manifest
 CHANGELOG.md             # Version history
 README.md                # Comprehensive user documentation
 docs/
@@ -90,8 +90,8 @@ docs/
   testing_infrastructure.md      # Test architecture, constraints, and categories
 examples/                # 7 example dependency JSON configs
 tests/                   # Pester test files + 16 test config subdirectories
-  LsiGitCheckout.Unit.Tests.ps1         # 65 unit tests (no network)
-  LsiGitCheckout.Integration.Tests.ps1  # 18 integration tests (needs network)
+  RepoHerd.Unit.Tests.ps1         # 65 unit tests (no network)
+  RepoHerd.Integration.Tests.ps1  # 18 integration tests (needs network)
   semver-basic/dependencies.json        # Test configs in subdirectories
   agnostic-recursive/dependencies.json  # (16 subdirectories total)
   api-incompatibility-*/dependencies.json

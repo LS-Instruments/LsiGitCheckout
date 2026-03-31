@@ -3,22 +3,22 @@
 
 <#
 .SYNOPSIS
-    Unit tests for LsiGitCheckout module functions
+    Unit tests for RepoHerd module functions
 .DESCRIPTION
     Tests pure and near-pure functions that require no network or git operations.
-    Run with: Invoke-Pester ./tests/LsiGitCheckout.Unit.Tests.ps1 -Output Detailed
+    Run with: Invoke-Pester ./tests/RepoHerd.Unit.Tests.ps1 -Output Detailed
 #>
 
 BeforeAll {
     # Import the module from parent directory
-    $modulePath = Join-Path $PSScriptRoot '..' 'LsiGitCheckout.psm1'
+    $modulePath = Join-Path $PSScriptRoot '..' 'RepoHerd.psm1'
     Import-Module $modulePath -Force
 
     # Initialize module with test-safe defaults
-    Initialize-LsiGitCheckout -ScriptPath $PSScriptRoot
+    Initialize-RepoHerd -ScriptPath $PSScriptRoot
 
     # Silence Write-Host output from Write-Log
-    Mock Write-Host {} -ModuleName LsiGitCheckout
+    Mock Write-Host {} -ModuleName RepoHerd
 }
 
 Describe 'ConvertTo-VersionPattern' {
@@ -397,7 +397,7 @@ Describe 'Get-AbsoluteBasePath' {
 Describe 'Export-CheckoutResults' {
     BeforeEach {
         # Set up module state for testing
-        & (Get-Module LsiGitCheckout) {
+        & (Get-Module RepoHerd) {
             $script:SuccessCount = 2
             $script:FailureCount = 0
             $script:PostCheckoutScriptExecutions = 0
@@ -511,7 +511,7 @@ Describe 'Export-CheckoutResults' {
     }
 
     It 'includes error messages when failures occur' {
-        & (Get-Module LsiGitCheckout) {
+        & (Get-Module RepoHerd) {
             $script:FailureCount = 1
             $script:ErrorMessages = @('Repository clone failed', 'Tag not found')
         }
@@ -526,7 +526,7 @@ Describe 'Export-CheckoutResults' {
     }
 
     It 'handles empty repository dictionary' {
-        & (Get-Module LsiGitCheckout) {
+        & (Get-Module RepoHerd) {
             $script:RepositoryDictionary = @{}
             $script:SuccessCount = 0
             $script:ProcessedDependencyFiles = @()
@@ -552,7 +552,7 @@ Describe 'Export-CheckoutResults' {
     }
 
     It 'includes postCheckoutScript field when script was tracked' {
-        & (Get-Module LsiGitCheckout) {
+        & (Get-Module RepoHerd) {
             $script:RepositoryDictionary['https://github.com/org/repoA.git'].PostCheckoutScript = @{
                 Configured = $true
                 ScriptPath = 'C:\test\repo-a\post-checkout.ps1'
@@ -586,7 +586,7 @@ Describe 'Export-CheckoutResults' {
     }
 
     It 'includes rootPostCheckoutScripts for depth-0 scripts' {
-        & (Get-Module LsiGitCheckout) {
+        & (Get-Module RepoHerd) {
             $script:PostCheckoutScriptResults = @(
                 @{
                     Configured    = $true
