@@ -1,7 +1,7 @@
 @{
     # Module manifest for RepoHerd
     RootModule        = 'RepoHerd.psm1'
-    ModuleVersion     = '8.0.1'
+    ModuleVersion     = '9.0.0'
     GUID              = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     Author            = 'LS Instruments AG'
     CompanyName       = 'LS Instruments AG'

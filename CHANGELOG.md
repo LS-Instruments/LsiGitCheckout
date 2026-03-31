@@ -5,7 +5,23 @@ All notable changes to RepoHerd will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [8.0.1] - Unreleased
+## [9.0.0] - 2026-03-31
+
+### Changed
+
+- **BREAKING**: Renamed project from LsiGitCheckout to RepoHerd
+  - Module renamed: `LsiGitCheckout.psm1` → `RepoHerd.psm1`
+  - Entry point renamed: `LsiGitCheckout.ps1` → `RepoHerd.ps1`
+  - Manifest renamed: `LsiGitCheckout.psd1` → `RepoHerd.psd1`
+  - Initialization function renamed: `Initialize-LsiGitCheckout` → `Initialize-RepoHerd`
+  - Error file renamed: `LsiGitCheckout_Errors.txt` → `RepoHerd_Errors.txt`
+
+### Added
+
+- GitHub Pages landing page (`index.html`) with SEO metadata, sitemap, and robots.txt
+- Split detailed documentation from README into dedicated files under `docs/`
+
+## [8.0.1] - 2026-03-21
 
 ### Changed
 

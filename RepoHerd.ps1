@@ -46,7 +46,7 @@
     .\RepoHerd.ps1 -Verbose -DisablePostCheckoutScripts
     .\RepoHerd.ps1 -EnableDebug -EnableErrorContext
 .NOTES
-    Version: 8.0.1
+    Version: 9.0.0
     Last Modified: 2026-03-20
 
     Requires PowerShell 7.6 LTS or later (installs side-by-side with Windows PowerShell 5.1).
@@ -109,7 +109,7 @@ Initialize-RepoHerd `
 # Main execution
 $exitCode = 0
 try {
-    Write-Log "RepoHerd started - Version 8.0.1" -Level Info
+    Write-Log "RepoHerd started - Version 9.0.0" -Level Info
     Write-Log "Script path: $scriptDir" -Level Debug
     Write-Log "PowerShell version: $($PSVersionTable.PSVersion)" -Level Debug
     Write-Log "Operating System: $([System.Environment]::OSVersion.VersionString)" -Level Debug
