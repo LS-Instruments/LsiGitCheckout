@@ -1,11 +1,11 @@
 # RepoHerd Module
 # Contains all function definitions for RepoHerd tool
-# Version 8.0.1
+# Version 9.0.0
 
 #Requires -Version 7.6
 
 # Module-scoped state variables
-$script:Version = "8.0.1"
+$script:Version = "9.0.0"
 $script:ScriptPath = ""
 $script:ErrorFile = ""
 $script:DebugLogFile = ""

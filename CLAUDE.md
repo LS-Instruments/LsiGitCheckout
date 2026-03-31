@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `RepoHerd.psm1` (functions) + `RepoHerd.ps1` (entry point). Version 8.0.1, by LS Instruments AG.
+PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `RepoHerd.psm1` (functions) + `RepoHerd.ps1` (entry point). Version 9.0.0, by LS Instruments AG.
 
 ## Running the Tool
 

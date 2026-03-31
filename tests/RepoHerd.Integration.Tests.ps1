@@ -145,7 +145,7 @@ Describe 'RepoHerd Integration Tests' -Tag 'Integration' {
         $result.schemaVersion | Should -Be '1.0.0'
 
         # Metadata
-        $result.metadata.toolVersion | Should -Be '8.0.1'
+        $result.metadata.toolVersion | Should -Be '9.0.0'
         $result.metadata.recursiveMode | Should -Be $true
         $result.metadata.apiCompatibility | Should -BeIn @('Strict', 'Permissive')
         $result.metadata.powershellVersion | Should -Not -BeNullOrEmpty

@@ -451,7 +451,7 @@ Describe 'Export-CheckoutResults' {
         Export-CheckoutResults -OutputFile $outputFile
 
         $result = Get-Content $outputFile -Raw | ConvertFrom-Json
-        $result.metadata.toolVersion | Should -Be '8.0.1'
+        $result.metadata.toolVersion | Should -Be '9.0.0'
         $result.metadata.recursiveMode | Should -Be $true
         $result.metadata.maxDepth | Should -Be 5
         $result.metadata.apiCompatibility | Should -Be 'Permissive'

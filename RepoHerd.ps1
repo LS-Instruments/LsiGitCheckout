@@ -52,8 +52,8 @@
     Requires PowerShell 7.6 LTS or later (installs side-by-side with Windows PowerShell 5.1).
     Install via: winget install Microsoft.PowerShell
 
-    This script uses PuTTY/plink for SSH authentication. SSH keys must be in PuTTY format (.ppk).
-    Use PuTTYgen to convert OpenSSH keys to PuTTY format if needed.
+    SSH authentication is cross-platform: PuTTY/plink with .ppk keys on Windows,
+    OpenSSH on macOS/Linux. Use PuTTYgen to convert OpenSSH keys to .ppk format on Windows.
 #>
 
 [CmdletBinding()]
