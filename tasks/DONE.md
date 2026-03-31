@@ -4,6 +4,20 @@ All implemented features and fixes, ordered by issue number.
 
 ---
 
+### #20 — Rename project from LsiGitCheckout to RepoHerd (v9.0.0)
+
+Renamed the entire project to RepoHerd across all files and content.
+
+- Renamed `LsiGitCheckout.ps1/psm1/psd1` → `RepoHerd.ps1/psm1/psd1`
+- Renamed test files and workspace file
+- Renamed `Initialize-LsiGitCheckout` → `Initialize-RepoHerd`
+- Renamed error file `LsiGitCheckout_Errors.txt` → `RepoHerd_Errors.txt`
+- Updated all internal references across source, docs, examples, README, CHANGELOG, CLAUDE.md
+- Added GitHub Pages landing page (`index.html`) with SEO metadata, `sitemap.xml`, and `robots.txt`
+- Released as v9.0.0
+
+---
+
 ### #1 — Separate SSH credentials from repository configuration (v3.0.0)
 
 Introduced a separate `git_credentials.json` file that maps hostnames to SSH key paths, allowing `dependencies.json` to be safely committed to version control.
