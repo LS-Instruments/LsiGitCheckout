@@ -1,6 +1,13 @@
 # Debug and log files
 debug_log_*.txt
 LsiGitCheckout_Errors.txt
+RepoHerd_Errors.txt
+
+# macOS
+.DS_Store
+
+# Claude Code session data
+.claude/
 
 # Repository directories
 repos/
