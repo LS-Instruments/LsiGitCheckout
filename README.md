@@ -166,6 +166,14 @@ RepoHerd resolves recursive dependencies across repository trees, supports both 
 Install-Module -Name RepoHerd
 ```
 
+Then run from any directory containing a `dependencies.json`:
+
+```powershell
+Invoke-RepoHerd
+Invoke-RepoHerd -InputFile "path/to/deps.json"
+Invoke-RepoHerd -DryRun
+```
+
 ### Manual download
 
 1. Download `RepoHerd.ps1`, `RepoHerd.psm1`, and `RepoHerd.psd1` to the same directory
@@ -186,16 +194,16 @@ In non-recursive mode, the script processes only the repositories listed in your
 ### Command Line Usage
 
 ```powershell
-# Use default settings (recursive mode and intelligent tag sorting enabled by default)
+# If installed from PowerShell Gallery, use Invoke-RepoHerd:
+Invoke-RepoHerd
+Invoke-RepoHerd -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
+Invoke-RepoHerd -EnableDebug
+Invoke-RepoHerd -DryRun
+
+# If using the script directly:
 .\RepoHerd.ps1
-
-# Specify custom JSON files
 .\RepoHerd.ps1 -InputFile "C:\configs\myrepos.json" -CredentialsFile "C:\configs\my_credentials.json"
-
-# Enable debug logging
 .\RepoHerd.ps1 -EnableDebug
-
-# Dry run mode (preview without changes)
 .\RepoHerd.ps1 -DryRun
 
 # Verbose output
