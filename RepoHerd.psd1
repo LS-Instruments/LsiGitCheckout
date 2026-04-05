@@ -2,11 +2,11 @@
     # Module manifest for RepoHerd
     RootModule        = 'RepoHerd.psm1'
     ModuleVersion     = '9.0.0'
-    GUID              = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+    GUID              = '55dbb622-24f8-4f70-b16e-5412d436f94f'
     Author            = 'LS Instruments AG'
     CompanyName       = 'LS Instruments AG'
     Copyright         = '(c) LS Instruments AG. All rights reserved.'
-    Description       = 'PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions.'
+    Description       = 'Multi-repository Git dependency manager with SemVer version resolution, recursive dependency discovery, and cross-platform SSH support. Clone and checkout multiple Git repositories to pinned versions from a single JSON config. An alternative to git submodules for managing shared libraries across repos.'
     PowerShellVersion = '7.6'
 
     FunctionsToExport = @(
@@ -56,8 +56,10 @@
 
     PrivateData = @{
         PSData = @{
-            Tags       = @('Git', 'Dependency', 'SemVer', 'Checkout')
-            ProjectUri = 'https://github.com/LS-Instruments/RepoHerd'
+            Tags         = @('Git', 'Dependency', 'SemVer', 'Checkout', 'MultiRepo', 'DevOps', 'Automation', 'SSH', 'CrossPlatform', 'DependencyManagement', 'VersionPinning', 'Repository', 'Submodules')
+            LicenseUri   = 'https://github.com/LS-Instruments/RepoHerd/blob/main/LICENSE'
+            ProjectUri   = 'https://github.com/LS-Instruments/RepoHerd'
+            ReleaseNotes = 'v9.0.0: Project renamed from LsiGitCheckout to RepoHerd. Breaking: module, entry point, and initialization function renamed. Added GitHub Pages landing page with SEO.'
         }
     }
 }

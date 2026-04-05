@@ -160,6 +160,14 @@ RepoHerd resolves recursive dependencies across repository trees, supports both 
 
 ## Installation
 
+### From PowerShell Gallery (recommended)
+
+```powershell
+Install-Module -Name RepoHerd
+```
+
+### Manual download
+
 1. Download `RepoHerd.ps1`, `RepoHerd.psm1`, and `RepoHerd.psd1` to the same directory
 2. Create `dependencies.json` with your repository configuration
 3. Create `git_credentials.json` with your SSH key mappings (if using SSH repositories)
