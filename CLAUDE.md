@@ -2,16 +2,22 @@
 
 ## Project Overview
 
-PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `RepoHerd.psm1` (functions) + `RepoHerd.ps1` (entry point). Version 9.0.0, by LS Instruments AG.
+PowerShell-based dependency management tool that checks out multiple Git repositories to specified versions. Module architecture: `RepoHerd.psm1` (functions + `Invoke-RepoHerd` entry point) + `RepoHerd.ps1` (thin wrapper for script-based usage). Version 9.1.0, published on PowerShell Gallery, by LS Instruments AG.
 
 ## Running the Tool
 
 ```powershell
-.\RepoHerd.ps1                                    # defaults to dependencies.json
-.\RepoHerd.ps1 -InputFile "path/to/deps.json"     # custom config
-.\RepoHerd.ps1 -DryRun                             # preview without executing
-.\RepoHerd.ps1 -EnableDebug -EnableErrorContext     # full debug output
-.\RepoHerd.ps1 -OutputFile result.json             # structured JSON output
+# Via PowerShell Gallery (recommended)
+Install-Module RepoHerd
+Invoke-RepoHerd                                    # defaults to dependencies.json in CWD
+Invoke-RepoHerd -InputFile "path/to/deps.json"     # custom config
+Invoke-RepoHerd -DryRun                             # preview without executing
+Invoke-RepoHerd -EnableDebug -EnableErrorContext     # full debug output
+Invoke-RepoHerd -OutputFile result.json             # structured JSON output
+
+# Via script (manual download / cloned repo)
+.\RepoHerd.ps1                                     # defaults to dependencies.json in script dir
+.\RepoHerd.ps1 -InputFile "path/to/deps.json"
 ```
 
 Key parameters: `-InputFile`, `-CredentialsFile`, `-DryRun`, `-EnableDebug`, `-DisableRecursion`, `-MaxDepth` (default 5), `-ApiCompatibility` (Strict|Permissive), `-DisablePostCheckoutScripts`, `-EnableErrorContext`, `-OutputFile` (structured JSON results)
@@ -47,8 +53,8 @@ There are 17 test cases across 16 test configs covering SemVer, Agnostic, API in
 
 ## Architecture
 
-- **Module**: `RepoHerd.psm1` — all function definitions (~35 functions)
-- **Entry point**: `RepoHerd.ps1` — param block, module import, initialization, main execution
+- **Module**: `RepoHerd.psm1` — all function definitions (~36 functions) including `Invoke-RepoHerd` (main entry point)
+- **Script wrapper**: `RepoHerd.ps1` — thin wrapper that imports the module and delegates to `Invoke-RepoHerd` (defaults to script directory for paths)
 - **Manifest**: `RepoHerd.psd1` — module metadata, exported functions
 - **Two dependency resolution modes**: SemVer (recommended, automatic version resolution) and Agnostic (explicit tag-based)
 - **Configuration**: JSON files — `dependencies.json` for repos, `git_credentials.json` for SSH keys
@@ -71,14 +77,15 @@ There are 17 test cases across 16 test configs covering SemVer, Agnostic, API in
 - **Logging**: use `Write-Log` with levels: Info, Warning, Error, Debug, Verbose
 - **Error handling**: wrap operations in `Invoke-WithErrorContext -Context "description" -ScriptBlock { ... }`
 - **Module state**: `$script:` prefix for module-scoped variables (e.g., `$script:RepositoryDictionary`, `$script:DryRun`)
-- **Initialization**: call `Initialize-RepoHerd` to set module state from entry point parameters
+- **Initialization**: `Initialize-RepoHerd` sets module state; called internally by `Invoke-RepoHerd`
+- **Publishing**: before any `Publish-Module`, always test the full `Install-Module` -> `Invoke-RepoHerd` round-trip
 - **CHANGELOG**: follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format with SemVer versioning
 
 ## Project Structure
 
 ```
-RepoHerd.ps1       # Entry point script (~230 lines)
-RepoHerd.psm1      # Module with all functions (~2520 lines)
+RepoHerd.ps1       # Script wrapper (~70 lines), delegates to Invoke-RepoHerd
+RepoHerd.psm1      # Module with all functions including Invoke-RepoHerd (~2750 lines)
 RepoHerd.psd1      # Module manifest
 CHANGELOG.md             # Version history
 README.md                # Comprehensive user documentation
