@@ -1,7 +1,7 @@
 @{
     # Module manifest for RepoHerd
     RootModule        = 'RepoHerd.psm1'
-    ModuleVersion     = '9.0.0'
+    ModuleVersion     = '9.1.0'
     GUID              = '55dbb622-24f8-4f70-b16e-5412d436f94f'
     Author            = 'LS Instruments AG'
     CompanyName       = 'LS Instruments AG'
@@ -47,7 +47,8 @@
         'Read-CredentialsFile',
         'Set-PostCheckoutScriptResult',
         'Export-CheckoutResults',
-        'Show-Summary'
+        'Show-Summary',
+        'Invoke-RepoHerd'
     )
 
     CmdletsToExport   = @()
@@ -59,7 +60,7 @@
             Tags         = @('Git', 'Dependency', 'SemVer', 'Checkout', 'MultiRepo', 'DevOps', 'Automation', 'SSH', 'CrossPlatform', 'DependencyManagement', 'VersionPinning', 'Repository', 'Submodules')
             LicenseUri   = 'https://github.com/LS-Instruments/RepoHerd/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/LS-Instruments/RepoHerd'
-            ReleaseNotes = 'v9.0.0: Project renamed from LsiGitCheckout to RepoHerd. Breaking: module, entry point, and initialization function renamed. Added GitHub Pages landing page with SEO.'
+            ReleaseNotes = 'v9.1.0: Added Invoke-RepoHerd function for PowerShell Gallery users. Install-Module RepoHerd now provides a callable entry point.'
         }
     }
 }

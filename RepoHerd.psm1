@@ -1,11 +1,11 @@
 # RepoHerd Module
 # Contains all function definitions for RepoHerd tool
-# Version 9.0.0
+# Version 9.1.0
 
 #Requires -Version 7.6
 
 # Module-scoped state variables
-$script:Version = "9.0.0"
+$script:Version = "9.1.0"
 $script:ScriptPath = ""
 $script:ErrorFile = ""
 $script:DebugLogFile = ""
@@ -2804,6 +2804,239 @@ Failed: $($script:FailureCount)
     }
 }
 
+function Invoke-RepoHerd {
+    <#
+    .SYNOPSIS
+        Runs RepoHerd dependency checkout from the current directory
+    .DESCRIPTION
+        Main entry point for RepoHerd when installed as a module (e.g. via Install-Module).
+        Reads a JSON configuration file and checks out multiple Git repositories to their
+        specified versions. Supports SemVer version resolution, recursive dependency discovery,
+        cross-platform SSH, and structured JSON output.
+
+        When invoked without -InputFile, looks for dependencies.json in the current directory.
+    .PARAMETER InputFile
+        Path to the JSON configuration file. Defaults to 'dependencies.json' in the current directory.
+    .PARAMETER CredentialsFile
+        Path to the SSH credentials JSON file. Defaults to 'git_credentials.json' in the current directory.
+    .PARAMETER DryRun
+        If specified, shows what would be done without actually executing Git commands.
+    .PARAMETER EnableDebug
+        Enables debug logging to a timestamped log file.
+    .PARAMETER DisableRecursion
+        Disables recursive dependency discovery and processing.
+    .PARAMETER MaxDepth
+        Maximum recursion depth for dependency discovery. Defaults to 5.
+    .PARAMETER ApiCompatibility
+        Default API compatibility mode. Can be 'Strict' or 'Permissive'. Defaults to 'Permissive'.
+    .PARAMETER DisablePostCheckoutScripts
+        Disables execution of post-checkout PowerShell scripts.
+    .PARAMETER EnableErrorContext
+        Enables detailed error context output including stack traces and line numbers.
+    .PARAMETER OutputFile
+        Path to write structured JSON results.
+    .EXAMPLE
+        Invoke-RepoHerd
+    .EXAMPLE
+        Invoke-RepoHerd -InputFile "C:\configs\myrepos.json"
+    .EXAMPLE
+        Invoke-RepoHerd -DryRun -EnableDebug
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)]
+        [string]$InputFile,
+
+        [Parameter()]
+        [string]$CredentialsFile,
+
+        [Parameter()]
+        [switch]$DryRun,
+
+        [Parameter()]
+        [switch]$EnableDebug,
+
+        [Parameter()]
+        [switch]$DisableRecursion,
+
+        [Parameter()]
+        [int]$MaxDepth = 5,
+
+        [Parameter()]
+        [ValidateSet('Strict', 'Permissive')]
+        [string]$ApiCompatibility = 'Permissive',
+
+        [Parameter()]
+        [switch]$DisablePostCheckoutScripts,
+
+        [Parameter()]
+        [switch]$EnableErrorContext,
+
+        [Parameter()]
+        [string]$OutputFile
+    )
+
+    $basePath = (Get-Location).Path
+
+    # Initialize module state
+    Initialize-RepoHerd `
+        -ScriptPath $basePath `
+        -DryRun:$DryRun `
+        -EnableDebug:$EnableDebug `
+        -DisableRecursion:$DisableRecursion `
+        -MaxDepth $MaxDepth `
+        -ApiCompatibility $ApiCompatibility `
+        -DisablePostCheckoutScripts:$DisablePostCheckoutScripts `
+        -EnableErrorContext:$EnableErrorContext `
+        -OutputFile $OutputFile
+
+    $exitCode = 0
+    try {
+        Write-Log "RepoHerd started - Version $script:Version" -Level Info
+        Write-Log "Working directory: $basePath" -Level Debug
+        Write-Log "PowerShell version: $($PSVersionTable.PSVersion)" -Level Debug
+        Write-Log "Operating System: $([System.Environment]::OSVersion.VersionString)" -Level Debug
+        Write-Log "Default API Compatibility: $ApiCompatibility" -Level Info
+
+        if (-not $DisableRecursion) {
+            Write-Log "Recursive mode: ENABLED (default) with max depth: $MaxDepth" -Level Info
+        } else {
+            Write-Log "Recursive mode: DISABLED" -Level Info
+        }
+
+        if (-not $DisablePostCheckoutScripts) {
+            Write-Log "Post-checkout scripts: ENABLED (default)" -Level Info
+        } else {
+            Write-Log "Post-checkout scripts: DISABLED" -Level Info
+        }
+
+        if ($EnableErrorContext) {
+            Write-Log "Error context: ENABLED - Detailed error information will be shown" -Level Info
+        } else {
+            Write-Log "Error context: DISABLED - Use -EnableErrorContext for detailed error information" -Level Debug
+        }
+
+        if ($OutputFile) {
+            Write-Log "Structured output will be written to: $OutputFile" -Level Info
+        }
+
+        if ($DryRun) {
+            Write-Log "DRY RUN MODE - No actual changes will be made" -Level Warning
+        }
+
+        if ($EnableDebug) {
+            Write-Log "Debug logging enabled" -Level Info
+        }
+
+        # Check Git installation
+        if (-not (Test-GitInstalled)) {
+            throw "Git is not installed or not accessible in PATH"
+        }
+
+        # Determine input file path
+        if ([string]::IsNullOrEmpty($InputFile)) {
+            $InputFile = Join-Path $basePath "dependencies.json"
+            Write-Log "Using default input file: $InputFile" -Level Verbose
+        }
+
+        # Store the dependency file name for recursive processing
+        $script:DefaultDependencyFileName = Split-Path -Leaf $InputFile
+        Write-Log "Default dependency file name for recursive processing: $($script:DefaultDependencyFileName)" -Level Debug
+
+        # Determine credentials file path
+        if ([string]::IsNullOrEmpty($CredentialsFile)) {
+            $CredentialsFile = Join-Path $basePath "git_credentials.json"
+            Write-Log "Using default credentials file: $CredentialsFile" -Level Verbose
+        }
+
+        # Read SSH credentials
+        $script:SshCredentials = Read-CredentialsFile -FilePath $CredentialsFile
+
+        # Check if input file exists
+        if (-not (Test-Path $InputFile)) {
+            throw "Input file not found: $InputFile"
+        }
+
+        # Process the initial dependency file
+        Write-Log "Starting dependency processing at depth 0" -Level Info
+
+        $checkedOutRepos = Invoke-WithErrorContext -Context "Processing root dependency file" -ScriptBlock {
+            Invoke-DependencyFile -DependencyFilePath $InputFile -Depth 0
+        }
+
+        # Handle null return
+        if ($null -eq $checkedOutRepos) {
+            Write-Log "WARNING: Invoke-DependencyFile returned null, initializing as empty array" -Level Warning
+            $checkedOutRepos = @()
+        } else {
+            Write-Log "Invoke-DependencyFile returned type: $($checkedOutRepos.GetType().FullName)" -Level Debug
+        }
+        if ($null -eq $checkedOutRepos) {
+            Write-Log "WARNING: checkedOutRepos is null!" -Level Warning
+            $checkedOutRepos = @()
+        }
+
+        Write-Log "Completed depth 0 processing: 1 dependency file processed, $($checkedOutRepos.Count) repositories checked out" -Level Info
+
+        # Additional debug information
+        if ($EnableDebug) {
+            Write-Log "Detailed checkedOutRepos information:" -Level Debug
+            Write-Log "  Count: $($checkedOutRepos.Count)" -Level Debug
+            Write-Log "  IsArray: $($checkedOutRepos -is [Array])" -Level Debug
+            if ($checkedOutRepos.Count -gt 0) {
+                Write-Log "  Repository details:" -Level Debug
+                foreach ($repo in $checkedOutRepos) {
+                    Write-Log "    - Repository: $($repo.Repository.'Repository URL'), Path: $($repo.AbsolutePath)" -Level Debug
+                }
+            }
+        }
+
+        # If recursive mode is enabled, process nested dependencies
+        $isRecursiveMode = -not $DisableRecursion
+        Write-Log "Checking recursive processing conditions - RecursiveMode: $isRecursiveMode, CheckedOutRepos.Count: $($checkedOutRepos.Count)" -Level Debug
+
+        if ($isRecursiveMode -and $checkedOutRepos.Count -gt 0) {
+            Write-Log "Entering recursive processing with $($checkedOutRepos.Count) repositories" -Level Info
+            $defaultDepFileName = Split-Path -Leaf $InputFile
+            Invoke-WithErrorContext -Context "Processing recursive dependencies" -ScriptBlock {
+                Invoke-RecursiveDependencies -CheckedOutRepos $checkedOutRepos -DefaultDependencyFileName $defaultDepFileName -CurrentDepth 0
+            }
+        } else {
+            if ($DisableRecursion) {
+                Write-Log "Recursive processing skipped - recursive mode is disabled" -Level Info
+            } elseif ($checkedOutRepos.Count -eq 0) {
+                Write-Log "Recursive processing skipped - no new repositories were checked out at depth 0" -Level Info
+            }
+        }
+
+        # Show summary
+        Show-Summary
+
+        # Determine exit code from failure count
+        if ($script:FailureCount -gt 0) {
+            $exitCode = 1
+        }
+    }
+    catch {
+        Write-ErrorWithContext -ErrorRecord $_ -AdditionalMessage "Unexpected error in main execution"
+        Show-ErrorDialog -Message $_.Exception.Message
+        $exitCode = 1
+    }
+    finally {
+        # Write structured output if requested
+        if (-not [string]::IsNullOrEmpty($OutputFile)) {
+            try {
+                Export-CheckoutResults -OutputFile $OutputFile
+            }
+            catch {
+                Write-Host "Failed to write output file: $_" -ForegroundColor Red
+            }
+        }
+    }
+
+    return $exitCode
+}
+
 # Export all public functions
 Export-ModuleMember -Function @(
     'Initialize-RepoHerd',
@@ -2843,5 +3076,6 @@ Export-ModuleMember -Function @(
     'Read-CredentialsFile',
     'Set-PostCheckoutScriptResult',
     'Export-CheckoutResults',
-    'Show-Summary'
+    'Show-Summary',
+    'Invoke-RepoHerd'
 )
