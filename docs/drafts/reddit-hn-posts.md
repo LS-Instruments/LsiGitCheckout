@@ -68,11 +68,11 @@ Curious if anyone else has run into similar multi-repo pain points and how you s
 
 ## LabVIEW Discord
 
-Hey everyone, I am new here and I started browsing the hole history of announcements when I saw Derrik Bommarito's post about GPack (https://github.com/illuminated-g/lv-gpack) and honestly had to laugh a bit because we ran into the exact same problem at my company and ended up building our own thing for it, totally independently. Funny how the same pain hits everyone sooner or later.
+Hey everyone, I am new here and I started browsing the whole history of announcements when I saw Derrik Bommarito's post about GPack (https://github.com/illuminated-g/lv-gpack) and honestly had to laugh a bit because we ran into the exact same problem at my company and ended up building our own thing for it, totally independently. Funny how the same pain hits everyone sooner or later.
 
 The issue is always the same for multi-level dependency trees: LabVIEW and relative paths. If something moves, you're stuck relinking for hours. We have a bunch of repos in a dependency tree and at some point checking out the right version of everything manually just wasn't realistic anymore. 
 
-So we started writing a small PowerShell script to automate it. We'd also been playing around with vibe-coding using Claude Code and figured this was a good project to try it on. Well... we got a **bit** carried away. The script kept growing and at some point we looked at it and thought "ok this is actually kind of a proper tool now."
+So we started writing a small PowerShell script to automate it. We'd also been playing around with vibe-coding using Claude Code and figured this was a good project to try it on. Well... we got a **bit** carried away. The Claude Code euforia made it grow so much that at some point we looked at it and thought "ok this is actually kind of a proper tool now."
 
 The main difference from GPack is that ours does SemVer version resolution. You put version constraints like `"2.1.*"` in a JSON config and it figures out which tag to check out from the remote. It also walks dependency trees recursively and catches version conflicts.
 

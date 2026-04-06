@@ -217,8 +217,8 @@ The `RepoHerd.code-workspace` file provides:
 ## Project Structure
 
 ```text
-RepoHerd.ps1       # Entry point (~260 lines) — params, module import, main flow
-RepoHerd.psm1      # Module (~2700 lines) — all function definitions
+RepoHerd.ps1       # Script wrapper (~70 lines), delegates to Invoke-RepoHerd
+RepoHerd.psm1      # Module (~2750 lines) — all functions including Invoke-RepoHerd
 RepoHerd.psd1      # Module manifest — metadata, exported functions
 tests/
   RepoHerd.Unit.Tests.ps1         # 65 unit tests (no network required)
@@ -228,7 +228,7 @@ tests/
   api-incompatibility-*/dependencies.json
 ```
 
-The entry point script imports the module, calls `Initialize-RepoHerd` to set module state from CLI parameters, then runs the main logic. All functions live in the `.psm1` file using `$script:` scoped variables for shared state.
+The script wrapper imports the module and delegates to `Invoke-RepoHerd`, which is the main entry point. All functions live in the `.psm1` file using `$script:` scoped variables for shared state.
 
 ## Running Tests
 
@@ -350,3 +350,71 @@ See [CLAUDE.md](../CLAUDE.md) for the full coding conventions. Key points:
 - **Error handling**: wrap operations in `Invoke-WithErrorContext -Context "description" -ScriptBlock { ... }`
 - **Module state**: use `$script:` prefix for shared variables, initialize via `Initialize-RepoHerd`
 - **CHANGELOG**: update `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format
+
+## Release Process
+
+### Overview
+
+Releases are published to both GitHub (tagged release) and PowerShell Gallery. The process is driven by the user confirming a version number to Claude Code, which then handles version bumps, tagging, and the GitHub release. The final `Publish-Module` command is run manually by the user because it requires the API key.
+
+### PowerShell Gallery setup
+
+- A PowerShell Gallery account at [powershellgallery.com](https://www.powershellgallery.com/)
+- An API key: go to Account > API Keys > Create. Store it securely; you'll paste it once during publishing.
+
+### Step-by-step
+
+1. **Confirm the version number** with the user. Follow SemVer:
+   - Patch (x.y.Z): bug fixes, no API changes
+   - Minor (x.Y.0): new features, backwards-compatible
+   - Major (X.0.0): breaking changes
+
+2. **Update version in all locations:**
+   - `RepoHerd.psd1` — `ModuleVersion` and `ReleaseNotes`
+   - `RepoHerd.psm1` — `$script:Version` and header comment
+   - `RepoHerd.ps1` — `.NOTES` version
+   - `tests/RepoHerd.Unit.Tests.ps1` — version assertion
+   - `tests/RepoHerd.Integration.Tests.ps1` — version assertion
+   - `CHANGELOG.md` — new entry at the top
+   - `CLAUDE.md` — version in Project Overview
+
+3. **Run all tests** (unit + integration) to confirm everything passes.
+
+4. **Commit and push** the version bump.
+
+5. **Create a GitHub release** using `gh release create vX.Y.Z`.
+
+6. **Validate the manifest:**
+
+   ```powershell
+   Test-ModuleManifest ./RepoHerd.psd1
+   ```
+
+7. **Publish to PowerShell Gallery** (run by the user):
+
+   ```powershell
+   Publish-Module -Path . -NuGetApiKey "YOUR_API_KEY"
+   ```
+
+8. **Verify the upload:**
+
+   ```powershell
+   Find-Module RepoHerd
+   ```
+
+9. **Test the installed module end-to-end:**
+
+   ```powershell
+   Update-Module RepoHerd -Force
+   Import-Module RepoHerd -Force
+   cd tests/semver-basic
+   Invoke-RepoHerd
+   ```
+
+   Confirm the version in the output matches the release.
+
+### Important notes
+
+- `Publish-Module` is irreversible: you cannot overwrite a version, only publish a new one. Double-check the version before publishing.
+- The Gallery web UI can take a few minutes to update the "current version" label, but `Find-Module` and `Install-Module` pick up the new version immediately.
+- Always test the full `Install-Module` -> `Invoke-RepoHerd` round-trip before announcing.
