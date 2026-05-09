@@ -88,9 +88,13 @@ Or just install PowerShell 7.6 LTS and type `Install-Module RepoHerd` if you wan
 
 ## Show HN
 
-**Title:** Show HN: RepoHerd, a multi-repo Git dependency manager with SemVer resolution
+**Submission fields:**
 
-**Body (HN text field):**
+- **title**: `Show HN: RepoHerd – Git submodules alternative with SemVer version resolution`
+- **url**: `https://github.com/LS-Instruments/RepoHerd`
+- **text**: leave empty
+
+**First comment (post immediately after submitting):**
 
 At my company, our LabVIEW codebase is spread across multiple Git repos in a multi-level dependency tree. LabVIEW requires every dependency to sit at an exact relative path. If it moves, you're in for hours of manual relinking. Checking out the full tree with the right versions had become practically impossible as our projects grew.
 
@@ -100,4 +104,4 @@ RepoHerd reads a JSON config with SemVer version constraints (e.g. `"2.1.*"`) an
 
 Cross-platform (PowerShell 7.6 LTS), BSD-3-Clause, 83 automated tests.
 
-https://github.com/LS-Instruments/RepoHerd
+Install: `Install-Module RepoHerd`, then `Invoke-RepoHerd`.
